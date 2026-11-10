@@ -93,9 +93,8 @@ func (a *Atlas) overviewTargets(scoped py.Params, ssid, hiddenMAC string, indivi
 	return t, nil
 }
 
-// AreaPlan is area_plan(database, params, display, discover): the visible saved fits, the scoped
-// params a fit job uses, and the next batch of nearby groups still to fit.
-func (a *Atlas) AreaPlan(c *sqlite.Conn, p py.Params, display, discover bool) (map[string]any, py.Params, []Group, error) {
+// AreaScope is the filters a nearby fit honours, in sample mode: the scope its fits are saved under.
+func AreaScope(p py.Params) py.Params {
 	scoped := py.Params{}
 	for k, v := range p {
 		switch k {
@@ -104,6 +103,13 @@ func (a *Atlas) AreaPlan(c *sqlite.Conn, p py.Params, display, discover bool) (m
 		}
 	}
 	scoped["fit_mode"] = []string{"sample"}
+	return scoped
+}
+
+// AreaPlan is area_plan(database, params, display, discover): the visible saved fits, the scoped
+// params a fit job uses, and the next batch of nearby groups still to fit.
+func (a *Atlas) AreaPlan(c *sqlite.Conn, p py.Params, display, discover bool) (map[string]any, py.Params, []Group, error) {
+	scoped := AreaScope(p)
 	scope, sampleKey, err := EstimateScope(scoped)
 	if err != nil {
 		return nil, nil, nil, err
@@ -201,14 +207,29 @@ func (a *Atlas) AreaPlan(c *sqlite.Conn, p py.Params, display, discover bool) (m
 	return result, scoped, missing[:min(len(missing), BatchSize)], nil
 }
 
+// MaxDisplayFits is the most saved fits one map view loads. A wider view (after "Fit every AP" on a
+// big survey, a zoomed-out map can hold hundreds of thousands) gets an even sample of about this
+// many instead, so the page never has to hold them all; zooming in shows every fit in the area.
+const MaxDisplayFits = 1500
+
 func visibleFits(c *sqlite.Conn, exact, sample string, b [4]float64, targetsFor func(string, string) (*targetMap, error)) ([]any, error) {
-	rows, err := db.All(c, `SELECT e.radio_key,e.result FROM estimates e
+	where := `FROM estimates e
         WHERE e.scope_key IN (?, ?) AND json_extract(e.result,'$.status')='fitted'
         AND json_extract(e.result,'$.longitude') BETWEEN ? AND ?
         AND json_extract(e.result,'$.latitude') BETWEEN ? AND ?
         AND (e.scope_key=? OR NOT EXISTS (SELECT 1 FROM estimates x
             WHERE x.radio_key=e.radio_key AND x.scope_key=?
-            AND json_extract(x.result,'$.status')='fitted')) ORDER BY e.radio_key`, exact, sample, b[0], b[2], b[1], b[3], exact, exact)
+            AND json_extract(x.result,'$.status')='fitted'))`
+	args := []any{exact, sample, b[0], b[2], b[1], b[3], exact, exact}
+	n, err := db.Scalar(c, "SELECT count(*) "+where, args...)
+	if err != nil {
+		return nil, err
+	}
+	if every := (db.Int(n) + MaxDisplayFits - 1) / MaxDisplayFits; every > 1 {
+		where += " AND e.rowid % ? = 0"
+		args = append(args, every)
+	}
+	rows, err := db.All(c, "SELECT e.radio_key,e.result "+where+" ORDER BY e.radio_key", args...)
 	if err != nil {
 		return nil, err
 	}

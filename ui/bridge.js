@@ -136,7 +136,7 @@
       const input = e.target && e.target.closest && e.target.closest('input[type=file]#file, label[for=file]');
       if (!input || !info.window) return;
       e.preventDefault();
-      const list = await window.SignalAtlasApp.pickFiles({ title: 'Add WiGLE CSV logs', exts: ['csv'], multiple: true }).catch(() => []);
+      const list = await window.SignalAtlasApp.pickFiles({ title: 'Add WiGLE CSV logs or logger databases', exts: ['csv', 'sqlite3', 'sqlite', 'db'], multiple: true }).catch(() => []);
       if (list.length && typeof window.addFiles === 'function') window.addFiles(list);
     }, true);
   }
@@ -201,18 +201,75 @@
         head.insertBefore(a, head.firstChild);
       }
       const save = document.getElementById('save-database');
-      if (save && !document.getElementById('sa-open-db') && info.window) {
-        const box = document.createElement('div'), b = document.createElement('button');
-        box.className = 'sa-db-actions'; b.id = 'sa-open-db'; b.className = 'button'; b.type = 'button';
-        b.textContent = 'Open database…';
-        b.title = 'Open a Signal Atlas database (replaces what is here) or add a WiGLE app backup';
-        save.parentNode.insertBefore(box, save); box.appendChild(b); box.appendChild(save);
-        b.addEventListener('click', async () => {
-          const list = await window.SignalAtlasApp.pickFiles({ title: 'Open an SQLite database', exts: ['sqlite3', 'sqlite', 'db'], multiple: false }).catch(() => []);
-          if (list.length) openDatabase(list[0].path);
-        });
+      if (save && !document.querySelector('.sa-db-actions')) {
+        const box = document.createElement('div');
+        box.className = 'sa-db-actions';
+        save.parentNode.insertBefore(box, save);
+        const button = (id, text, title) => {
+          const b = document.createElement('button');
+          b.id = id; b.className = 'button'; b.type = 'button'; b.textContent = text; b.title = title;
+          box.appendChild(b);
+          return b;
+        };
+        button('sa-fit-all', 'Fit every AP', 'Fit the location of every network the filters keep, a batch at a time, instead of only those near the map view')
+          .addEventListener('click', fitEveryAP);
+        if (info.window) {
+          button('sa-open-db', 'Open database…', 'Open a Signal Atlas database (replaces what is here), or add a logger database (WiGLE columns) or a WiGLE app backup')
+            .addEventListener('click', async () => {
+              const list = await window.SignalAtlasApp.pickFiles({ title: 'Open an SQLite database', exts: ['sqlite3', 'sqlite', 'db'], multiple: false }).catch(() => []);
+              if (list.length) openDatabase(list[0].path);
+            });
+        }
+        box.appendChild(save);
       }
     };
+
+    // "Fit every AP": one background job over every network, in batches (internal/engine/jobs.go
+    // FitAll). Its fits go to the cache the map's nearby fits use, so they appear on the map as the
+    // job goes; the map is refreshed every few seconds while it runs.
+    let fitAll = null;   // the latest snapshot of a fit-all job this page started
+    const fmt = (n) => Number(n || 0).toLocaleString();
+    const relabel = () => {
+      if (!fitAll) return;
+      const t = document.getElementById('job-title'), d = document.getElementById('job-detail');
+      const title = 'Fitting every AP';
+      const detail = fitAll.status === 'failed' ? (fitAll.error || 'failed') :
+        fmt(fitAll.completed) + ' of ' + fmt(fitAll.total) + ' networks · ' + fmt(fitAll.fitted) + ' fitted · ' +
+        fmt(fitAll.skipped) + ' too few observations · ' + fmt(fitAll.cached) + ' already fitted · ' + fitAll.status;
+      if (t && t.textContent !== title) t.textContent = title;
+      if (d && d.textContent !== detail) d.textContent = detail;
+    };
+    new MutationObserver(relabel).observe(document.documentElement, { subtree: true, childList: true, characterData: true });
+    async function followFitAll() {
+      let lastRefresh = 0;
+      for (;;) {
+        try { fitAll = await (await fetch('/api/job', { cache: 'no-store' })).json(); } catch (e) { /* try again */ }
+        if (!fitAll || fitAll.kind !== 'fit-all') { fitAll = null; return; }
+        relabel();
+        const doneNow = fitAll.status !== 'running';
+        if (doneNow || Date.now() - lastRefresh > 6000) {
+          lastRefresh = Date.now();
+          try { if (typeof window.scheduleAreaEstimates === 'function') window.scheduleAreaEstimates(); } catch (e) { /* the page will catch up */ }
+          try { if (typeof window.loadDatabaseInfo === 'function') window.loadDatabaseInfo(); } catch (e) { /* ditto */ }
+        }
+        const b = document.getElementById('sa-fit-all');
+        if (b) b.disabled = !doneNow;
+        if (doneNow) { setTimeout(() => { fitAll = null; }, 15000); return; }
+        await sleep(1000);
+      }
+    }
+    async function fitEveryAP() {
+      if (typeof window.areaQuery !== 'function') return;
+      const nearby = document.getElementById('nearby-networks');
+      if (nearby && !nearby.checked) { nearby.checked = true; nearby.dispatchEvent(new Event('change', { bubbles: true })); }
+      try {
+        const q = window.areaQuery();
+        q.delete('bbox'); q.delete('zoom');
+        fitAll = await post('/api/app/fit-all?' + q.toString());
+        if (typeof window.pollJob === 'function') window.pollJob();
+        followFitAll();
+      } catch (err) { alert("Couldn't start fitting: " + err.message); }
+    }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => ready.then(addControls)); else ready.then(addControls);
 
     // drop a CSV survey or a database anywhere on the explorer

@@ -12,6 +12,7 @@ import (
 
 	"signal-atlas/internal/atlas"
 	"signal-atlas/internal/db"
+	"signal-atlas/internal/engine"
 	"signal-atlas/internal/py"
 )
 
@@ -20,6 +21,7 @@ func main() {
 	store := flag.String("store", "benchstore", "store folder to create")
 	fits := flag.Int("fits", 200, "radios to fit in the fit test")
 	export := flag.String("export", "", "also time writing the store as a Graphite-format SQLite file here")
+	fitAll := flag.Duration("fitall", 0, "run \"Fit every AP\" for this long and report its rate and peak memory")
 	flag.Parse()
 	os.RemoveAll(*store)
 	a, err := atlas.Open(*store)
@@ -45,6 +47,10 @@ func main() {
 	var ms runtime.MemStats
 	runtime.ReadMemStats(&ms)
 	fmt.Printf("memory in use with the store open: %.1f GB\n", float64(ms.HeapInuse)/1e9)
+	if *fitAll > 0 {
+		benchFitAll(a, *fitAll, ms.HeapInuse)
+		return
+	}
 
 	c, put, _ := a.Conn(nil)
 	defer put()
@@ -117,4 +123,31 @@ func main() {
 		fmt.Printf("open SQLite database: %d rows in %.1fs = %.1f million rows/minute\n", n, el, float64(n)/el*60/1e6)
 		b.Close()
 	}
+}
+
+// benchFitAll runs the "Fit every AP" job for a while, sampling memory, then cancels it.
+func benchFitAll(a *atlas.Atlas, d time.Duration, base uint64) {
+	j := engine.NewJobs(a)
+	t := time.Now()
+	if _, err := j.FitAll(py.Params{"min_rssi": {"-100"}}); err != nil {
+		panic(err)
+	}
+	fmt.Printf("fit every AP: listed in %.1fs\n", time.Since(t).Seconds())
+	var peak uint64
+	var ms runtime.MemStats
+	for time.Since(t) < d && j.Running() {
+		time.Sleep(500 * time.Millisecond)
+		runtime.ReadMemStats(&ms)
+		peak = max(peak, ms.HeapInuse)
+	}
+	s := j.Snapshot()
+	el := time.Since(t).Seconds()
+	j.Cancel()
+	for j.Running() {
+		time.Sleep(100 * time.Millisecond)
+	}
+	done, total := int64(s["completed"].(int)), int64(s["total"].(int))
+	fmt.Printf("fit every AP: %d of %d networks in %.0fs = %.0f networks/minute (%v fitted, %v too few), %.0f minutes for all\n",
+		done, total, el, float64(done)/el*60, s["fitted"], s["skipped"], float64(total)/(float64(done)/el)/60)
+	fmt.Printf("fit every AP: peak memory %.2f GB, %.2f GB above the open store\n", float64(peak)/1e9, float64(peak-min(peak, base))/1e9)
 }

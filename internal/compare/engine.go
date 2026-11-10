@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"signal-atlas/internal/drivedb"
 	"sort"
 	"strings"
 	"sync"
@@ -87,6 +88,17 @@ func (e *Engine) Handle(m *Message) {
 			if dup {
 				errs = append(errs, map[string]any{"file": fl.Name, "msg": "Already added."})
 				continue
+			}
+			if fl.Path != "" && drivedb.IsDatabase(fl.Path) {
+				// a logger's database (or a Drive database, a WiGLE app backup): read as the CSV log
+				// it converts to, kept in the session's folder so exports can read its lines again
+				os.MkdirAll(e.Tmp, 0o755)
+				tmp := filepath.Join(e.Tmp, fmt.Sprintf("db-%d-%s.csv", time.Now().UnixNano(), sanitize(fl.Name)))
+				if _, _, _, cerr := drivedb.ToCSV(fl.Path, tmp, "signal-atlas", true, nil); cerr != nil {
+					errs = append(errs, map[string]any{"file": fl.Name, "msg": cerr.Error()})
+					continue
+				}
+				fl.Path = tmp
 			}
 			f, perr := e.parseFile(fl.Name, fl.Size, fl.Path, dataOrNil(fl), i, len(m.Files))
 			if perr != nil {

@@ -1,6 +1,6 @@
 # Signal Atlas
 
-A desktop app for Windows, macOS and Linux, for wardriving data too big for the browser. It has two
+A desktop app for Windows, macOS and Linux, for wardriving data too big for the browser. It has three
 tools:
 
 - **Wardrive Compare**, by **[Champ](https://github.com/TheChampCodes)**. Drop WiGLE CSV logs from any logger and compare drives on the road they
@@ -9,6 +9,14 @@ tools:
 - **Signal Atlas explorer**, by **[Graphite](https://github.com/GraphiteCA)**. Import whole CSV surveys or open SQLite databases, filter by SSID, MAC, band,
   date and signal, and fit where each network's access point is. It supports one fit per radio or
   one shared location per SSID, nearby fits as you pan, and pinned date-range comparisons.
+- **Drive database.** Collect every log and database into one SQLite file on your PC, without
+  duplicate sightings, and export it all as WiGLE CSV: in one file, one per day, or as a copy.
+
+**Which files.** Every tool takes plain **WiGLE CSV logs** from any logger, and **WarHog's database
+files**: the per-day `wardrive_YYYY_MM_DD.sqlite3` files a WarHog Core writes to its SD card, copied
+to your PC, or a database saved from warhog.app. Any SQLite file whose tables have WiGLE's columns
+(`MAC`, `CurrentLatitude`, `CurrentLongitude`, …) works the same way. Rows logged before the GPS had
+a fix are left out where a position is needed.
 
 It runs in its own window and does not open a browser. Your data never leaves the computer, and the
 app is dark-themed throughout.
@@ -35,7 +43,7 @@ Files are read where they are on disk. Drop logs on the window, or use **Choose 
 system's Save dialog. Each tool has a **Home** link back to the start page.
 
 **SQLite databases.** In the explorer, **Open database…** (or dropping the file on the window)
-takes two kinds of file:
+takes three kinds of file:
 
 - **A Signal Atlas database**, the file **Save SQLite database** writes, or one made by Graphite's
   Python. It replaces what the explorer holds, with its saved estimates and comparisons, after
@@ -43,6 +51,25 @@ takes two kinds of file:
 - **A WiGLE Android app database backup.** Its Wi-Fi sightings are added like
   a CSV import. Bluetooth and cell sightings are left out, and rows recorded before a GPS fix count
   as invalid.
+- **A WarHog database file**, or any SQLite file with WiGLE's columns (a Drive database too). Its
+  Wi-Fi sightings with a GPS position are added like a CSV import.
+
+**Drive database.** Make a new Drive database (one `.sqlite3` file wherever you choose) or open one,
+then add files with **Add logs and databases…** or by dropping them on the window. It takes WiGLE
+CSV logs, WarHog's day files and other SQLite files with WiGLE's columns, WiGLE Android app backups,
+Signal Atlas databases and other Drive databases. A sighting already in the database is skipped,
+whichever file it came from: the same device seen at the same time and place, with the same signal,
+by the same node. A file added before is skipped whole. **Export everything** writes one WiGLE CSV,
+one CSV per day (`wigle_YYYY-MM-DD.csv` in a folder you pick), or a compact copy of the database.
+Files are read where they are and nothing is uploaded; the Drive database opened last opens again
+next time. The sightings are kept as the text the logs had, in a table any SQLite tool can read.
+
+**Fit every AP.** The explorer normally fits access points near the map view as you pan. **Fit every
+AP** fits every network the current filters keep, as one background job. It works through them a
+batch of 256 networks at a time, saves each fit as it finishes and shows them on the map as it goes,
+so memory stays flat on any size of survey. **Cancel job** keeps what is done, and running it again
+skips networks that already have a fit. A zoomed-out map shows an even sample of up to 1,500 fits;
+zoom in to see every fit in an area.
 
 **The map** opens where you are when the system will say. That means Windows with location
 services on, and macOS after you allow it. Otherwise it opens where you last left it, or on the
@@ -70,6 +97,10 @@ Measured on a 16-core PC with 64 GB of memory.
 | Explorer CSV import | 53–55 million rows a minute (50 million rows in 56 s) |
 | Wardrive Compare, add and analyse | 76 million rows a minute |
 | Explorer, opening a saved SQLite database | about 42 million rows a minute |
+| Explorer, Fit every AP | about 13,000 networks a minute; 5 million rows (130,000 networks) in about 10 minutes, memory flat |
+| Drive database, adding logs | about 18 million rows a minute, the same at 10 million rows; under 0.2 GB of memory |
+| Drive database, adding a file already in it | about 50 million rows a minute (every row a duplicate) |
+| Drive database, exporting WiGLE CSV | about 58 million rows a minute, one file or one per day |
 | Explorer queries | under 0.6 s at 10 million rows, under 3 s at 50 million |
 | AP location fits | about 10,700 radios a minute |
 
@@ -87,10 +118,11 @@ engine through the window's own origin, and nothing listens on the network.
 | `python/` | Graphite's Signal Atlas as he wrote it: the Python package, its tests, and the explorer pages (`python/templates/`) that the app shows. |
 | `internal/compare` | Compare's analysis in Go, ported line for line from the worker in `web/compare.html`. |
 | `internal/atlas` | Signal Atlas in Go, ported from Graphite's Python: filters, queries, the location model and its grid search, fit groups, area estimates, comparisons. |
+| `internal/drivedb` | The Drive database: reading every kind of log and database, combining without duplicates, exporting. Compare and the explorer use its readers to take database files as the CSV logs they convert to. |
 | `internal/obs` | The column store that holds the explorer's observations. |
 | `internal/engine` | The local server: Signal Atlas's API, background jobs, compare sessions, native dialogs, saving exports, the map tile cache. |
 | `internal/py`, `internal/pycsv` | Python's behaviour where results depend on it: `json.dumps` text for cache keys and group hashes, `float()` and `int()`, the `csv` module's record splitting. |
-| `ui/` | The home page and the bridge script loaded into each page. |
+| `ui/` | The home page, the Drive database page, and the bridge script loaded into each page. |
 | `packaging/`, `scripts/release.py` | The app icon, the Windows manifest, the Linux build container and desktop entry, the macOS app bundle, and the script that builds releases. |
 
 Graphite's Python keeps observations in SQLite with an R-tree and six indexes, which spends minutes

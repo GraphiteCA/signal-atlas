@@ -13,6 +13,7 @@ import (
 
 	"signal-atlas/internal/atlas"
 	"signal-atlas/internal/compare"
+	"signal-atlas/internal/drivedb"
 	"signal-atlas/internal/py"
 )
 
@@ -216,6 +217,9 @@ func (s *Server) appGet(w http.ResponseWriter, r *http.Request, p string, params
 		fmt.Sscan(params.First("size", "0"), &size)
 		sendJSON(w, map[string]any{"path": s.drops.find(params.First("name", ""), size, 1500*time.Millisecond)}, 200)
 		return nil
+	case p == "/api/app/drives/status":
+		sendJSON(w, s.drv.status(), 200)
+		return nil
 	case strings.HasPrefix(p, "/api/app/compare/") && strings.HasSuffix(p, "/next"):
 		cs := s.cmp.get(strings.TrimSuffix(strings.TrimPrefix(p, "/api/app/compare/"), "/next"))
 		if cs == nil {
@@ -234,6 +238,8 @@ func (s *Server) appPost(w http.ResponseWriter, r *http.Request, p string, param
 	case p == "/api/app/compare/new":
 		sendJSON(w, map[string]any{"id": s.cmp.create().id}, 200)
 		return nil
+	case strings.HasPrefix(p, "/api/app/drives/"):
+		return s.drv.post(w, r, strings.TrimPrefix(p, "/api/app/drives/"))
 	case strings.HasPrefix(p, "/api/app/compare/"):
 		rest := strings.TrimPrefix(p, "/api/app/compare/")
 		id, action, _ := strings.Cut(rest, "/")
@@ -336,6 +342,14 @@ func (s *Server) appPost(w http.ResponseWriter, r *http.Request, p string, param
 		}
 		sendJSON(w, map[string]any{"saved": true, "path": dest}, 200)
 		return nil
+	case p == "/api/app/fit-all" && r.Method == http.MethodPost:
+		// every network the explorer's filters keep, fitted in batches as a background job
+		job, err := s.Jobs.FitAll(py.ParseQs(r.URL.RawQuery))
+		if err != nil {
+			return err
+		}
+		sendJSON(w, job, 202)
+		return nil
 	case p == "/api/app/database-kind" || p == "/api/app/open-database":
 		// an SQLite file on this computer (picked in the file dialog, or dropped on the window)
 		body, err := readJSON(r, 1<<16)
@@ -348,18 +362,33 @@ func (s *Server) appPost(w http.ResponseWriter, r *http.Request, p string, param
 		}
 		kind, err := atlas.DatabaseKind(path)
 		if err != nil {
-			return err
+			// a logger's database (WarHog's day files, a Drive database): its rows are imported
+			// as the WiGLE CSV log they convert to, added to what the explorer holds
+			if k, derr := drivedb.Detect(path); derr == nil && (k == drivedb.KindTables || k == drivedb.KindDrive) {
+				kind, err = KindLogger, nil
+			} else {
+				return err
+			}
 		}
 		if p == "/api/app/database-kind" {
 			var have int64
 			for _, sg := range s.Atlas.Obs.State().Segs {
 				have += int64(sg.N)
 			}
-			sendJSON(w, map[string]any{"kind": kind, "name": filepath.Base(path), "observations": atlas.Count(path, kind), "store_observations": have}, 200)
+			n := int64(0)
+			if kind != KindLogger {
+				n = atlas.Count(path, kind)
+			}
+			sendJSON(w, map[string]any{"kind": kind, "name": filepath.Base(path), "observations": n, "store_observations": have}, 200)
 			return nil
 		}
 		skip, _ := body["skip_invalid"].(bool)
-		job, err := s.Jobs.OpenDatabase(path, kind, skip)
+		var job map[string]any
+		if kind == KindLogger {
+			job, err = s.Jobs.ImportLoggerDB(path, filepath.Join(s.o.Data, "uploads"), skip)
+		} else {
+			job, err = s.Jobs.OpenDatabase(path, kind, skip)
+		}
 		if err != nil {
 			return err
 		}

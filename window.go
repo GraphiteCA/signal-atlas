@@ -2,9 +2,15 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"log"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
+	"time"
 
 	"signal-atlas/internal/engine"
 
@@ -59,7 +65,30 @@ func (h *host) ShowFolder(dir string) {
 
 func (h *host) OpenURL(url string) { wr.BrowserOpenURL(h.ctx, url) }
 
+func (h *host) PickFolder(title string) (string, error) {
+	return wr.OpenDirectoryDialog(h.ctx, wr.OpenDialogOptions{Title: title, CanCreateDirectories: true})
+}
+
+// logTo sends the program's messages, and a crash report if it ever crashes, to signal-atlas.log
+// in the data folder: a windowed program has no console to show them.
+func logTo(dir string) {
+	os.MkdirAll(dir, 0o755)
+	path := filepath.Join(dir, "signal-atlas.log")
+	if st, err := os.Stat(path); err == nil && st.Size() > 4<<20 {
+		os.Rename(path, path+".old")
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return
+	}
+	fmt.Fprintf(f, "\n==== Signal Atlas %s started %s\n", Version, time.Now().Format(time.RFC3339))
+	os.Stderr = f
+	log.SetOutput(f)
+	debug.SetCrashOutput(f, debug.CrashOptions{})
+}
+
 func runWindow(opts engine.Options) error {
+	logTo(opts.Data)
 	h := &host{}
 	opts.Host = h
 	// the pages' origin: http://wails.localhost on Windows (WebView2), wails://wails on macOS

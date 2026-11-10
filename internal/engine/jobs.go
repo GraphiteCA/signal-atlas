@@ -4,11 +4,13 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"os"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"sync/atomic"
 
 	"signal-atlas/internal/atlas"
+	"signal-atlas/internal/drivedb"
 	"signal-atlas/internal/py"
 )
 
@@ -21,6 +23,9 @@ type Jobs struct {
 	cancelled atomic.Bool
 	Threads   int
 }
+
+// NewJobs is a job runner for a store (the benchmark uses it; the server makes its own).
+func NewJobs(a *atlas.Atlas) *Jobs { return newJobs(a) }
 
 func newJobs(a *atlas.Atlas) *Jobs {
 	return &Jobs{a: a, state: map[string]any{"id": nil, "status": "idle", "kind": nil}, Threads: max(1, runtime.NumCPU()-2)}
@@ -131,6 +136,160 @@ func (j *Jobs) OpenDatabase(path, kind string, skip bool) (map[string]any, error
 			return nil
 		}, say)
 	})
+}
+
+// KindLogger is the database kind of a logger's database (tables with WiGLE's columns).
+const KindLogger = "logger"
+
+// ImportLoggerDB imports a logger's database (WarHog's day files, a Drive database) into the
+// explorer: its sightings with a GPS position are written as a WiGLE CSV log, which is imported
+// exactly as a CSV survey is. Importing the same database again is spotted as a duplicate.
+func (j *Jobs) ImportLoggerDB(path, tmpDir string, skip bool) (map[string]any, error) {
+	return j.start("import", func() (any, error) {
+		os.MkdirAll(tmpDir, 0o755)
+		tmp := filepath.Join(tmpDir, "db-"+newHex()+".csv")
+		defer os.Remove(tmp)
+		j.update(map[string]any{"stage": "Reading the database", "completed": 0, "invalid": 0, "bytes_read": 0, "bytes_total": 1})
+		_, _, noPosition, err := drivedb.ToCSV(path, tmp, "signal-atlas", true, func(rows, done, total int64) {
+			j.update(map[string]any{"bytes_read": done, "bytes_total": max(total, 1)})
+		})
+		if err != nil {
+			return nil, err
+		}
+		if j.isCancelled() {
+			return nil, py.Errorf("Import cancelled; nothing was added")
+		}
+		r, err := j.a.ImportCSV(tmp, skip, func(valid, invalid, read, total int64) error {
+			if j.isCancelled() {
+				return py.Errorf("Import cancelled; changes rolled back")
+			}
+			j.update(map[string]any{"completed": valid, "invalid": invalid, "bytes_read": read, "bytes_total": total})
+			return nil
+		}, filepath.Base(path), func(stage string) { j.update(map[string]any{"stage": stage}) })
+		if r != nil {
+			r["no_position_rows"] = noPosition
+		}
+		return r, err
+	})
+}
+
+// fitAllBatch is how many networks FitAll lists, checks and fits at a time: enough to keep every
+// core busy, few enough that a store of millions of networks never holds more than this in hand.
+const fitAllBatch = 256
+
+// FitAll fits every network the explorer's filters keep, as the map's nearby fits would, a batch
+// at a time. Each fit is saved as it finishes, so a cancel keeps what is done and running it again
+// skips networks that already have a fit.
+func (j *Jobs) FitAll(p py.Params) (map[string]any, error) {
+	if j.Running() {
+		return nil, py.Errorf("Another background job is running; wait or cancel it first")
+	}
+	individual := p.Is("individual", "1")
+	shared := !individual || p.Is("shared", "1")
+	scoped, sampleKey, exactKey, targets, err := j.a.AllTargets(p)
+	if err != nil {
+		return nil, err
+	}
+	return j.start("fit-all", func() (any, error) {
+		total := len(targets)
+		j.update(map[string]any{"total": total, "completed": 0, "fitted": 0, "skipped": 0, "cached": 0})
+		var fitted, skipped, cached atomic.Int64
+		for start := 0; start < total; start += fitAllBatch {
+			if j.isCancelled() {
+				break
+			}
+			batch := targets[start:min(total, start+fitAllBatch)]
+			seen := map[string]bool{}
+			var groups []atlas.Group
+			for _, t := range batch {
+				gs, err := j.a.TargetGroups(scoped, t, individual, shared)
+				if err != nil {
+					return nil, err
+				}
+				for _, g := range gs {
+					if k, _ := g["radio_key"].(string); !seen[k] {
+						seen[k] = true
+						groups = append(groups, g)
+					}
+				}
+			}
+			c, put, err := j.a.Conn(nil)
+			if err != nil {
+				return nil, err
+			}
+			have, err := atlas.CachedFits(c, sampleKey, exactKey, groups)
+			put()
+			if err != nil {
+				return nil, err
+			}
+			var todo []atlas.Group
+			for _, g := range groups {
+				if have[g["radio_key"].(string)] {
+					cached.Add(1)
+				} else {
+					todo = append(todo, g)
+				}
+			}
+			err = j.fitPool(todo, scoped, sampleKey, func(status string) {
+				if status == "fitted" {
+					fitted.Add(1)
+				} else {
+					skipped.Add(1)
+				}
+				j.update(map[string]any{"fitted": fitted.Load(), "skipped": skipped.Load()})
+			})
+			if err != nil {
+				return nil, err
+			}
+			j.update(map[string]any{"completed": start + len(batch), "cached": cached.Load()})
+		}
+		return map[string]any{"networks": total, "fitted": fitted.Load(), "skipped": skipped.Load(), "already_fitted": cached.Load()}, nil
+	})
+}
+
+// fitPool fits groups on every core and saves each fit; done hears each fit's status.
+func (j *Jobs) fitPool(groups []atlas.Group, p py.Params, scopeKey string, done func(string)) error {
+	var next atomic.Int64
+	var firstErr error
+	var errMu sync.Mutex
+	var stop atomic.Bool
+	var wg sync.WaitGroup
+	for w := 0; w < max(1, min(j.Threads, len(groups))); w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			c, put, err := j.a.Conn(nil)
+			if err != nil {
+				errMu.Lock()
+				firstErr = err
+				errMu.Unlock()
+				return
+			}
+			defer put()
+			for !j.isCancelled() && !stop.Load() {
+				i := int(next.Add(1)) - 1
+				if i >= len(groups) {
+					return
+				}
+				status, err := j.a.FitAndStore(c, groups[i], p, scopeKey, j.isCancelled)
+				if err != nil {
+					errMu.Lock()
+					if firstErr == nil {
+						firstErr = err
+					}
+					errMu.Unlock()
+					stop.Store(true)
+					return
+				}
+				done(status)
+			}
+		}()
+	}
+	wg.Wait()
+	if firstErr != nil && firstErr != atlas.ErrCancelled {
+		return firstErr
+	}
+	return nil
 }
 
 func (j *Jobs) Estimate(p py.Params, groups []atlas.Group, kind string) (map[string]any, error) {

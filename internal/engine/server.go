@@ -37,6 +37,8 @@ type Host interface {
 	SavePath(title, defaultName, ext string) (string, bool, error)
 	// ShowFolder opens a folder in the file manager.
 	ShowFolder(dir string)
+	// PickFolder asks for a folder ("" when cancelled).
+	PickFolder(title string) (string, error)
 }
 
 // Options configure a Server.
@@ -58,6 +60,7 @@ type Server struct {
 	Jobs    *Jobs
 	cmp     *compareSessions
 	drops   *dropRegistry
+	drv     *drives
 	hostsMu sync.RWMutex
 	hosts   map[string]bool
 	origins map[string]bool
@@ -83,6 +86,7 @@ func New(o Options) (*Server, error) {
 	for _, h := range o.Hosts {
 		s.AllowHost(h)
 	}
+	s.drv = newDrives(s)
 	return s, nil
 }
 
@@ -98,7 +102,7 @@ func (s *Server) AllowHost(h string) {
 func (s *Server) RecordDrop(paths []string) { s.drops.add(paths) }
 
 // Close closes the store.
-func (s *Server) Close() { s.cmp.closeAll(); s.Atlas.Close() }
+func (s *Server) Close() { s.cmp.closeAll(); s.drv.close(); s.Atlas.Close() }
 
 type httpError struct {
 	status int
@@ -188,6 +192,8 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return s.serveFS(w, s.o.UI, "bridge.js", false)
 		case p == "/compare.html" || p == "/compare":
 			return s.serveFS(w, s.o.Compare, "compare.html", true)
+		case p == "/database" || p == "/database.html":
+			return s.serveFS(w, s.o.UI, "database.html", true)
 		case p == "/atlas" || p == "/atlas/":
 			return s.serveFS(w, s.o.Explorer, "explorer.html", true)
 		case explorerAssets[p]:
