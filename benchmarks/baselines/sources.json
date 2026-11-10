@@ -1,0 +1,1090 @@
+{
+  "upstream": {
+    "schema": 1,
+    "head": "6d8833659906faa89b1677424caf5f5cd905c56d",
+    "source_sha256": "34fd5fef935e14560be84d6e70548e787973a7ace8b51979d9a743205446649b",
+    "includes_untracked": true,
+    "role": "upstream",
+    "files": [
+      {
+        "path": "LICENSE",
+        "sha256": "ac92dbd428ae6a561db6c2652b94f99ec57d24d03bd16fb599f863755dfa0304",
+        "bytes": 1107
+      },
+      {
+        "path": "NOTICE.md",
+        "sha256": "83c27916aa7de8d0f9e60ffa4e33617195db8e858aa64da6257bd13c927014f3",
+        "bytes": 1841
+      },
+      {
+        "path": "README.md",
+        "sha256": "cdf24659f0585a9feff706269ceebbe85bef0944fc878e3c2c2866da9a7da031",
+        "bytes": 16267
+      },
+      {
+        "path": "VERSION",
+        "sha256": "c58a749f70f5e1ba5394ebcdbfcfa02fa938c4a173d8e41e6c476a7c8b2acddd",
+        "bytes": 7
+      },
+      {
+        "path": "benchmarks/donorprobe/main.go",
+        "sha256": "8b08f87e4daa0a4643bb56cff05e512a7acaa54b9dd92519fd1f75d44af53566",
+        "bytes": 6062
+      },
+      {
+        "path": "benchmarks/manifests/windows-baseline.json",
+        "sha256": "cae3e72e344cf4f35155b39964bfaf97c4703798edcb8e9e3ca42491a9f6c75e",
+        "bytes": 2375
+      },
+      {
+        "path": "benchmarks/native.js",
+        "sha256": "dbba6643d897d09ea5061d65e9709161dc960b9b72c2f27465324f54db3f279e",
+        "bytes": 6930
+      },
+      {
+        "path": "benchmarks/oracle.py",
+        "sha256": "ed88b04603453f234928ec9c5421b8240f56e7cc719a18f52e99373e7d02499a",
+        "bytes": 1491
+      },
+      {
+        "path": "benchmarks/remaining.py",
+        "sha256": "9c6c0c2feb20e9fa3894cfc419511c196b7902f7cc07f6a48ef9efa83b714ab1",
+        "bytes": 5308
+      },
+      {
+        "path": "benchmarks/run.py",
+        "sha256": "582a26af5be047bb849e3108c1a75f28530b9830ef7b96a88b1c3bd74c8762d6",
+        "bytes": 17520
+      },
+      {
+        "path": "benchmarks/summarize.py",
+        "sha256": "3fddb489458525d30293ab47222a57f250b053105737131ac1e2a99271b29db6",
+        "bytes": 8451
+      },
+      {
+        "path": "benchmarks/test_run.py",
+        "sha256": "33445a6953643fa07d68bc11de2c71786d299c89132c1f182952498c237ebbb2",
+        "bytes": 2766
+      },
+      {
+        "path": "benchmarks/write_report.py",
+        "sha256": "3b53e07a35e35768ae6260f746e63c4f682e6bb5c808bffdfa280e9901b7c17a",
+        "bytes": 12827
+      },
+      {
+        "path": "cmd/baseline/main.go",
+        "sha256": "dff1e4cc3a6d62e9125a7cdc7420224ce7b9544e62ce7224be08a38f1d1753e7",
+        "bytes": 11445
+      },
+      {
+        "path": "cmd/baseline/main_test.go",
+        "sha256": "621ad4b4575b6ef52e27ff1d8f68c692e674ed750f59a65764c1bd9e929ab5a4",
+        "bytes": 941
+      },
+      {
+        "path": "cmd/bench/main.go",
+        "sha256": "bf52b1beca6616f5c9698ae0fe8d8f601b62b5ac470f296aca9dd1a9a948eb03",
+        "bytes": 5488
+      },
+      {
+        "path": "cmd/benchcompare/main.go",
+        "sha256": "4d9981480b5db4604e07b6bcc26b59860052ffd01db7ec62e6b041c610168e02",
+        "bytes": 1515
+      },
+      {
+        "path": "cmd/benchdrive/main.go",
+        "sha256": "61c83307ea80bc576468b4c1e165cc486eec7585015b535dea67bb63bb23fa84",
+        "bytes": 2483
+      },
+      {
+        "path": "cmd/controlbench/main.go",
+        "sha256": "61894156a98ee3a49bd63a9736a7a99f9a5906f924e63a90b43b827c12ac9eb9",
+        "bytes": 5584
+      },
+      {
+        "path": "cmd/gensurvey/main.go",
+        "sha256": "2c19f31d1eea4163200562136addb1400e20f196873217e5f12bfba38fbf9c31",
+        "bytes": 2999
+      },
+      {
+        "path": "cmd/nativebench/main.go",
+        "sha256": "5f970646105868feb4c258e5befb00e118d59e4c986132f5d7540e41a8c5f8eb",
+        "bytes": 6079
+      },
+      {
+        "path": "cmd/parity/main.go",
+        "sha256": "4a56b8c2d7bddf1cd85166e33f5eef1ece6e46bc6ccf41045e941291eeb7a44b",
+        "bytes": 375
+      },
+      {
+        "path": "go.mod",
+        "sha256": "97357fa8f3e5a57e4d8f78d7f4785e75b0ae2e396d487f85d9705812d9d8d7f4",
+        "bytes": 1955
+      },
+      {
+        "path": "go.sum",
+        "sha256": "397c337245712089a8915a206eb21dc24c440d8546647d0ccc39c4c7f73a8254",
+        "bytes": 10031
+      },
+      {
+        "path": "internal/atlas/area.go",
+        "sha256": "b95923dfcafaf9ff1f4f4c87643e1e953679019702bb87ab3b646d94294ebfdd",
+        "bytes": 10768
+      },
+      {
+        "path": "internal/atlas/export.go",
+        "sha256": "a346d5313cb80b53248910203bb980255bb30103052122cc9e5f51c7e5a16a97",
+        "bytes": 2843
+      },
+      {
+        "path": "internal/atlas/fastfit.go",
+        "sha256": "4a3bd76233b783066263175529bfaa2156a396df4db5ab4af1c1f3cc9d3f024d",
+        "bytes": 3999
+      },
+      {
+        "path": "internal/atlas/fastfit_test.go",
+        "sha256": "0140f0d0a8b624a5a32d8f76864ad4d4fa3692b85bd0d7ad10d8ca8906eb1348",
+        "bytes": 2377
+      },
+      {
+        "path": "internal/atlas/filter.go",
+        "sha256": "694a8007e491695cce9b99148943f5056c51f3e0df5614748788d6407dee2d4e",
+        "bytes": 9279
+      },
+      {
+        "path": "internal/atlas/fit.go",
+        "sha256": "a28c044b65fa50609fcae2b3667b927510bd2c437d7f06ca1e391dc50787c8d9",
+        "bytes": 7068
+      },
+      {
+        "path": "internal/atlas/fitall.go",
+        "sha256": "6b989a8dff6d13643ce3a817417ed4cbab428b823188a676c8749d4207f190c9",
+        "bytes": 4347
+      },
+      {
+        "path": "internal/atlas/fitall_test.go",
+        "sha256": "1fece924bf8dd84cf389eec1d9dae5c9cbaef65f9666c982b2e74d0d5c878d5b",
+        "bytes": 3203
+      },
+      {
+        "path": "internal/atlas/jsonutil.go",
+        "sha256": "819de6cf1cbe90fbac5c5e4d58b43cf30fd2fd327002e5a68c0a55143947c253",
+        "bytes": 1829
+      },
+      {
+        "path": "internal/atlas/mapdata.go",
+        "sha256": "1eba84508c96460858c0e3c5682123a76afe7ffc6046ecb94f5dc76f3981555f",
+        "bytes": 4728
+      },
+      {
+        "path": "internal/atlas/model.go",
+        "sha256": "258da080f7ddd3019fdd0cc5d1076a3f2c5d041a53e051c840c47be9aa0f222e",
+        "bytes": 19655
+      },
+      {
+        "path": "internal/atlas/opendb.go",
+        "sha256": "921eba8ae3cdcd31e58dfecc6a6ea0043e8bbd6e0381272ca45b7df5fb60558d",
+        "bytes": 10914
+      },
+      {
+        "path": "internal/atlas/opendb_test.go",
+        "sha256": "ab0832b4bec6d4bdb829cb4c4c70ea9f91e357d47590d5dd35bc7c69b604a7fc",
+        "bytes": 6264
+      },
+      {
+        "path": "internal/atlas/queries.go",
+        "sha256": "00a669a4a154be7e3ec51398a6ff732b3462fd8305b6c0781fe9e190e172fd73",
+        "bytes": 19518
+      },
+      {
+        "path": "internal/atlas/refit_test.go",
+        "sha256": "ccf496861ce07d845eda000e7c5cc929b76a4af4ffd41b6ff48637a04d761bd4",
+        "bytes": 2623
+      },
+      {
+        "path": "internal/atlas/selection.go",
+        "sha256": "0aa2ef9281c25916f2fa58dda1cea5a5dca9b5f21552a38bbd64e1f383387cab",
+        "bytes": 11833
+      },
+      {
+        "path": "internal/atlas/store.go",
+        "sha256": "78b01794f4b5c03e2d4d37b1303e7de3bd37469928d8729aa51e9f2061eb11fc",
+        "bytes": 17173
+      },
+      {
+        "path": "internal/atlas/survey.go",
+        "sha256": "1b881e9cd2b9745725db5546795f78d8a26135291a23eddb56428a912a278b11",
+        "bytes": 17301
+      },
+      {
+        "path": "internal/compare/analyse.go",
+        "sha256": "726ae79ecd7185c1ca5ddf37f663581b1ea33af1271fc6292f29403ccf68fdf3",
+        "bytes": 22790
+      },
+      {
+        "path": "internal/compare/analyse2.go",
+        "sha256": "31dd02bbf9b6a97d04645da2596f0a4907e5eba2da4d88357d08ea7748a98fe7",
+        "bytes": 13586
+      },
+      {
+        "path": "internal/compare/baseline.go",
+        "sha256": "73eb20d0d87652e3e1699f9c756c869e6e2112b18c82bee609ded03dcb16a9ad",
+        "bytes": 14459
+      },
+      {
+        "path": "internal/compare/compare_test.go",
+        "sha256": "1c0bd6f53b01bf3f8821290cd80d27ec827f42daaa8f0548e672b327250317ed",
+        "bytes": 4721
+      },
+      {
+        "path": "internal/compare/database_test.go",
+        "sha256": "3876997c5c5e0c1d4a4631263b54d6ec5e682295307d554b8ffe51e6b7ae3116",
+        "bytes": 5595
+      },
+      {
+        "path": "internal/compare/engine.go",
+        "sha256": "ad4ccbe2b20abccf1e45f8307b4515a5f55d7d2ee6adfbf7549d5ee87277c4a5",
+        "bytes": 8778
+      },
+      {
+        "path": "internal/compare/jsnum.go",
+        "sha256": "68a707646bea73413314f3b553375d6ce46e1b26ee5a889bd367ed345ce6a79c",
+        "bytes": 3215
+      },
+      {
+        "path": "internal/compare/parse.go",
+        "sha256": "e8dc5c2578510c2347d6c2e6a165473e8ccfa8457ee40a24e7c467ec5f117a6c",
+        "bytes": 11722
+      },
+      {
+        "path": "internal/db/db.go",
+        "sha256": "05510fdab141f9602b9b0078143ffdb0853cd23fdfea122b67d4c2400669d403",
+        "bytes": 6705
+      },
+      {
+        "path": "internal/drivedb/drivedb.go",
+        "sha256": "8f33812620679bb09219af92596873f5d623e90964c64a584ead679d16183255",
+        "bytes": 31246
+      },
+      {
+        "path": "internal/drivedb/drivedb_test.go",
+        "sha256": "0e8d1c10a41380138fbead91fdc0cc1f9d1ac01ea64773967fd0612333d47535",
+        "bytes": 8889
+      },
+      {
+        "path": "internal/engine/app.go",
+        "sha256": "37d767ba405588ac7584a140e47ca40c6f495ce78bdc5dca9a3b9b63f85aa9fa",
+        "bytes": 14250
+      },
+      {
+        "path": "internal/engine/drives.go",
+        "sha256": "af4a27759f28ef99d07de46691b93f197c70e33be7213560f8deb9a58bb55061",
+        "bytes": 7699
+      },
+      {
+        "path": "internal/engine/gpumap.go",
+        "sha256": "e8935cacdd8ed26e258e70ccd5bcbdc1788200954193cee8b6537ed062038715",
+        "bytes": 2586
+      },
+      {
+        "path": "internal/engine/jobs.go",
+        "sha256": "88f41f83acec0b85981d1ac0e57a6d26c522a8905b05497288fd0f97e1c95a92",
+        "bytes": 12027
+      },
+      {
+        "path": "internal/engine/loggerdb_test.go",
+        "sha256": "8571a9f709c6cd24607ecbf22588b3fca14415c3c57047c14e45a19aba372ff2",
+        "bytes": 4084
+      },
+      {
+        "path": "internal/engine/server.go",
+        "sha256": "90c858e6a37161297a2849b16e95f2488eb3b8106b5b55ed3665a9e0dcf7acbe",
+        "bytes": 16416
+      },
+      {
+        "path": "internal/engine/settings.go",
+        "sha256": "438e50e14ff51610eeaaee61e429ab325057c4deb597555607737a5d14229542",
+        "bytes": 8666
+      },
+      {
+        "path": "internal/engine/settings_test.go",
+        "sha256": "e86e5ea360a7d61f59a47973350c14f599b940b11ec095754cd7bcf07aa7fd40",
+        "bytes": 2101
+      },
+      {
+        "path": "internal/engine/tiles.go",
+        "sha256": "192888d29498e84a736349598dc281b63d517e5d802cce684a95ccb153ce6539",
+        "bytes": 2622
+      },
+      {
+        "path": "internal/obs/obs.go",
+        "sha256": "45856b89b9f5755ab9d317a3052c486d1d8adc777f78a0bb1c11dfbdca49488d",
+        "bytes": 21359
+      },
+      {
+        "path": "internal/parity/parity.go",
+        "sha256": "c9d3383efbc72c63ea4b33d654082ee6a5b3b04a00a4407e240793f787c71f6a",
+        "bytes": 4334
+      },
+      {
+        "path": "internal/parity/parity_test.go",
+        "sha256": "53c76f60898bcbd4d9072ceacf24719d6b00011396694e1a0e565d98fff56bab",
+        "bytes": 3541
+      },
+      {
+        "path": "internal/py/py.go",
+        "sha256": "e6ea68b0d052f55c9394651a8a06c17cb61e369b033bd391b1e513730ca42734",
+        "bytes": 12331
+      },
+      {
+        "path": "internal/pycsv/pycsv.go",
+        "sha256": "f9681ee8a15c586aa9946c68a41591c890c7c359a535d0de4d0643d3b8e0c8aa",
+        "bytes": 5661
+      },
+      {
+        "path": "internal/pycsv/pycsv_test.go",
+        "sha256": "87b73f4926860298f21661e30972042b152ca6b9c0f0a06cba3670c5a786563f",
+        "bytes": 1124
+      },
+      {
+        "path": "main.go",
+        "sha256": "03ac6a4e13e66e62947307c5e4f2746854408d0e340522dff22d22ac357e5474",
+        "bytes": 2657
+      },
+      {
+        "path": "main_linux.go",
+        "sha256": "f2689ebee7178a0bf70e7f10f5a95ef6547bf8726f205caa90d58792ed2183a1",
+        "bytes": 318
+      },
+      {
+        "path": "packaging/icon/icon-256.png",
+        "sha256": "f79e18b5f728903e43653c46ec2f967bdf143e4305401f4af682605c761395f7",
+        "bytes": 21839
+      },
+      {
+        "path": "packaging/icon/icon.icns",
+        "sha256": "b020546a5c9ddc62217f435ca67c9225f573321b854089f66af0f2d037261cb1",
+        "bytes": 217270
+      },
+      {
+        "path": "packaging/icon/icon.ico",
+        "sha256": "57006930dfd70c30601643e0be9fcf2f3e776a55ea0e0a37d47161d2ae39d828",
+        "bytes": 44857
+      },
+      {
+        "path": "packaging/icon/icon.png",
+        "sha256": "f735b89bd6e918efc28c105eff8b38e732e51e9cec72e7d1f29bc2cfd51e12e5",
+        "bytes": 91387
+      },
+      {
+        "path": "packaging/icon/make_icon.py",
+        "sha256": "6737de20254bda7922a25376b65bbc50ce3d829d6e53e82b8b5eade4551af44e",
+        "bytes": 1949
+      },
+      {
+        "path": "packaging/linux/build-in-container.sh",
+        "sha256": "0df95ddb89e1ba2725e90bfb27ddea5080cb1b3c16149d1c88da1fad986f18b3",
+        "bytes": 4790
+      },
+      {
+        "path": "packaging/linux/signal-atlas.desktop",
+        "sha256": "a40bacb89fb3d4868263198e50e90f068bb966fd0836f51a4cdfdd894507a0df",
+        "bytes": 262
+      },
+      {
+        "path": "packaging/macos/build.sh",
+        "sha256": "6d5a86ab4bf332300f225c661b42241cac29e99357af1f3f0781942c482d2ede",
+        "bytes": 3361
+      },
+      {
+        "path": "packaging/windows/installer.nsi",
+        "sha256": "8826f982e57cf1611c2b2d92d1ba923d546587dad442f386e8777e358cdcdeca",
+        "bytes": 4644
+      },
+      {
+        "path": "packaging/windows/signal-atlas.exe.manifest",
+        "sha256": "f6cd59c2cd6f80c97be05978b13db520e79ff0bd3daa96e58082b9aa6ed273a8",
+        "bytes": 1346
+      },
+      {
+        "path": "python/README.md",
+        "sha256": "80ec2bc43eb99a4fee9a88ab230c2159b2c25a42e1ad7bba1471b7cbc2fe6992",
+        "bytes": 32290
+      },
+      {
+        "path": "python/START-HERE.txt",
+        "sha256": "2f4e6e9a6570b765cedda9d977a656d0196c4a201b70e0bc839ca3b5f6d8bcf4",
+        "bytes": 1425
+      },
+      {
+        "path": "python/area_estimates.py",
+        "sha256": "abde16394a32a76b9aae1e38c8175c0d569eb28c2fdaa5e5c51fcea9b2a513df",
+        "bytes": 5836
+      },
+      {
+        "path": "python/download_basemap.py",
+        "sha256": "993655b38c0f23532b4ddc3e145f7f4c349bc494970ce85b412ff0c060b76327",
+        "bytes": 6701
+      },
+      {
+        "path": "python/estimate_ap.py",
+        "sha256": "a8f33f620f3283179cb0d39a75538b5a6e97f02fd46d4e6f73742c2dec7eaad0",
+        "bytes": 18266
+      },
+      {
+        "path": "python/import_survey.py",
+        "sha256": "5a9805d6c32d844e83c0380efe4db4de38cad88def65fc28527a7b4e17674990",
+        "bytes": 1204
+      },
+      {
+        "path": "python/plot_observations.py",
+        "sha256": "39048c75f32651e2faf28f1eb2776560ef4042ddb11c844604ae0a84999714ff",
+        "bytes": 9535
+      },
+      {
+        "path": "python/requirements.txt",
+        "sha256": "9b6ceee1a9fb56d8109658d576a754060977f2251fe75f52d1dd07c9cd9483f7",
+        "bytes": 16
+      },
+      {
+        "path": "python/selection_estimates.py",
+        "sha256": "4804bcddb51ea43ba69f12d787290e992b1735020d394cd5691a3de22d245c14",
+        "bytes": 6328
+      },
+      {
+        "path": "python/serve_survey.py",
+        "sha256": "d1685e56fe149e34c3580f5ae627ea10e52ec1257d5f157c4bf51a5d5348610c",
+        "bytes": 21391
+      },
+      {
+        "path": "python/survey.py",
+        "sha256": "0ce5afb89d3e5fe2b206560feecb8da728da31c8d97bd9eac7c35af52e570c32",
+        "bytes": 5769
+      },
+      {
+        "path": "python/survey_data.py",
+        "sha256": "6e65805bb6097bc958f51f3ab8cf93f32a67ae01b1ca6abb49e0f599b5512970",
+        "bytes": 30118
+      },
+      {
+        "path": "python/templates/area_estimates.js",
+        "sha256": "9e8762a349ec87ac579bf141d79771285534780e4d141e87715b22af8d76476e",
+        "bytes": 6590
+      },
+      {
+        "path": "python/templates/estimate_comparison.js",
+        "sha256": "248cc105af02159634957e1883228740420db6bd89bca6ead4178dddfea4e2ff",
+        "bytes": 10406
+      },
+      {
+        "path": "python/templates/explorer.css",
+        "sha256": "556b087fedb9df8112760b9e039155df34a47a67c9a7fd89c9b56960821f5e62",
+        "bytes": 9157
+      },
+      {
+        "path": "python/templates/explorer.html",
+        "sha256": "d3801c150c652b55bfc3bca98627fefa64ce32268fc4e82361f5799206a56a94",
+        "bytes": 11395
+      },
+      {
+        "path": "python/templates/explorer.js",
+        "sha256": "ad3c544b468ae46572e8db64a00b5310ad23d072fe30bc4906e906b1d609eb57",
+        "bytes": 25135
+      },
+      {
+        "path": "python/templates/follow_estimate.js",
+        "sha256": "e3f806cd738599a095c708471e8f2ceb46c0d4079a6f3ea9744959bdaf67833a",
+        "bytes": 2181
+      },
+      {
+        "path": "python/templates/local_basemap.js",
+        "sha256": "21afc9a3e9ef9ade9645701359c651dcf81307305ac1caf75354ff6b69e34a1e",
+        "bytes": 5710
+      },
+      {
+        "path": "python/templates/network_tree.css",
+        "sha256": "c017407d69e11f36274089b2bc404e9e7a924151843739d5197848d5dd5a82d3",
+        "bytes": 4263
+      },
+      {
+        "path": "python/templates/network_tree.js",
+        "sha256": "24138c14bf8df72b3f21ee161605339ae273c0a0187480c2220de24acf79bd1d",
+        "bytes": 11256
+      },
+      {
+        "path": "python/templates/observation_scope.js",
+        "sha256": "d2d05fb4c5a87750ca194b779005ea175be2c857c03a4e1f191582bc534dd8d7",
+        "bytes": 2244
+      },
+      {
+        "path": "python/templates/online_map.js",
+        "sha256": "81a572e0cbef3f2b6bd848161c1d87e7744ef88fdf27210524fb80ac91087b1a",
+        "bytes": 2081
+      },
+      {
+        "path": "python/templates/report_satellite.js",
+        "sha256": "e3d101575350584538edb3a9e3ae9a956fcb78d014627d19cf41a5b4bb21ae4f",
+        "bytes": 1591
+      },
+      {
+        "path": "python/templates/satellite.js",
+        "sha256": "040982a9795c73f523af9feeb25140fde06ab7df3b07767aed85a719f763c354",
+        "bytes": 1418
+      },
+      {
+        "path": "python/templates/survey_map.html",
+        "sha256": "d215fb6176b46c2d8b9f214713557c9159fdf92943746bcea216ea6138d0da0c",
+        "bytes": 47623
+      },
+      {
+        "path": "python/tests/benchmark_survey.py",
+        "sha256": "a3a46f976ab1390e03b3a771856ee6ef8b97b8c95d8a8c605d24dd3576c6596a",
+        "bytes": 3230
+      },
+      {
+        "path": "python/tests/test_analysis.py",
+        "sha256": "9775639abbbb0d514e724c7da165d75493544bd1838bc25fd63e7ca66024e112",
+        "bytes": 9985
+      },
+      {
+        "path": "python/tests/test_area_estimates.py",
+        "sha256": "0d93dd2a6c70d5821f64963828ecfb6251046868a5e51b1c2b341de2b5051a8a",
+        "bytes": 9230
+      },
+      {
+        "path": "python/tests/test_band_assignments.py",
+        "sha256": "1f30416d2295e8b07e34e2139f6085ac769cc227c42c74a6bc753c9de1a59f0a",
+        "bytes": 3463
+      },
+      {
+        "path": "python/tests/test_comparisons.py",
+        "sha256": "50e867c2bf11c6261e69883155fb599fb2c359e589cad5c9077e0eca99e431f5",
+        "bytes": 8936
+      },
+      {
+        "path": "python/tests/test_scoped_estimates.py",
+        "sha256": "be712f7e0e22e64b4447f13f5f7c5a79013d20bcc510b3d5ac6d2b19e3b12cd8",
+        "bytes": 7855
+      },
+      {
+        "path": "python/tests/test_survey.py",
+        "sha256": "54e50aff51833946c488cad3c7302183dc8b0414c26c656f4e49b35d70c86dbb",
+        "bytes": 13982
+      },
+      {
+        "path": "scripts/release.py",
+        "sha256": "af9313334d6d012f2d16435334ed1dcf6c88274c3990572bbf1f2cbf77d888d7",
+        "bytes": 9110
+      },
+      {
+        "path": "test/cases/csv_cases.py",
+        "sha256": "818c446e575ca0e7853afe7820d773dbf5c3b3cbe015019cd951bd1b80071be3",
+        "bytes": 405
+      },
+      {
+        "path": "test/compare/cases.json",
+        "sha256": "79a8d6c7672735c13de427a1d14ea54323b7cb70942286114c07b1e2f41ad0e6",
+        "bytes": 1241
+      },
+      {
+        "path": "test/compare/gen_drives.py",
+        "sha256": "3ea0a245f0c435ba10ff9e438ab586d81a85cbf5e043591fd76747ae7e21bf9d",
+        "bytes": 4463
+      },
+      {
+        "path": "test/compare/ref_compare.js",
+        "sha256": "d41776ee359b726d216725be383700eecf6de2e7a8f8bc2e3884a65c9c13bba6",
+        "bytes": 1910
+      },
+      {
+        "path": "test/parity/gen_survey.py",
+        "sha256": "6a4fbb27e02a60a9ba32c7b3407d6aa7b69bf8432dd695118000b5005881cee0",
+        "bytes": 3125
+      },
+      {
+        "path": "test/parity/ref_atlas.py",
+        "sha256": "7c6c6ff91074a8fae1d1d167b39144c1b422ada4c461c9e3ee4b37fa20ec251f",
+        "bytes": 3430
+      },
+      {
+        "path": "test/parity/scenario.json",
+        "sha256": "07b630c05c29c3ab06b5fe79d7f5fe5e212f0b85289015548e37fa8c90f8efbe",
+        "bytes": 1449
+      },
+      {
+        "path": "ui/bridge.js",
+        "sha256": "340e8b2397cc157927d433692d04698a618ef4a230033f9427a0818416785b37",
+        "bytes": 20759
+      },
+      {
+        "path": "ui/database.html",
+        "sha256": "d28587b9f8246208f2138a1f01ec0af4c4a3c2b0fea2bd75c31a9db7c26530a3",
+        "bytes": 11796
+      },
+      {
+        "path": "ui/index.html",
+        "sha256": "3a8c250d2d8339444de0a9d7eb8eeb4dc7e59ac166ba5fb717fecc6132b6f54d",
+        "bytes": 9277
+      },
+      {
+        "path": "ui/map.html",
+        "sha256": "a6f0ac4a1d9e3a5e3b62115971a570e8daa1ad8963f7f67465c796cbef272be6",
+        "bytes": 10915
+      },
+      {
+        "path": "web/compare.html",
+        "sha256": "7ff2dd90f6f544adf04870677596266259d51f984a5de7a373bbef525825f695",
+        "bytes": 104292
+      },
+      {
+        "path": "window.go",
+        "sha256": "d08f9b7eaf6e3ef62e31c287d034e6209cd595b7c771e6001ec906e8c1524d19",
+        "bytes": 5007
+      }
+    ]
+  },
+  "donor": {
+    "schema": 1,
+    "head": "12ed3d81062195bcc2037fb3a8a5869e113ca5e4",
+    "source_sha256": "4a2ad8099564e57d3c32aad32207cf78aca281ffd07da9bce78d7846f0ff87ee",
+    "includes_untracked": true,
+    "role": "donor",
+    "files": [
+      {
+        "path": "DESKTOP.md",
+        "sha256": "ba49c7916ed795c1c78071fd63a0a7fd03de0c6002576cd35d170e11f1ca1076",
+        "bytes": 19571
+      },
+      {
+        "path": "README.md",
+        "sha256": "dc06e50d246389d56fee5fd42a1a56b981d6e7e360b7995756a9a4b1863ff9c8",
+        "bytes": 33179
+      },
+      {
+        "path": "area_estimates.py",
+        "sha256": "abde16394a32a76b9aae1e38c8175c0d569eb28c2fdaa5e5c51fcea9b2a513df",
+        "bytes": 5836
+      },
+      {
+        "path": "assets.go",
+        "sha256": "454687d9258178c7796fa3246d15cb98a3a54f80813e434a96c6cc5e4639ec36",
+        "bytes": 168
+      },
+      {
+        "path": "cmd/atlasbench/main.go",
+        "sha256": "84234415e5bdcf7023d72a0d6eedd112523797b04ee5dc26a7f595b02dc1f56c",
+        "bytes": 4243
+      },
+      {
+        "path": "cmd/signalatlas/desktop_other.go",
+        "sha256": "4eebf6541af2c4e50153229e49cad7a7ef6fb0796c40b470cc3cdd8df2e404bc",
+        "bytes": 314
+      },
+      {
+        "path": "cmd/signalatlas/desktop_windows.go",
+        "sha256": "7f27b1d757a35291d62b47ead552f4ef6307b23ffde6b2af8c33e50fc92011c2",
+        "bytes": 3773
+      },
+      {
+        "path": "cmd/signalatlas/main.go",
+        "sha256": "b06da3e02d866bf21e59a42979de06ff62f8ff9cbef34c2925822e6bde346dbc",
+        "bytes": 5571
+      },
+      {
+        "path": "cmd/signalatlas/preferences.go",
+        "sha256": "74a8fa13bf0e914cfb1ce71a7589e3459012073458692158aff59c68c22a95e2",
+        "bytes": 2081
+      },
+      {
+        "path": "cmd/signalatlas/preferences_test.go",
+        "sha256": "7ba94a79f448c3380351c340d5bade41edefc69ede0e1f03ff48f0a94552f8bc",
+        "bytes": 1595
+      },
+      {
+        "path": "download_basemap.py",
+        "sha256": "a7f2e460137f19e584d9dbecbd1361329db04be5192ef16b9c2ea9816b965739",
+        "bytes": 6581
+      },
+      {
+        "path": "estimate_ap.py",
+        "sha256": "a8f33f620f3283179cb0d39a75538b5a6e97f02fd46d4e6f73742c2dec7eaad0",
+        "bytes": 18266
+      },
+      {
+        "path": "go.mod",
+        "sha256": "54cda36ec4512ca56d25de0fa3807f53e86f9ac413505aae9940be1aa5a1bcb2",
+        "bytes": 1418
+      },
+      {
+        "path": "go.sum",
+        "sha256": "d49e8c9080a7545717f917c48fc784ebac8aedf636f13aca8088e6a584610edf",
+        "bytes": 7332
+      },
+      {
+        "path": "import_survey.py",
+        "sha256": "bcec2705aa01e5693eb884cc22f1987fb26d032b00055eac7e1b2860a2a4317a",
+        "bytes": 1177
+      },
+      {
+        "path": "internal/atlas/admin.go",
+        "sha256": "f91deff2909d0a4275662f6f714fa68c71664351c57df606315ce99157ff616a",
+        "bytes": 4642
+      },
+      {
+        "path": "internal/atlas/atlas_test.go",
+        "sha256": "66865c5cf095c006721effd3a267133b730f5c72c27be3b16d59987d23ca6748",
+        "bytes": 13501
+      },
+      {
+        "path": "internal/atlas/database_host.go",
+        "sha256": "cc5f2ba0f904f73bbbdf44154d6760c2f24202cf060e1ae54afa380feeff40a7",
+        "bytes": 10870
+      },
+      {
+        "path": "internal/atlas/database_host_test.go",
+        "sha256": "bb518099127ceb2ae96dc4dbafaa609d7da2df8742c5c5c23bc89fa470c28600",
+        "bytes": 13117
+      },
+      {
+        "path": "internal/atlas/events.go",
+        "sha256": "dfaa8637614fc261a18936e37d58365530618afd57180b3299dcc2ac24656e9c",
+        "bytes": 1222
+      },
+      {
+        "path": "internal/atlas/filters.go",
+        "sha256": "4ddfe5a2fa9769cfdd75544cca741f3b3ce242ae542e5c1e3e7c206f4d07fc1b",
+        "bytes": 5512
+      },
+      {
+        "path": "internal/atlas/fit.go",
+        "sha256": "be968d30b885a3b9db3354ce80afdc6f174ab974621904ae8fbee2c89dfd7fad",
+        "bytes": 18757
+      },
+      {
+        "path": "internal/atlas/fit_batch.go",
+        "sha256": "47114034739c7d52eb3f47b53ca088f0c415eec61aae37ae9386da6ab86ae373",
+        "bytes": 4235
+      },
+      {
+        "path": "internal/atlas/import.go",
+        "sha256": "ce644e430d35531913896befb2ef741da9723b873b457ed085682429defab9bc",
+        "bytes": 9366
+      },
+      {
+        "path": "internal/atlas/jobs.go",
+        "sha256": "f7af88765328612e68a6d77f7cad4d77bb3702851d8c1810cb231b15790987c1",
+        "bytes": 2809
+      },
+      {
+        "path": "internal/atlas/map_display.go",
+        "sha256": "07bb15803255f356080b29e138dcedf3c73142891eb9aded9c78989034fb4224",
+        "bytes": 1852
+      },
+      {
+        "path": "internal/atlas/map_display_test.go",
+        "sha256": "933bc2226ee821b422598cc1ff44962d8bac65eb095e7eb30037cd3963a0469d",
+        "bytes": 2405
+      },
+      {
+        "path": "internal/atlas/nearby_test.go",
+        "sha256": "4f79fdd80f9af6d594c8b63d725fcd81e3da6736db5506b5f4c0082c5be32774",
+        "bytes": 8110
+      },
+      {
+        "path": "internal/atlas/precompute.go",
+        "sha256": "32822604d508b97ee4cb879c11a38c51b62e3e77b6415ce75a09e1762547c4d8",
+        "bytes": 10763
+      },
+      {
+        "path": "internal/atlas/precompute_test.go",
+        "sha256": "5078fd021a320b2d000f466c40a00c545ea4f8fa92a2c4ad51d41002a13160d2",
+        "bytes": 11903
+      },
+      {
+        "path": "internal/atlas/queries.go",
+        "sha256": "704b71d6cf58ef9ade4dfb5b096e6c48bd756e3fe2060fee8a6ffa5d7b868f92",
+        "bytes": 7120
+      },
+      {
+        "path": "internal/atlas/server.go",
+        "sha256": "03226cc658d6af62c8b6e5f0f2d6a0ce7de95cebfc3aedce27a5a783e8a1566b",
+        "bytes": 14631
+      },
+      {
+        "path": "internal/atlas/sql_browser.go",
+        "sha256": "e89da72bfd9c62f8457cf70569d088805a59824d8a6b7a0ae1cfe6d2c7d45fed",
+        "bytes": 6183
+      },
+      {
+        "path": "internal/atlas/sql_browser_test.go",
+        "sha256": "36675946457580679ddad93aff65ddbabc7ac592fe3cbad542bb000a47f369c9",
+        "bytes": 7070
+      },
+      {
+        "path": "internal/atlas/store.go",
+        "sha256": "c7b35af7d8177853b7b653fb91ec255472ae7fc545852f475fd9ab0fea824733",
+        "bytes": 6375
+      },
+      {
+        "path": "internal/atlas/survey_summary.go",
+        "sha256": "c0b9870cfab5d989943b86cc30cfcc73983fda26710c40bd144e48addd2e1b2c",
+        "bytes": 1553
+      },
+      {
+        "path": "internal/atlas/survey_summary_test.go",
+        "sha256": "518b6dd8e415f4b12babae953d73dcb61f90fa26dd05676be91a63c7cc0b589e",
+        "bytes": 2142
+      },
+      {
+        "path": "plot_observations.py",
+        "sha256": "b6580581d07eb14f3f4b42cafe11892e71f1b9897668ce23a531eba3b6c0438f",
+        "bytes": 9403
+      },
+      {
+        "path": "requirements.txt",
+        "sha256": "105a25c9a24a53a42b52ccc93f930e1ea4a88b42372d440ae7c1b82c3a8b2c64",
+        "bytes": 15
+      },
+      {
+        "path": "scripts/build-desktop.ps1",
+        "sha256": "b85de7d36a41e8461af8422ae69e51477280358ee22fd2f6fc0cb810e1b3e3cd",
+        "bytes": 754
+      },
+      {
+        "path": "scripts/database-switch.test.cjs",
+        "sha256": "0ab249050afae9f3389e1b351dcd342a21f759db1b0e8ae895ece28e9d1d3f97",
+        "bytes": 5153
+      },
+      {
+        "path": "scripts/map-clustering.test.cjs",
+        "sha256": "d9d6b7965661afe7b11045d7c57b0d57015faeb76a2a88c385f313a03edaa8d2",
+        "bytes": 7848
+      },
+      {
+        "path": "scripts/map-display.test.cjs",
+        "sha256": "4e3c6cdd68237196b3a6b888205fb168fb88f460c968dc482f9775b79c99cb6d",
+        "bytes": 4539
+      },
+      {
+        "path": "scripts/nearby.test.cjs",
+        "sha256": "9d5d42168566c4f1c08248928ec93767a2c7ebeea19fad8036eba4e6646307da",
+        "bytes": 7770
+      },
+      {
+        "path": "scripts/run-desktop.ps1",
+        "sha256": "27c04d489714f5a66e7ed3c6543050edd73f90e1a1f6ccaa6dfbe5be0a5c6d5a",
+        "bytes": 977
+      },
+      {
+        "path": "scripts/sql-browser.test.cjs",
+        "sha256": "d1218ff88126ec183ebdd8e7a2943a46af7b4f6a8e9be237c0f4434649f48530",
+        "bytes": 4496
+      },
+      {
+        "path": "scripts/survey-summary.test.cjs",
+        "sha256": "d5c2b518a2eb2ce016408e8a7d8f67e86c74bd1e0a0b6635dc238a4f605b7103",
+        "bytes": 2249
+      },
+      {
+        "path": "selection_estimates.py",
+        "sha256": "4804bcddb51ea43ba69f12d787290e992b1735020d394cd5691a3de22d245c14",
+        "bytes": 6328
+      },
+      {
+        "path": "serve_survey.py",
+        "sha256": "d1685e56fe149e34c3580f5ae627ea10e52ec1257d5f157c4bf51a5d5348610c",
+        "bytes": 21391
+      },
+      {
+        "path": "survey.py",
+        "sha256": "0ce5afb89d3e5fe2b206560feecb8da728da31c8d97bd9eac7c35af52e570c32",
+        "bytes": 5769
+      },
+      {
+        "path": "survey_data.py",
+        "sha256": "6e65805bb6097bc958f51f3ab8cf93f32a67ae01b1ca6abb49e0f599b5512970",
+        "bytes": 30118
+      },
+      {
+        "path": "templates/admin.css",
+        "sha256": "56b6a27dedcdeb67af4b0fccb4d8dea19f0f42272c9d36bf119bb29a04198df7",
+        "bytes": 2326
+      },
+      {
+        "path": "templates/admin.html",
+        "sha256": "6b6572afebc7b6b78a2ead4fbe68bf44cb83cae45ed49fcc77cbfffd0064688c",
+        "bytes": 8660
+      },
+      {
+        "path": "templates/admin.js",
+        "sha256": "557d6d2ae9707493984162a73502bd4051882380efe6730b6516e23a33d996d8",
+        "bytes": 9540
+      },
+      {
+        "path": "templates/area_estimates.js",
+        "sha256": "efed6e9c092a45bfffbd900a839abe5020080082f6b5b06eede9840c294dd212",
+        "bytes": 9390
+      },
+      {
+        "path": "templates/estimate_comparison.js",
+        "sha256": "18928c41ec49bc07235429ee2ce3cb873763d49cad5b94a659415f83d89bc4b0",
+        "bytes": 11036
+      },
+      {
+        "path": "templates/explorer.css",
+        "sha256": "556b087fedb9df8112760b9e039155df34a47a67c9a7fd89c9b56960821f5e62",
+        "bytes": 9157
+      },
+      {
+        "path": "templates/explorer.html",
+        "sha256": "f988d4c357062b2ca7c9e43b554136745d05f9c3a582bc1597ba2fb5ae59c4d1",
+        "bytes": 11393
+      },
+      {
+        "path": "templates/explorer.js",
+        "sha256": "5e6a90d5866222a22e74a0a417d98b1d9426c289f5c1a48a3c759457dcddca6f",
+        "bytes": 25466
+      },
+      {
+        "path": "templates/follow_estimate.js",
+        "sha256": "328955591a780b42444ed66f6d35847a8e9d5b24e935c8e5b9ae0befe73e574a",
+        "bytes": 2146
+      },
+      {
+        "path": "templates/leaflet-LICENSE.txt",
+        "sha256": "53e8dc25862014e4324741ca18fbe3611e11d42ef69f59f86ea8c5389647d4cb",
+        "bytes": 1395
+      },
+      {
+        "path": "templates/leaflet.css",
+        "sha256": "a7837102824184820dfa198d1ebcd109ff6d0ff9a2672a074b9a1b4d147d04c6",
+        "bytes": 14806
+      },
+      {
+        "path": "templates/leaflet.js",
+        "sha256": "db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a",
+        "bytes": 147552
+      },
+      {
+        "path": "templates/local_basemap.js",
+        "sha256": "202cae0dfc856c0e259c8248ba0325473ce52315f1dd6f945521a91f9edb508d",
+        "bytes": 5638
+      },
+      {
+        "path": "templates/map_display.css",
+        "sha256": "1761e20ec5b871fed4c02cb82df4e387db74e838ff9573e445f61933cc1d8234",
+        "bytes": 771
+      },
+      {
+        "path": "templates/map_display.html",
+        "sha256": "0ff1b0e349437f6bc599e7cb5c4bbd8183f780882a9a759323e48ac6f88bdd90",
+        "bytes": 876
+      },
+      {
+        "path": "templates/map_display.js",
+        "sha256": "2c452829de629ba17ee43b940b50e6be5d9675625357e6ab7010a221cbf59097",
+        "bytes": 3443
+      },
+      {
+        "path": "templates/nearby_canvas.js",
+        "sha256": "8caefe68460ba031ed34986ee585ca84cab39495cc2765320abd6e2c9bb0d0e7",
+        "bytes": 9987
+      },
+      {
+        "path": "templates/network_tree.css",
+        "sha256": "c017407d69e11f36274089b2bc404e9e7a924151843739d5197848d5dd5a82d3",
+        "bytes": 4263
+      },
+      {
+        "path": "templates/network_tree.js",
+        "sha256": "a5e01ae0cd9a6cb28297be62d72f32ceb4f72d48da96a2b84bba0db2ff2ba802",
+        "bytes": 11325
+      },
+      {
+        "path": "templates/observation_scope.js",
+        "sha256": "b648780d649f4ce29d93dc433c59245b58b84c526a9a99dcb398550a8b2d035e",
+        "bytes": 2196
+      },
+      {
+        "path": "templates/online_map.js",
+        "sha256": "ed823a3a4e885f46461c31055aa36c177ad6004ddeca4f128a930009bdb01718",
+        "bytes": 2047
+      },
+      {
+        "path": "templates/report_satellite.js",
+        "sha256": "26bc693a4ed8d3075ae22a36b1521954663c3eed31652045cd04e275c9e5a861",
+        "bytes": 1572
+      },
+      {
+        "path": "templates/satellite.js",
+        "sha256": "847988a5dfe63fae1c9c3de2df6c5344aa09717537912a686dcba1a3d764c03f",
+        "bytes": 1396
+      },
+      {
+        "path": "templates/sql_browser.css",
+        "sha256": "66b6823cc3f7f7b6ccef3e428786fc5020b4a57cb19510816da990c7a64f3b5e",
+        "bytes": 2471
+      },
+      {
+        "path": "templates/sql_browser.js",
+        "sha256": "c63392b9a4fdd416b3c9de3ec00f1b8245ca4e9155c49bf7fb0d9c84dc84b23d",
+        "bytes": 5782
+      },
+      {
+        "path": "templates/survey_map.html",
+        "sha256": "d215fb6176b46c2d8b9f214713557c9159fdf92943746bcea216ea6138d0da0c",
+        "bytes": 47623
+      },
+      {
+        "path": "templates/survey_summary.css",
+        "sha256": "80607c9c02192e1ddf8ccfd3b0a1426f082909c583a1436f89329117c402724c",
+        "bytes": 1259
+      },
+      {
+        "path": "templates/survey_summary.js",
+        "sha256": "9878659376f7e61b32f8a9526359579ceb436947a3e8cce6aa2a3d3916f6dc3f",
+        "bytes": 863
+      },
+      {
+        "path": "tests/benchmark_survey.py",
+        "sha256": "afebb95276cb7bb2c9eccf4a7117acd2b4a1bccc4b10b04ebed2ce3ecd179e9f",
+        "bytes": 3183
+      },
+      {
+        "path": "tests/test_analysis.py",
+        "sha256": "2eec1ee5982766524522ace29237821e33ec8c90fdfeb88551faee9edad09f8a",
+        "bytes": 9811
+      },
+      {
+        "path": "tests/test_area_estimates.py",
+        "sha256": "bbea39db673133ab72a23d41d31b0bc65600fbe9800a42f3067d4f3d373f29d0",
+        "bytes": 9242
+      },
+      {
+        "path": "tests/test_band_assignments.py",
+        "sha256": "1c9d6e5f9e665002094cda1a033354614bc4a53cd4795e059f3558b406fc1494",
+        "bytes": 3404
+      },
+      {
+        "path": "tests/test_comparisons.py",
+        "sha256": "2d0d56f50827f3b5c2e3da3ad2003fd0ff5f4da955b8fa7ee14af43fc1cf91a7",
+        "bytes": 8784
+      },
+      {
+        "path": "tests/test_scoped_estimates.py",
+        "sha256": "f9dc9ea7032ff5e92d25c60d3dad030b1b1901213a592b6299f965f2cf7aae31",
+        "bytes": 7710
+      },
+      {
+        "path": "tests/test_survey.py",
+        "sha256": "eca704a604d5eac0feb1f08f8740b75846507af5246b457fb36a66105031c538",
+        "bytes": 14012
+      }
+    ]
+  },
+  "_publication": {
+    "private_paths_and_input_names": "replaced with portable placeholders",
+    "long_timing_and_progress_series": "summarized explicitly; raw evidence retained locally",
+    "commit_references": "mapped to equivalent published phase commits; artifact/source hashes identify the original measured builds"
+  }
+}
