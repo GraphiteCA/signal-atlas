@@ -1,0 +1,36 @@
+{
+  "params": [
+    {},
+    {"ssid": ["Mesh"]},
+    {"band": ["2.4", "5"]},
+    {"min_rssi": ["-80"]},
+    {"date_from": ["2026-01-01"], "date_to": ["2026-06-30"]},
+    {"date": ["2026-10-15"]},
+    {"ssid_query": ["_100%"]},
+    {"mac": [" aa:00:00:00:00:01 "]},
+    {"mac_selection": ["{\"Cafe, \\\"Corner\\\"\": {\"mode\": \"exclude\", \"macs\": [\"AA:00:00:00:00:02\"]}, \"Mesh\": {\"mode\": \"include\", \"macs\": []}}"]},
+    {"bbox": ["2.6600,48.4400,2.6700,48.4500"]},
+    {"exclude_ssid": [""], "limit": ["7"], "offset": ["2"]},
+    {"radio": ["[\"Mesh\",\"AA:00:00:00:00:30\",\"2.4\"]"]},
+    {"min_rssi": ["x"]},
+    {"date_from": ["2026-13-01"]},
+    {"date_from": ["20260101"]},
+    {"date_from": ["2026-10-01"], "date_to": ["2026-01-01"]},
+    {"bbox": ["1,2,3"]},
+    {"bbox": ["10,0,-10,5"]},
+    {"limit": ["abc"]},
+    {"none": ["1"]}
+  ],
+  "fitParams": [
+    {"shared": ["1"], "fit_mode": ["sample"]},
+    {"fit_mode": ["all"]},
+    {"shared": ["1"], "individual": ["0"], "fit_mode": ["sample"], "date": ["2026-01-13"]},
+    {"fit_mode": ["sample"], "min_rssi": ["-75"]}
+  ],
+  "area": [
+    {"bbox": ["2.6550,48.4400,2.6750,48.4500"], "zoom": ["17"], "fit_mode": ["sample"]},
+    {"bbox": ["2.6550,48.4400,2.6750,48.4500"], "zoom": ["17"], "individual": ["1"], "shared": ["1"]},
+    {"zoom": ["12"]},
+    {"bbox": ["2.6550,48.4400,2.6750,48.4500"], "zoom": ["17"], "saved_only": ["1"]}
+  ]
+}

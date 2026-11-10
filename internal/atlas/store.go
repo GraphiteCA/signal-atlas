@@ -1,0 +1,425 @@
+package atlas
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+
+	"signal-atlas/internal/db"
+	"signal-atlas/internal/obs"
+	"signal-atlas/internal/py"
+
+	"zombiezen.com/go/sqlite"
+	"zombiezen.com/go/sqlite/sqlitex"
+)
+
+// Atlas is one Signal Atlas store: a folder holding atlas.sqlite3 (imports, estimates, comparisons,
+// band assignments, the basemap, in Graphite's schema; its observations table stays empty) and
+// observations/ (the column store with every observation).
+type Atlas struct {
+	Dir      string
+	MetaPath string
+	Obs      *obs.Store
+	pool     *sqlitex.Pool
+	// WriteMu serialises the writers (imports, band assignments, the bridge); queries never wait.
+	WriteMu sync.Mutex
+}
+
+const schemaSQL = `
+  CREATE TABLE IF NOT EXISTS imports(id INTEGER PRIMARY KEY, filename TEXT NOT NULL,
+    sha256 TEXT UNIQUE NOT NULL, imported_utc TEXT NOT NULL, valid_rows INTEGER NOT NULL DEFAULT 0,
+    invalid_rows INTEGER NOT NULL DEFAULT 0);
+  CREATE TABLE IF NOT EXISTS observations(
+    id INTEGER PRIMARY KEY, import_id INTEGER NOT NULL REFERENCES imports(id), line INTEGER NOT NULL,
+    record_id TEXT, ssid TEXT NOT NULL, mac TEXT NOT NULL, band TEXT NOT NULL, band_source TEXT,
+    radio_key TEXT NOT NULL, latitude REAL NOT NULL, longitude REAL NOT NULL, rssi_dbm REAL NOT NULL,
+    accuracy_m REAL, first_seen TEXT, date TEXT, channel TEXT, frequency_mhz REAL);
+  CREATE VIRTUAL TABLE IF NOT EXISTS spatial USING rtree(id,min_lat,max_lat,min_lon,max_lon);
+  CREATE TRIGGER IF NOT EXISTS observation_insert AFTER INSERT ON observations BEGIN
+    INSERT INTO spatial VALUES(new.id,new.latitude,new.latitude,new.longitude,new.longitude); END;
+  CREATE TRIGGER IF NOT EXISTS observation_delete AFTER DELETE ON observations BEGIN
+    DELETE FROM spatial WHERE id=old.id; END;
+  CREATE INDEX IF NOT EXISTS observation_network ON observations(ssid,band);
+  CREATE INDEX IF NOT EXISTS observation_radio ON observations(radio_key,rssi_dbm DESC);
+  CREATE INDEX IF NOT EXISTS observation_radio_date ON observations(radio_key,date);
+  CREATE INDEX IF NOT EXISTS observation_date ON observations(date);
+  CREATE INDEX IF NOT EXISTS observation_transmitter ON observations(ssid,mac,band);
+  CREATE INDEX IF NOT EXISTS observation_mac ON observations(mac,ssid);
+  CREATE TABLE IF NOT EXISTS estimates(radio_key TEXT NOT NULL,scope_key TEXT NOT NULL,
+    result TEXT NOT NULL,PRIMARY KEY(radio_key,scope_key));
+  CREATE TABLE IF NOT EXISTS map_assets(name TEXT PRIMARY KEY,payload TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS comparisons(id TEXT PRIMARY KEY,name TEXT NOT NULL,
+    created_utc TEXT NOT NULL,payload TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS band_assignments(ssid TEXT NOT NULL,mac TEXT NOT NULL,
+    band TEXT NOT NULL,updated_utc TEXT NOT NULL,PRIMARY KEY(ssid,mac));
+  CREATE VIEW IF NOT EXISTS network_catalog AS SELECT ssid,count(*) count,
+    count(DISTINCT mac) macs,count(DISTINCT radio_key) radios,max(rssi_dbm) peak,
+    group_concat(DISTINCT band) bands FROM observations GROUP BY ssid;
+  CREATE VIEW IF NOT EXISTS transmitter_catalog AS SELECT ssid,mac,count(*) count,
+    count(DISTINCT band) radio_count,group_concat(DISTINCT band) bands,max(rssi_dbm) peak
+    FROM observations GROUP BY ssid,mac;
+  CREATE VIEW IF NOT EXISTS radio_catalog AS SELECT radio_key,ssid,mac,band,count(*) count,
+    max(rssi_dbm) peak FROM observations GROUP BY radio_key;
+  CREATE INDEX IF NOT EXISTS estimate_scope_lookup ON estimates(scope_key);
+  CREATE INDEX IF NOT EXISTS estimate_viewport ON estimates(
+    scope_key,json_extract(result,'$.longitude'),json_extract(result,'$.latitude'))
+    WHERE json_extract(result,'$.status')='fitted';
+`
+
+func prepareConn(c *sqlite.Conn) error {
+	if err := sqlitex.ExecuteTransient(c, "PRAGMA busy_timeout=30000", nil); err != nil {
+		return err
+	}
+	return sqlitex.ExecuteTransient(c, "PRAGMA foreign_keys=ON", nil)
+}
+
+// Open opens (or creates) the store in dir.
+func Open(dir string) (*Atlas, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
+	}
+	a := &Atlas{Dir: dir, MetaPath: filepath.Join(dir, "atlas.sqlite3")}
+	c, err := db.Open(a.MetaPath, true)
+	if err != nil {
+		return nil, err
+	}
+	defer c.Close()
+	if err := initialize(c, a.MetaPath); err != nil {
+		return nil, err
+	}
+	committed := map[int64]bool{}
+	rows, err := db.All(c, "SELECT id,valid_rows FROM imports")
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		committed[db.Int(r["id"])] = true
+	}
+	if a.Obs, err = obs.Open(filepath.Join(dir, "observations"), func(id int64) bool { return committed[id] }); err != nil {
+		return nil, err
+	}
+	// an import committed in the metadata whose rows never reached the column store (a crash
+	// between the two) is removed, so it can be imported again
+	have := map[int64]bool{}
+	for _, s := range a.Obs.State().Segs {
+		have[s.ImportID] = true
+	}
+	for _, r := range rows {
+		if id := db.Int(r["id"]); db.Int(r["valid_rows"]) > 0 && !have[id] {
+			db.Exec(c, "DELETE FROM imports WHERE id=?", id)
+		}
+	}
+	a.pool, err = sqlitex.NewPool(a.MetaPath, sqlitex.PoolOptions{PoolSize: 16, PrepareConn: prepareConn})
+	if err != nil {
+		return nil, err
+	}
+	return a, nil
+}
+
+// Close closes the store.
+func (a *Atlas) Close() error { return a.pool.Close() }
+
+// Conn takes a metadata connection; call the returned function to give it back.
+func (a *Atlas) Conn(ctx context.Context) (*sqlite.Conn, func(), error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	c, err := a.pool.Take(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	return c, func() { a.pool.Put(c) }, nil
+}
+
+// initialize is survey_data.initialize on the metadata database.
+func initialize(c *sqlite.Conn, path string) error {
+	v, err := db.Scalar(c, "PRAGMA user_version")
+	if err != nil {
+		return err
+	}
+	if db.Int(v) > SchemaVersion {
+		return py.Errorf("This database requires a newer Signal Atlas version")
+	}
+	rows, err := db.All(c, "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+	if err != nil {
+		return err
+	}
+	tables := map[string]bool{}
+	for _, r := range rows {
+		tables[db.Str(r["name"])] = true
+	}
+	if len(tables) > 0 && !(tables["observations"] && tables["imports"]) {
+		return py.Errorf("This is not a Signal Atlas database; choose a new file or an existing Signal Atlas store")
+	}
+	if _, err := db.Exec(c, "PRAGMA journal_mode=WAL"); err != nil {
+		return err
+	}
+	if err := db.Script(c, schemaSQL); err != nil {
+		return err
+	}
+	cols, err := db.All(c, "PRAGMA table_info(imports)")
+	if err != nil {
+		return err
+	}
+	has := false
+	for _, r := range cols {
+		has = has || db.Str(r["name"]) == "non_wifi_rows"
+	}
+	if !has {
+		if _, err := db.Exec(c, "ALTER TABLE imports ADD COLUMN non_wifi_rows INTEGER NOT NULL DEFAULT 0"); err != nil {
+			return err
+		}
+	}
+	if _, err := db.Exec(c, "PRAGMA user_version=5"); err != nil {
+		return err
+	}
+	// Adopt an old basemap sidecar once; the database is authoritative thereafter.
+	sidecar := filepath.Join(filepath.Dir(path), "basemap.geojson")
+	if r, _ := db.One(c, "SELECT 1 x FROM map_assets WHERE name='basemap'"); r == nil {
+		if payload, err := os.ReadFile(sidecar); err == nil && len(payload) <= 20000000 && validBasemap(payload) {
+			db.Exec(c, "INSERT INTO map_assets VALUES('basemap',?)", compactJSON(payload))
+		}
+	}
+	return nil
+}
+
+// LoadBasemap is load_basemap: the stored GeoJSON, or null.
+func (a *Atlas) LoadBasemap(c *sqlite.Conn) (py.Raw, error) {
+	v, err := db.Scalar(c, "SELECT payload FROM map_assets WHERE name='basemap'")
+	if err != nil || v == nil {
+		return "null", err
+	}
+	return py.Raw(db.Str(v)), nil
+}
+
+// DatabaseInfo is database_info.
+func (a *Atlas) DatabaseInfo(c *sqlite.Conn) (map[string]any, error) {
+	st := a.Obs.State()
+	out := map[string]any{"filename": "signal-atlas.sqlite3", "sqlite_version": SQLiteVersion,
+		"observations": int64(st.N), "networks": int64(len(st.Net)), "transmitters": int64(len(st.Trans))}
+	for _, q := range [][2]string{{"schema_version", "PRAGMA user_version"}, {"cached_estimates", "SELECT count(*) FROM estimates"}, {"imports", "SELECT count(*) FROM imports"}} {
+		v, err := db.Scalar(c, q[1])
+		if err != nil {
+			return nil, err
+		}
+		out[q[0]] = db.Int(v)
+	}
+	r, err := db.One(c, "SELECT 1 x FROM map_assets WHERE name='basemap'")
+	out["has_basemap"] = r != nil
+	return out, err
+}
+
+// ---------------------------------------------------------------------------
+// rows out, as Python's dict(sqlite3.Row)
+
+func nullable(v float64) any {
+	if obs.IsNull(v) {
+		return nil
+	}
+	return v
+}
+
+func recordID(st *obs.State, s *obs.Segment, i int) string {
+	switch s.RecKind[i] {
+	case obs.RecInt:
+		return strconv.FormatInt(s.RecVal[i], 10)
+	case obs.RecStr:
+		return st.Str[s.RecVal[i]]
+	}
+	return strconv.FormatInt(s.Line[i], 10)
+}
+
+// fullRow is SELECT o.* for one row.
+func fullRow(st *obs.State, s *obs.Segment, i int) Row {
+	return Row{"id": s.Base + int64(i), "import_id": s.ImportID, "line": s.Line[i], "record_id": recordID(st, s, i),
+		"ssid": st.Str[s.SSID[i]], "mac": st.Str[s.MAC[i]], "band": st.Str[s.Band[i]], "band_source": st.Str[s.BandSrc[i]],
+		"radio_key": st.Str[s.Radio[i]], "latitude": s.Lat[i], "longitude": s.Lon[i], "rssi_dbm": s.RSSI[i],
+		"accuracy_m": nullable(s.Acc[i]), "first_seen": st.Str[s.First[i]], "date": st.Str[s.Date[i]],
+		"channel": st.Str[s.Channel[i]], "frequency_mhz": nullable(s.Freq[i])}
+}
+
+// recordKind stores a record id compactly: most are the line number or a plain integer.
+func recordKind(d *obs.Dict, id string, line int64) (uint8, int64) {
+	if id == strconv.FormatInt(line, 10) {
+		return obs.RecLine, 0
+	}
+	if n, err := strconv.ParseInt(id, 10, 64); err == nil && strconv.FormatInt(n, 10) == id {
+		return obs.RecInt, n
+	}
+	return obs.RecStr, int64(d.ID(id))
+}
+
+// rowOf interns an observation for the column store.
+func rowOf(in *obs.Interner, d *obs.Dict, o *Observation, line int64) obs.Row {
+	r := obs.Row{SSID: in.ID(0, o.SSID), MAC: in.ID(1, o.MAC), Band: in.ID(2, o.Band), BandSrc: in.ID(3, o.BandSource),
+		Radio: in.ID(4, o.RadioKey), Date: in.ID(5, o.Date), Channel: in.ID(6, o.Channel), First: in.ID(7, o.FirstSeen),
+		Lat: o.Latitude, Lon: o.Longitude, RSSI: o.RSSI, Acc: obs.Null, Freq: obs.Null, Line: line}
+	if v, ok := o.Accuracy.(float64); ok {
+		r.Acc = v
+	}
+	if v, ok := o.FrequencyMHz.(float64); ok {
+		r.Freq = v
+	}
+	r.RecKind, r.RecVal = recordKind(d, o.ID, line)
+	return r
+}
+
+// nextImportID is the id SQLite gives the next imports row (max(id)+1).
+func nextImportID(c *sqlite.Conn) (int64, error) {
+	v, err := db.Scalar(c, "SELECT coalesce(max(id),0)+1 FROM imports")
+	return db.Int(v), err
+}
+
+func bandAssignments(c *sqlite.Conn) (map[string]string, error) {
+	rows, err := db.All(c, "SELECT * FROM band_assignments")
+	out := map[string]string{}
+	for _, r := range rows {
+		out[db.Str(r["ssid"])+"\x00"+db.Str(r["mac"])] = db.Str(r["band"])
+	}
+	return out, err
+}
+
+// ---------------------------------------------------------------------------
+// importing a CSV
+
+// ImportCSV is import_csv(path, database, skip_invalid, progress, filename). The rows are parsed
+// on every core while the file is hashed, gathered into one new segment, and committed with the
+// imports row; a failure or a cancel leaves nothing behind.
+func (a *Atlas) ImportCSV(path string, skipInvalid bool, progress Progress, filename string, say func(string)) (map[string]any, error) {
+	a.WriteMu.Lock()
+	defer a.WriteMu.Unlock()
+	c, put, err := a.Conn(nil)
+	if err != nil {
+		return nil, err
+	}
+	defer put()
+	st, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	size := st.Size()
+	if filename == "" {
+		filename = filepath.Base(path)
+	}
+	type hashed struct {
+		sum string
+		err error
+	}
+	hc := make(chan hashed, 1)
+	go func() { s, e := FileSHA256(path); hc <- hashed{s, e} }()
+	h := <-hc // the duplicate check comes first, as in Python (hashing is a few seconds per GB)
+	if h.err != nil {
+		return nil, h.err
+	}
+	existing, err := db.One(c, "SELECT * FROM imports WHERE sha256=?", h.sum)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return map[string]any{"duplicate": true, "valid_rows": existing["valid_rows"], "invalid_rows": existing["invalid_rows"], "non_wifi_rows": existing["non_wifi_rows"]}, nil
+	}
+	importID, err := nextImportID(c)
+	if err != nil {
+		return nil, err
+	}
+	assignments, err := bandAssignments(c)
+	if err != nil {
+		return nil, err
+	}
+	seg := obs.NewSegment(importID, a.Obs.NextBase(nil), int(min(size/100+16, 1<<26)))
+	in := a.Obs.Dict.NewInterner()
+	var valid, invalid, nonWifi, read int64
+	examples := []string{}
+	var hdr csvHeader
+	var line int64
+	err = parallelRows(func(emit func([]string, int64) error) error {
+		return readCSV(path, func(rec []string) error {
+			if !hdr.done {
+				_, err := hdr.take(rec)
+				if err == nil && hdr.done {
+					line = hdr.firstLine - 1
+				}
+				return err
+			}
+			if len(rec) == 0 { // DictReader skips blank lines
+				return nil
+			}
+			line++
+			return emit(rec, line)
+		}, func(r, _ int64) { read = r })
+	}, func(rec []string, line int64) parsedRow {
+		f := hdr.fields(rec)
+		if !IsWifi(f["Type"]) {
+			return parsedRow{nonWifi: true}
+		}
+		o, err := ParseObservation(f, line)
+		return parsedRow{obs: o, line: line, err: err}
+	}, func(r parsedRow) error {
+		if r.nonWifi {
+			nonWifi++
+			return nil
+		}
+		if r.err != nil {
+			if !skipInvalid {
+				return r.err
+			}
+			invalid++
+			if len(examples) < 10 {
+				examples = append(examples, r.err.Error())
+			}
+			return nil
+		}
+		o := r.obs
+		if b, ok := assignments[o.SSID+"\x00"+o.MAC]; ok && o.BandSource == "frequency/band unavailable" {
+			o.Band, o.BandSource, o.RadioKey = b, "manual assignment", RadioKey(o.SSID, o.MAC, b)
+		}
+		row := rowOf(in, a.Obs.Dict, o, r.line)
+		seg.Append(&row)
+		valid++
+		if valid%5000 == 0 && progress != nil {
+			return progress(valid, invalid, read, size)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if !hdr.done {
+		return nil, py.Errorf("Missing CSV columns: %s", strings.Join(RequiredColumns, ", "))
+	}
+	if progress != nil {
+		if err := progress(valid, invalid, size, size); err != nil {
+			return nil, err
+		}
+	}
+	if valid == 0 {
+		return nil, py.Errorf("CSV contains no valid observations")
+	}
+	if say != nil {
+		say("Saving and indexing")
+	}
+	if err := a.Obs.Commit(obs.Change{Add: []*obs.Segment{seg}}); err != nil {
+		return nil, err
+	}
+	err = db.Tx(c, func() error {
+		if _, err := db.Exec(c, "INSERT INTO imports(id,filename,sha256,imported_utc,valid_rows,invalid_rows,non_wifi_rows) VALUES(?,?,?,?,?,?,?)",
+			importID, filename, h.sum, py.UTCNowISO(), valid, invalid, nonWifi); err != nil {
+			return err
+		}
+		// Appending data can change fitted locations; stale results are never reused.
+		_, err := db.Exec(c, "DELETE FROM estimates")
+		return err
+	})
+	if err != nil {
+		a.Obs.Commit(obs.Change{Drop: map[int64]bool{importID: true}})
+		return nil, err
+	}
+	return map[string]any{"duplicate": false, "valid_rows": valid, "invalid_rows": invalid, "non_wifi_rows": nonWifi, "invalid_examples": examples}, nil
+}
+
+// errCancelled is what a cancelled job reports.
+var errCancelled = errors.New("cancelled")

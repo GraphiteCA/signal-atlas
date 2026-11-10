@@ -1,0 +1,5 @@
+# Scripts and files read inside the Linux build container keep Unix line endings on every checkout.
+*.sh        text eol=lf
+Dockerfile  text eol=lf
+*.desktop   text eol=lf
+*.plist     text eol=lf

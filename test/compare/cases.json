@@ -1,0 +1,12 @@
+{
+  "files": ["a-mon.csv", "a-tue.csv", "b-wed.csv", "b-wed-2.csv"],
+  "cfgs": [
+    {"mode": "drive", "cuts": [], "joins": [], "driveGapH": 3, "legGapMin": 10, "radius": 50, "typ": "wifi", "baseline": null, "excluded": [], "tzOff": 0},
+    {"mode": "leg", "cuts": [], "joins": [], "driveGapH": 3, "legGapMin": 10, "radius": 50, "typ": "wifi", "baseline": null, "excluded": [], "tzOff": 360},
+    {"mode": "file", "cuts": [], "joins": [], "driveGapH": 3, "legGapMin": 10, "radius": 30, "typ": "all", "baseline": null, "excluded": [], "tzOff": 0},
+    {"mode": "drive", "cuts": [1767265000], "joins": [], "driveGapH": 3, "legGapMin": 10, "radius": 50, "typ": "ble", "baseline": null, "excluded": [], "tzOff": 0},
+    {"mode": "drive", "cuts": [], "joins": [], "driveGapH": 24, "legGapMin": 5, "radius": 80, "typ": "wifi", "baseline": "d1767261601", "excluded": [], "tzOff": -60},
+    {"mode": "drive", "cuts": [1767265000], "joins": [1767265000], "driveGapH": 3, "legGapMin": 10, "radius": 50, "typ": "wifi", "baseline": null, "excluded": [], "tzOff": 0},
+    {"mode": "drive", "cuts": [], "joins": [], "driveGapH": 3, "legGapMin": 10, "radius": 50, "typ": "wifi", "baseline": null, "excluded": ["d1767261601"], "tzOff": 0}
+  ]
+}

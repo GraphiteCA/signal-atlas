@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark">
+<title>Signal Atlas</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1f4e1;</text></svg>">
+<style>
+:root{--bg:#111614;--panel:#181f1c;--fg:#e8eeea;--muted:#a2aea8;--line:#2b3430;--accent:#52c2b0;--accent-ink:#06211c;--wash:#222b27;color-scheme:dark;
+  --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;--body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;--data:"IBM Plex Mono",ui-monospace,Consolas,monospace}
+body{margin:0;background:var(--bg);color:var(--fg);font:400 15px/1.45 var(--body)}
+.wrap{max-width:1000px;margin:0 auto;padding:28px 20px 48px;display:flex;flex-direction:column;gap:22px}
+h1{font:600 2.1rem/1.05 var(--display);margin:0}h2{font:600 1.35rem/1.1 var(--display);margin:0}
+p{margin:0;max-width:74ch}.mut{color:var(--muted)}.sm{font-size:.86rem}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;display:flex;flex-direction:column;gap:10px}
+.card p{flex:1}
+.btn{font:500 .92rem var(--body);border:1px solid var(--line);background:var(--panel);color:var(--fg);padding:8px 13px;border-radius:5px;cursor:pointer;text-align:center;text-decoration:none;display:inline-block}
+.btn:hover{background:var(--wash)}.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px 12px}
+.stat b{display:block;font:500 1.35rem/1.15 var(--data)}
+a{color:var(--accent)}code{font-family:var(--data);font-size:.85em;overflow-wrap:anywhere}
+</style></head>
+<body><main class="wrap">
+  <header><h1>&#x1f4e1; Signal Atlas</h1>
+    <p class="mut">Wardriving analysis on your PC, for logs too big for the browser. Nothing leaves this computer.</p></header>
+  <section class="cards">
+    <div class="card"><h2>Wardrive Compare</h2><span class="sm mut">by <a href="https://github.com/TheChampCodes">Champ</a></span>
+      <p>Drop WiGLE CSV logs from any logger to compare drives on the road they share: speed, visibility, channels, a baseline drive, repeat passes. Logs are read where they are on disk, tens of millions of rows a minute.</p>
+      <div class="row"><a class="btn pri" href="/compare.html">Open Compare</a></div></div>
+    <div class="card"><h2>Signal Atlas explorer</h2><span class="sm mut">by <a href="https://github.com/GraphiteCA">Graphite</a></span>
+      <p>An access-point locator: import CSV surveys, filter by SSID, band, date and signal, and fit where each network's AP is, <span id="fits">several</span> at a time.</p>
+      <div class="row"><a class="btn pri" href="/atlas/">Open the explorer</a></div></div>
+  </section>
+  <section><h2 style="margin-bottom:10px">Explorer store</h2>
+    <div class="stats" id="stats"><div class="stat"><span class="sm mut">Engine</span><b>starting…</b></div></div></section>
+  <section class="row sm mut"><span>Version <code id="ver"></code></span><span>Data: <code id="data"></code></span><button class="btn" id="showData" hidden>Show data folder</button></section>
+</main>
+<script src="/app/bridge.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const fi = (n) => Number(n || 0).toLocaleString();
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+async function refresh() {
+  try {
+    const s = await (await fetch('/api/status', { cache: 'no-store' })).json();
+    const a = s.atlas || {};
+    $('ver').textContent = s.version;
+    $('data').textContent = s.data;
+    if (s.threads) $('fits').textContent = s.threads.fits;
+    const job = s.job && s.job.status === 'running' ? `${s.job.kind}: ${fi(s.job.completed)}${s.job.total ? ' / ' + fi(s.job.total) : ''}` : 'idle';
+    $('stats').innerHTML = [['Observations', fi(a.observations)], ['SSIDs', fi(a.networks)], ['Transmitters', fi(a.transmitters)], ['Saved estimates', fi(a.cached_estimates)], ['Imports', fi(a.imports)], ['Background job', job]]
+      .map(([l, v]) => `<div class="stat"><span class="sm mut">${l}</span><b>${v}</b></div>`).join('');
+    if (s.error) $('stats').insertAdjacentHTML('beforeend', `<div class="stat"><span class="sm mut">Problem</span>${esc(s.error)}</div>`);
+  } catch (e) { $('stats').innerHTML = '<div class="stat"><span class="sm mut">Engine</span><b>not answering</b></div>'; }
+}
+SignalAtlasApp.ready.then((i) => { if (i.window) { $('showData').hidden = false; $('showData').onclick = () => SignalAtlasApp.showData(); } });
+refresh(); setInterval(refresh, 4000);
+</script>
+</body></html>

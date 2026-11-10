@@ -1,0 +1,634 @@
+<!doctype html>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Wardrive Compare · Signal Atlas</title>
+<meta name="description" content="Compare WiGLE CSV wardriving logs from any logger on the road they share.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1f4e1;</text></svg>">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a working logbook. Sticky section rail, drives as a ledger, each section a chart then its table. */
+:root{
+  --bg:#f3f5f2;--panel:#fbfcfa;--fg:#14201c;--muted:#56635d;--line:#d8ded8;--accent:#0c6a5f;--accent-ink:#ffffff;--wash:#e6ebe6;--shared:#14201c;--warn:#8a5a00;--bad:#b3322f;
+  --s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--s5:#e87ba4;--s6:#008300;--s7:#6250d6;--s8:#e34948;--grid:#e1e5e0;--axis:#b7bfb8;--other:#a6aea8;--heat0:#eef3f8;--heat1:#104281;
+  --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;--body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;--data:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#111614;--panel:#181f1c;--fg:#e8eeea;--muted:#a2aea8;--line:#2b3430;--accent:#52c2b0;--accent-ink:#06211c;--wash:#222b27;--shared:#e8eeea;--warn:#e0b050;--bad:#ef7d7a;
+  --s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181;--s6:#008300;--s7:#9085e9;--s8:#e66767;--grid:#27302c;--axis:#3d4843;--other:#5f6a65;--heat0:#1d2a33;--heat1:#7fb6f2;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111614;--panel:#181f1c;--fg:#e8eeea;--muted:#a2aea8;--line:#2b3430;--accent:#52c2b0;--accent-ink:#06211c;--wash:#222b27;--shared:#e8eeea;--warn:#e0b050;--bad:#ef7d7a;
+  --s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181;--s6:#008300;--s7:#9085e9;--s8:#e66767;--grid:#27302c;--axis:#3d4843;--other:#5f6a65;--heat0:#1d2a33;--heat1:#7fb6f2;color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:400 15px/1.45 var(--body)}
+.wrap{max-width:1180px;margin-inline:auto;padding-block:20px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:28px}
+h1,h2,h3{margin:0;text-wrap:balance}
+h1{font:600 2rem/1.05 var(--display);letter-spacing:.01em}
+h2{font:600 1.45rem/1.1 var(--display);letter-spacing:.01em}
+h3{font:600 .98rem/1.25 var(--body)}
+p{margin:0;max-width:72ch}
+.mut{color:var(--muted)}.sm{font-size:.84rem}
+.num,td.n,th.n{font-family:var(--data);font-variant-numeric:tabular-nums}
+header.top{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:flex-end;justify-content:space-between}
+.top>div{min-width:0}
+.drop{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;justify-content:space-between;border:1.5px dashed var(--axis);border-radius:6px;padding:14px 16px;background:var(--panel)}
+.drop.over{border-color:var(--accent);background:var(--wash)}
+.btn{font:500 .9rem var(--body);border:1px solid var(--line);background:var(--panel);color:var(--fg);padding:7px 12px;border-radius:4px;cursor:pointer}
+.btn:hover{background:var(--wash)}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.pri:hover{filter:brightness(1.08);background:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btnrow{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.progress{height:4px;background:var(--wash);border-radius:2px;overflow:hidden}.progress i{display:block;height:100%;background:var(--accent);width:0}
+.notice{border-left:3px solid var(--warn);padding:8px 12px;background:var(--panel);font-size:.9rem}
+.notice.err{border-left-color:var(--bad)}
+.lede{font-size:1.08rem;max-width:78ch}
+.lede b{font-family:var(--data);font-weight:500;font-size:.96em}
+.settings{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:flex-end;background:var(--bg);padding-block:8px;border-bottom:1px solid var(--line)}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.settings label{display:flex;flex-direction:column;gap:2px;font-size:.76rem;color:var(--muted);letter-spacing:.03em}
+.settings select,.settings input[type=range]{font:500 .88rem var(--body);color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:4px 6px;max-width:210px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,205px),1fr));gap:10px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px 14px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.tile .big{font:500 1.75rem/1.1 var(--data)}
+section{display:flex;flex-direction:column;gap:12px;scroll-margin-top:70px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:12px}
+.tw{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.84rem}
+th{font:500 .76rem/1.2 var(--body);text-align:left;color:var(--muted);border-bottom:1px solid var(--axis);padding:4px 10px 4px 0;vertical-align:bottom}
+td{border-bottom:1px solid var(--line);padding:5px 10px 5px 0;vertical-align:top}
+td.n,th.n{text-align:right}
+td.n{font-size:.82rem}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.drive{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1.3fr);gap:10px 18px;border-bottom:1px solid var(--line);padding-block:12px}
+.drive:last-child{border-bottom:0}
+@media(max-width:720px){.drive{grid-template-columns:minmax(0,1fr)}}
+.drive input[type=text]{font:600 1rem var(--body);color:var(--fg);background:transparent;border:0;border-bottom:1px dashed var(--axis);padding:2px 0;width:calc(100% - 26px);min-width:0}
+.drive textarea{font:400 .9rem/1.4 var(--body);color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:7px 9px;width:100%;box-sizing:border-box;min-height:78px;resize:vertical}
+.drive .stat{display:flex;flex-wrap:wrap;gap:2px 14px;font-size:.82rem;color:var(--muted)}
+.drive .stat b{font:500 .84rem var(--data);color:var(--fg)}
+.pill{font-size:.72rem;color:var(--muted);border:1px solid var(--line);border-radius:3px;padding:1px 5px}
+.key{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:.82rem;color:var(--muted)}
+.chart{position:relative;min-width:0}
+.chart svg{display:block;width:100%;height:auto}
+svg text{font:400 11.5px var(--body);fill:var(--muted)}svg text.lbl{fill:var(--fg)}svg text.d{font-family:var(--data);font-size:11px}
+.tip{position:absolute;pointer-events:none;background:var(--panel);border:1px solid var(--axis);border-radius:4px;padding:5px 8px;font-size:.78rem;z-index:6;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.18)}
+.tip b{font-weight:500}.tip div:first-child{color:var(--muted)}
+#map{touch-action:none;cursor:grab;background:var(--bg);border:1px solid var(--line);border-radius:4px;overflow:hidden}
+#map:active{cursor:grabbing}
+#map.leaflet-container{font:inherit;background:var(--wash)}
+#map .tip{z-index:1100}
+#map .leaflet-control-attribution,#map .leaflet-control-scale-line{font-size:.72rem}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) #map .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9)}}
+:root[data-theme="dark"] #map .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9)}
+ul.plain{margin:0;padding-left:1.1rem;display:flex;flex-direction:column;gap:5px;max-width:78ch}
+nav.rail{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:.84rem}
+nav.rail a{color:var(--accent);text-decoration:none}nav.rail a:hover{text-decoration:underline}
+.ex{background:var(--wash);border:1px solid var(--line);border-radius:6px;padding:8px 12px;font-weight:500}
+.drive select,.drive input[type=time]{font:400 .84rem var(--body);color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:5px 6px;max-width:100%;min-width:0}
+.drive .btn{padding:5px 9px;font-size:.82rem}
+.saved{font-size:.74rem;color:var(--muted);min-height:1em}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+nav.site{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:.84rem;color:var(--muted)}
+nav.site a{color:var(--accent);text-decoration:none}nav.site a:hover{text-decoration:underline}
+footer.site{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.78rem;color:var(--muted);border-top:1px solid var(--line);padding-top:12px}
+footer.site a{color:var(--accent);text-decoration:none}
+.fair{display:flex;flex-direction:column;gap:4px;padding-block:8px;border-top:1px solid var(--line)}.fair:first-child{border-top:0}
+.chips{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:.84rem}.ok{color:var(--accent)}.warn{color:var(--warn)}
+</style>
+</head><body>
+<div class="wrap">
+  <header class="top" data-standalone><div><h1>&#x1f4e1; Wardrive Compare</h1><p class="mut sm">Compare any number of WiGLE CSV logs on the road they share. By <a href="https://github.com/TheChampCodes">Champ</a>.</p></div><nav class="site" aria-label="Signal Atlas"><a href="/">&larr; home</a><a href="/atlas/">Signal Atlas explorer</a></nav></header>
+  <div class="drop" id="drop">
+    <div><strong>Drop WiGLE CSV files here</strong><br><span class="mut sm">Add as many as you like. They're read where they are on disk and never uploaded. Drive names and notes are saved on this PC.</span></div>
+    <div class="btnrow"><label class="btn pri" for="file">Choose files</label><input id="file" type="file" accept=".csv,.txt,text/csv" multiple hidden><button class="btn" id="clear" type="button">Clear all</button></div>
+  </div>
+  <div id="prog" hidden><div class="sm mut" id="progText"></div><div class="progress"><i id="progBar"></i></div></div>
+  <div id="impMsgs"></div>
+  <div id="msgs"></div>
+  <div class="ex" id="exBanner" hidden>Example data. These drives are generated, so none of these figures are yours. Add your own logs and they replace it.</div>
+  <p class="lede" id="lede"></p>
+  <div class="settings" id="settings">
+    <label for="mode">Compare as<select id="mode"><option value="drive" selected>Drives (lump files)</option><option value="file">Each file separately</option><option value="leg">Each leg separately</option></select></label>
+    <label for="baseline">Baseline<select id="baseline"></select></label>
+    <label for="kmin">Shared by at least<select id="kmin"></select></label>
+    <label for="radius">Same road means within<select id="radius"><option value="15">15 m</option><option value="25" selected>25 m</option><option value="40">40 m</option><option value="60">60 m</option></select></label>
+    <label for="typ">Radio<select id="typ"><option value="wifi" selected>Wi-Fi</option><option value="ble">Bluetooth</option><option value="all">Both</option></select></label>
+    <label for="driveGap">New drive after a gap of<select id="driveGap"><option value="2">2 hours</option><option value="6" selected>6 hours</option><option value="12">12 hours</option><option value="24">24 hours</option><option value="99999">Never</option></select></label>
+    <label for="legGap">New leg after a gap of<select id="legGap"><option value="5">5 min</option><option value="10">10 min</option><option value="20" selected>20 min</option><option value="45">45 min</option></select></label>
+    <label for="tz">Log timestamps are<select id="tz"><option value="utc" selected>UTC</option><option value="local">Local time</option></select></label>
+  </div>
+  <nav class="rail" id="rail"><a href="#s-drives">Logs</a><a href="#s-speed">Speed</a><a href="#s-map">Map</a><a href="#s-road">Shared road</a><a href="#s-repeat">Repeatability</a><a href="#s-sched">Scheduler</a><a href="#s-history">AP history</a><a href="#s-nodes">Nodes</a><a href="#s-mix">Network mix</a><a href="#s-data">Data quality</a></nav>
+  <div class="tiles" id="tiles"></div>
+  <section id="s-drives"><div class="btnrow" style="justify-content:space-between"><h2 id="driveTitle">Drives</h2><button class="btn" id="resetLayout" type="button" hidden>Undo all splits and merges</button></div><p class="sm mut" id="driveHelp"></p><div class="card" id="drives"></div></section>
+  <section id="s-perf"><h2>Performance by drive</h2><p class="sm mut">Rates divide by active time, which leaves out logging gaps of a minute or more.</p><div class="card"><div class="tw" id="perf"></div></div></section>
+  <section id="s-speed"><h2>Collection at different speeds</h2><p class="sm mut" id="speedLede"></p>
+    <div class="card"><div class="btnrow"><label class="sm mut" for="metric">Show</label><select class="btn" id="metric"></select></div><div class="key" id="speedKey"></div><div class="chart" id="speedChart"></div></div>
+    <div class="card"><div class="btnrow"><label class="sm mut" for="speedDrive">Table for</label><select class="btn" id="speedDrive"></select></div><div class="tw" id="speedTable"></div></div>
+  </section>
+  <section id="s-map"><h2>Routes and shared road</h2><p class="sm mut" id="mapLede"></p>
+    <div class="card"><div class="btnrow"><button class="btn" id="fitAll" type="button">Fit all</button><button class="btn" id="fitShared" type="button">Fit shared road</button><label class="sm"><input type="checkbox" id="hideEnds"> Hide 500 m around starts and ends</label></div><div class="key" id="mapKey"></div><div class="chart" id="map"></div></div>
+  </section>
+  <section id="s-road"><h2>Against the baseline, on shared road</h2><p class="sm mut">Each row uses only the road that drive shares with the baseline. Per-pass rates compare legs that drove the same road, so a stretch driven twice doesn't dilute the figure.</p>
+    <div class="card"><div class="tw" id="baseTable"></div></div>
+    <div class="card"><h3>Is the difference real, and was it a fair test?</h3><p class="sm mut" id="statLede"></p><div class="tw" id="statTable"></div><div id="fairList"></div></div>
+    <div class="card"><h3>Wi-Fi APs per km along the baseline's longest leg</h3><p class="sm mut" id="profLede"></p><div class="key" id="profKey"></div><div class="chart" id="profChart"></div></div>
+  </section>
+  <section id="s-repeat"><h2>Repeatability</h2><p class="sm mut" id="repeatLede"></p>
+    <div class="grid2"><div class="card"><div class="btnrow"><h3>AP match on shared road (%)</h3><select class="btn" id="heatMode"><option value="drives">Drives</option><option value="legs">Legs</option></select></div><div class="chart" id="heat"></div></div>
+    <div class="card"><h3>Share of each drive's APs the baseline also saw, by peak signal (dBm)</h3><div class="key" id="retKey"></div><div class="chart" id="retChart"></div></div></div>
+  </section>
+  <section id="s-sched"><h2>Scheduler: channels, revisits and misses</h2><p class="sm mut">What the logs say about where the scan time went and what it bought. Channel yield is the per-channel prior the scheduler's dwell table encodes; revisit interval is the sweep cycle as the APs saw it; misses by band and channel show what one rig's scan list left for the other to find.</p>
+    <div class="card"><div class="btnrow"><label class="sm mut" for="chMetric">Show</label><select class="btn" id="chMetric"></select></div><div class="key" id="chKey"></div><div class="chart" id="chChart"></div></div>
+    <div class="card"><div class="btnrow"><h3>Channel yield</h3><label class="sm mut" for="chDrive">Table for</label><select class="btn" id="chDrive"></select></div><p class="sm mut">Sightings per AP is how often the radio re-logged a network it already had on that channel: high means dwell it could spare, low means it barely caught them. The last four columns use the shared road with the baseline, so the baseline row leaves them blank.</p><div class="tw" id="chTable"></div></div>
+    <div class="card"><h3>Misses by band, on shared road</h3><p class="sm mut">Of the APs one drive heard on the shared road, how many did the other hear too, by band.</p><div class="tw" id="bandMiss"></div></div>
+    <div class="card"><h3>Revisit interval and first sighting</h3><p class="sm mut">Revisit is the gap between two sightings of the same network inside one encounter (60 s or less). On a multi-node rig the overall figure mixes every node; the per-node figure in Nodes is each node's own sweep. First signal is how loud a network was when it was first logged on the drive: a lower (more negative) figure means it was caught earlier on the approach. Loudest at first sight is the share of networks whose first sighting was also their strongest, so the approach was missed entirely.</p><div class="tw" id="revisit"></div></div>
+  </section>
+  <section id="s-history"><h2>AP history</h2><p class="sm mut">Drives in time order, using every road driven. Moved means an AP's estimated position shifted more than 500 m since its last drive, which often points to a mobile hotspot.</p>
+    <div class="card"><div class="tw" id="histTable"></div></div></section>
+  <section id="s-nodes"><h2>Nodes</h2><p class="sm mut">Only logs with a Node column show here. Only this node counts APs no other node on that drive saw.</p><div class="card"><div class="tw" id="nodes"></div></div></section>
+  <section id="s-mix"><h2>Network mix</h2><p class="sm mut">Percentages are shares of distinct networks on each drive.</p><div class="card"><div class="tw" id="mix"></div></div></section>
+  <section id="s-data"><h2>Data quality</h2><div class="card"><div class="tw" id="quality"></div></div><p class="sm mut" id="perfNote"></p></section>
+  <section id="s-method"><h2>How the numbers work</h2><ul class="plain sm">
+    <li><strong>Splits and merges:</strong> these change how rows are grouped and never edit your files. Saved CSVs keep each original row as written, including rows the analysis leaves out, except rows with an unreadable timestamp.</li>
+    <li><strong>Networks per second:</strong> different networks logged in each second, added up, then divided by active time.</li>
+    <li><strong>Duplicates per second:</strong> extra rows for a network already logged in that same second. On multi-node rigs this includes two nodes seeing the same AP. <strong>Exact duplicates</strong> also match on signal, channel and node.</li>
+    <li><strong>New networks per second:</strong> first sighting of a network on that drive.</li>
+    <li><strong>Time visible:</strong> from first to last sighting of a network during one encounter. An encounter ends after 60 seconds unseen. A network seen once counts as 0 seconds, because the log can't show how long it was in range.</li>
+    <li><strong>Speed:</strong> measured from GPS over a few seconds around each row. An encounter's speed is the average at its first and last sighting.</li>
+    <li><strong>Estimated APs:</strong> a capture-recapture estimate from how many APs two drives share. Weak APs are harder to catch, so it tends to run low.</li>
+    <li><strong>AP position:</strong> a signal-weighted average of where the network was sighted. It's an estimate from driving past, and doesn't locate the AP exactly.</li>
+    <li><strong>95% range and p:</strong> the shared road is cut into 400 m stretches, one paired count of distinct APs per stretch (per pair of legs when two legs share 2 km or more). The range is the 2.5th to 97.5th percentile of the baseline-vs-it gap over 1,000 resamples of those stretches; p is a two-sided sign test on how many stretches each side won.</li>
+    <li><strong>Fairness checks:</strong> shared road (2 km and 30% of each drive), speed mix (the two drives' time per speed band on shared road, 70% alike), direction (heading agrees on half the stretches), time of day (3 h, same weekday or weekend), GPS (no more than 10% of rows without a fix) and randomized MACs (no more than half of the networks, and the two drives within 15 points of each other). Thresholds are rules of thumb.</li>
+    <li><strong>Channel yield:</strong> each row's Channel column. New APs are first sightings on the drive, the same thing the scheduler's yield EWMA counts. Share of sightings against share of APs shows where the radio's time went against what it found.</li>
+    <li><strong>Revisit interval:</strong> seconds between consecutive sightings of one network within an encounter. Node overlap is the share of networks heard by two or more nodes within the same second, the mesh's own [PAIR] redundancy metric.</li>
+    <li><strong>Street map:</strong> tiles load from OpenStreetMap, so its servers see which area the map shows. Your logs are never sent anywhere.</li>
+  </ul></section>
+  <footer class="site" data-standalone><span>Signal Atlas · Wardrive Compare</span><span><a href="/">home →</a></span><span><a href="/atlas/">Signal Atlas explorer →</a></span></footer>
+</div>
+
+<script type="text/plain" id="wk">
+// ---- store ----
+let files=[];const macIdx=new Map();const macStr=[];const macRand=[];const ssidIdx=new Map();const authIdx=new Map();const authNames=[];const nodeIdx=new Map();const nodeNames=[];
+const MAC=/^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$/;
+const BANDS=[[0,5,'Stopped, under 5'],[5,30,'5–30'],[30,50,'30–50'],[50,70,'50–70'],[70,90,'70–90'],[90,1e9,'90 and up']];
+const bandOf=v=>{for(let i=0;i<BANDS.length;i++)if(v<BANDS[i][1])return i;return BANDS.length-1};
+const CUTS=[[-999,-90,'−90 or weaker'],[-89,-85,'−89 to −85'],[-84,-80,'−84 to −80'],[-79,-75,'−79 to −75'],[-74,-70,'−74 to −70'],[-69,-60,'−69 to −60'],[-59,0,'−59 or stronger']];
+const say=(m)=>postMessage(m);
+function intern(map,arr,v){let i=map.get(v);if(i===undefined){i=map.size;map.set(v,i);if(arr)arr.push(v)}return i}
+function splitCsv(line){if(line.indexOf('"')<0)return line.split(',');const out=[];let cur='',q=false;for(let i=0;i<line.length;i++){const c=line[i];if(q){if(c==='"'){if(line[i+1]==='"'){cur+='"';i++}else q=false}else cur+=c}else if(c==='"')q=true;else if(c===','){out.push(cur);cur=''}else cur+=c}out.push(cur);return out}
+let lastTs='',lastTv=0;function parseTs(s){if(s===lastTs)return lastTv;if(!s||s.length<19||s[4]!=='-'||s[13]!==':')return NaN;const v=Date.UTC(+s.slice(0,4),+s.slice(5,7)-1,+s.slice(8,10),+s.slice(11,13),+s.slice(14,16),+s.slice(17,19))/1000;lastTs=s;lastTv=v;return v}
+function newCols(c){return{t:new Uint32Array(c),mac:new Uint32Array(c),rssi:new Int8Array(c),node:new Int16Array(c),chan:new Uint16Array(c),band:new Uint8Array(c),auth:new Uint8Array(c),flags:new Uint8Array(c),ssid:new Uint32Array(c),lat:new Float64Array(c),lon:new Float64Array(c)}}
+function grow(o,c){const n=newCols(c);for(const k in n)n[k].set(o[k]);return n}
+async function parseFile(file,fi,total){
+  const f={file,name:file.name,size:file.size,n:0,raw:0,noGps:0,corrupt:0,badSignal:0,other:0,outOfOrder:0,device:'Unknown logger',hasNode:false,tmin:Infinity,tmax:-Infinity,cols:newCols(4096),cap:4096};
+  const reader=file.stream().pipeThrough(new TextDecoderStream('utf-8')).getReader();
+  let buf='',header=null,ix=null,line0=true,done=false,bytes=0,last=-1;
+  const row=(ln)=>{
+    if(ln.endsWith('\r'))ln=ln.slice(0,-1);if(!ln)return;
+    if(line0){line0=false;if(ln.startsWith('WigleWifi')){const g=k=>(ln.match(new RegExp('(?:^|,)'+k+'=([^,]*)'))||[])[1];f.device=[g('model'),g('device')].filter(Boolean).join(' / ')||'Unknown logger';f.app=g('appRelease')||'';return}}
+    if(!header){const h=splitCsv(ln).map(s=>s.trim());if(h.indexOf('MAC')<0||h.indexOf('CurrentLatitude')<0||h.indexOf('FirstSeen')<0)throw new Error('This file has no WiGLE CSV header.');header=h;ix={};h.forEach((n,i)=>ix[n]=i);f.hasNode=ix.Node!==undefined;return}
+    f.raw++;const c=splitCsv(ln);const m=(c[ix.MAC]||'').toUpperCase(),ts=parseTs(c[ix.FirstSeen]);
+    if(!m||!MAC.test(m)||!(ts>0)){f.corrupt++;return}
+    const ty=(c[ix.Type]||'WIFI').toUpperCase();if(ty!=='WIFI'&&ty!=='BLE'&&ty!=='BT'){f.other++;return}
+    const la=+c[ix.CurrentLatitude],lo=+c[ix.CurrentLongitude];
+    if(!isFinite(la)||!isFinite(lo)||(Math.abs(la)<1e-6&&Math.abs(lo)<1e-6)||Math.abs(la)>90||Math.abs(lo)>180){f.noGps++;return}
+    const r=+c[ix.RSSI];if(!isFinite(r)||r>=0||r<-127){f.badSignal++;return}
+    if(f.n===f.cap){f.cap*=2;f.cols=grow(f.cols,f.cap)}
+    const C=f.cols,n=f.n++;let id=macIdx.get(m);if(id===undefined){id=macStr.length;macIdx.set(m,id);macStr.push(m);macRand.push('26AEae'.indexOf(m[1])>=0?1:0)}
+    C.t[n]=ts;C.mac[n]=id;C.rssi[n]=r;C.lat[n]=la;C.lon[n]=lo;
+    if(ts<last)f.outOfOrder++;last=ts;if(ts<f.tmin)f.tmin=ts;if(ts>f.tmax)f.tmax=ts;
+    C.node[n]=f.hasNode?intern(nodeIdx,nodeNames,c[ix.Node]||'?'):-1;
+    const fq=+c[ix.Frequency]||0;C.band[n]=fq>5925?3:fq>=4900?2:fq>=2400?1:0;C.chan[n]=+c[ix.Channel]||0;
+    C.auth[n]=intern(authIdx,authNames,c[ix.AuthMode]||'');
+    const s=c[ix.SSID]||'';C.flags[n]=(ty!=='WIFI'?1:0)|(s===''?2:0);C.ssid[n]=s?intern(ssidIdx,null,s):0;
+  };
+  while(!done){const{value,done:d}=await reader.read();done=d;if(value){buf+=value;bytes+=value.length;let i,st=0;while((i=buf.indexOf('\n',st))>=0){row(buf.slice(st,i));st=i+1}buf=buf.slice(st);say({type:'progress',text:`Reading ${file.name} (${fi+1} of ${total})`,frac:(fi+Math.min(1,bytes/file.size))/total})}}
+  if(buf)row(buf);
+  if(!header)throw new Error('This file has no WiGLE CSV header.');
+  if(!f.n)throw new Error('This file has no rows with GPS positions.');
+  for(const k in f.cols)f.cols[k]=f.cols[k].slice(0,f.n);return f;
+}
+// ---- geometry ----
+let lastUnits=new Map();let LAT0=0,COS=1;const mx=lo=>lo*111320*COS,my=la=>la*110950;
+function buildDrive(fl,cfg,id,ra,rb,pre,sfx,origin){
+  let n=0;fl.forEach(f=>{const T=f.cols.t;for(let i=0;i<f.n;i++)if(T[i]>=ra&&T[i]<rb)n++});if(!n)return null;const A=newCols(n);let o=0;fl.forEach(f=>{const T=f.cols.t;for(let i=0;i<f.n;i++){if(T[i]<ra||T[i]>=rb)continue;for(const k in A)A[k][o]=f.cols[k][i];o++}});
+  const idx=new Uint32Array(n);for(let i=0;i<n;i++)idx[i]=i;const tt=A.t;idx.sort((a,b)=>tt[a]-tt[b]||a-b);
+  const D=newCols(n);for(const k in D){const s=A[k],t=D[k];for(let i=0;i<n;i++)t[i]=s[idx[i]]}
+  const sT=[],sLa=[],sLo=[],sStart=[];let cur=-1;for(let i=0;i<n;i++){if(D.t[i]!==cur){cur=D.t[i];sT.push(cur);sLa.push(D.lat[i]);sLo.push(D.lon[i]);sStart.push(i)}}
+  sStart.push(n);const S=sT.length;const X=new Float64Array(S),Y=new Float64Array(S),dt=new Float64Array(S),ds=new Float64Array(S),v=new Float32Array(S);
+  for(let i=0;i<S;i++){X[i]=mx(sLo[i]);Y[i]=my(sLa[i]);if(i){dt[i]=sT[i]-sT[i-1];ds[i]=Math.hypot(X[i]-X[i-1],Y[i]-Y[i-1])}}
+  for(let i=0;i<S;i++){let a=i,b=i,d=0;while(a>0&&i-a<3&&dt[a]<=5&&sT[i]-sT[a-1]<=8){d+=ds[a];a--}while(b<S-1&&b-i<3&&dt[b+1]<=5&&sT[b+1]-sT[i]<=8){b++;d+=ds[b]}const e=sT[b]-sT[a];v[i]=e>0?d/e*3.6:(i&&dt[i]<60&&dt[i]>0?ds[i]/dt[i]*3.6:0)}
+  const legs=[];let ls=0;for(let i=1;i<=S;i++){if(i===S||dt[i]>=cfg.legGapMin*60){legs.push({a:ls,b:i-1});ls=i}}
+  // densified points, no bridging of gaps
+  const px=[],py=[],pl=[],ps=[];for(let i=1;i<S;i++){if(dt[i]>60&&ds[i]>200)continue;const m=Math.max(1,Math.floor(ds[i]/10));for(let k=0;k<m;k++){px.push(X[i-1]+(X[i]-X[i-1])*k/m);py.push(Y[i-1]+(Y[i]-Y[i-1])*k/m);pl.push(ds[i]/m);ps.push(i)}}
+  const used=fl.filter(f=>f.tmin<rb&&f.tmax>=ra);return{id,key:pre+sT[0]+sfx,origin,ra,rb,partial:used.some(f=>f.tmin<ra||f.tmax>=rb),files:used,n,D,S,sT,sStart,sLa,sLo,X,Y,dt,ds,v,legs,px:Float64Array.from(px),py:Float64Array.from(py),pl:Float32Array.from(pl),ps:Uint32Array.from(ps)};
+}
+function hashOf(xs,ys,size,from,to){const h=new Map();const a=from||0,b=to===undefined?xs.length:to;for(let i=a;i<b;i++){const k=Math.floor(xs[i]/size)*4194304+Math.floor(ys[i]/size);let l=h.get(k);if(!l){l=[];h.set(k,l)}l.push(i)}return{h,size,xs,ys}}
+function near(H,x,y,r){const cx=Math.floor(x/H.size),cy=Math.floor(y/H.size),r2=r*r,R=Math.ceil(r/H.size);for(let i=-R;i<=R;i++)for(let j=-R;j<=R;j++){const l=H.h.get((cx+i)*4194304+(cy+j));if(!l)continue;for(let q=0;q<l.length;q++){const d=l[q],dx=H.xs[d]-x,dy=H.ys[d]-y;if(dx*dx+dy*dy<=r2)return true}}return false}
+const med=a=>{if(!a.length)return null;const s=Float64Array.from(a).sort();const m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2};
+const qt=(a,q)=>{if(!a.length)return null;const s=Float64Array.from(a).sort();return s[Math.min(s.length-1,Math.floor(q*s.length))]};
+const mean=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:null;
+const hStat=h=>{let n=0;for(let i=1;i<h.length;i++)n+=h[i];if(!n)return{n:0,med:null,p90:null,fast:null};let c=0,m=null,p=null,f=0;for(let i=1;i<h.length;i++){c+=h[i];if(i<=2)f+=h[i];if(m===null&&c>=n/2)m=i;if(p===null&&c>=n*.9)p=i}return{n,med:m,p90:p,fast:f/n*100}};
+function analyse(cfg){
+  const t0=Date.now();
+  if(!files.length){say({type:'result',result:null});return}
+  let la=0,c=0;files.forEach(f=>{la+=f.cols.lat[0];c++});LAT0=la/c;COS=Math.cos(LAT0*Math.PI/180);
+  const fs=[...files].sort((a,b)=>a.tmin-b.tmin);const grp=[];
+  // A solo file is a drive of its own: never lumped with another file.
+  fs.forEach(f=>{let g=null;if(!f.solo)for(let i=grp.length-1;i>=0;i--){const x=grp[i];if(!x.solo&&x.device===f.device&&f.tmin-x.tmax<=cfg.driveGapH*3600){g=x;break}}if(!g){g={device:f.device,tmax:f.tmax,fl:[],solo:!!f.solo};grp.push(g)}g.fl.push(f);g.tmax=Math.max(g.tmax,f.tmax)});
+  grp.sort((a,b)=>a.fl[0].tmin-b.fl[0].tmin);
+  const mode=cfg.mode||'drive';let units=[];
+  if(mode==='file')fs.forEach(f=>units.push({fl:[f],a:f.tmin,b:f.tmax+1,origin:grp.findIndex(x=>x.fl.includes(f)),pre:'f',sfx:'x'+f.size}));
+  else grp.forEach((g,gi)=>{const a=Math.min(...g.fl.map(f=>f.tmin)),b=Math.max(...g.fl.map(f=>f.tmax))+1;if(mode==='leg'){const t=buildDrive(g.fl,cfg,0,a,b,'l','',gi);if(t)t.legs.forEach(l=>units.push({fl:g.fl,a:t.sT[l.a],b:t.sT[l.b]+1,origin:gi,pre:'l',sfx:''}))}else units.push({fl:g.fl,a,b,origin:gi,pre:'d',sfx:''})});
+  const cuts=[...(cfg.cuts||[])].sort((x,y)=>x-y);units=units.flatMap(u=>{const out=[];let s=u.a;cuts.forEach(c=>{if(c>s&&c<u.b){out.push({...u,a:s,b:c});s=c}});out.push({...u,a:s});return out});
+  units.sort((x,y)=>x.a-y.a);const joins=new Set(cfg.joins||[]);const merged=[];units.forEach(u=>{const p=merged[merged.length-1];if(p&&joins.has(u.a)&&p.fl[0].device===u.fl[0].device){p.fl=[...new Set([...p.fl,...u.fl])];p.b=Math.max(p.b,u.b)}else merged.push({...u})});
+  const all=merged.map((u,i)=>{say({type:'progress',text:`Building ${i+1} of ${merged.length}`,frac:.05});return buildDrive(u.fl,cfg,i,u.a,u.b,u.pre,u.sfx,u.origin)}).filter(Boolean);
+  lastUnits=new Map(all.map(d=>[d.key,{files:d.files,a:d.ra,b:d.rb}]));
+  const ex=new Set(cfg.excluded||[]);const ds=all.filter(d=>!ex.has(d.key));ds.forEach((d,i)=>d.ix=i);const N=ds.length;
+  const mC=macStr.length;const typ=cfg.typ;const keep=(fl)=>typ==='all'||(typ==='wifi'?!(fl&1):!!(fl&1));
+  const firstDrive=new Int32Array(mC).fill(-1),lastDrive=new Int32Array(mC).fill(-1);const genStamp=new Int32Array(mC).fill(-1);let gen=0;
+  const R=cfg.radius;
+  const summaries=[];const seenInDrive=new Int32Array(mC).fill(-1);
+  ds.forEach((d,di)=>{
+    say({type:'progress',text:`Working out speed and visibility for drive ${di+1} of ${N}`,frac:.1+.25*di/Math.max(1,N)});
+    const B=BANDS.map(()=>({sec:0,km:0,rows:0,distinct:0,dup:0,exact:0,newAps:0,enc:[],encKm:[],once:0}));
+    const hasNodeD=d.files.some(f=>f.hasNode);const chRows=new Map(),chAps=new Map(),chNew=new Map(),chBand=new Map(),chSeen=new Set();const pk=new Int8Array(mC).fill(-128),fr=new Int8Array(mC);const macsSeen=[];const firstB=[[],[],[],[]];const nOf=new Int32Array(mC);let nBoth=0;
+    const{D,S,sStart,dt,ds:sd,v,X,Y,sT}=d;let rows=0,dist=0,dup=0,exact=0,uniq=0,el=0,kmAll=0;
+    for(let s=0;s<S;s++){
+      const b=bandOf(v[s]);const e=dt[s]<60?dt[s]:0;B[b].sec+=e;el+=e;if(dt[s]<60){B[b].km+=sd[s];kmAll+=sd[s]}
+      gen++;const ex2=new Set();
+      for(let i=sStart[s];i<sStart[s+1];i++){if(!keep(D.flags[i]))continue;const m=D.mac[i];rows++;B[b].rows++;
+        const k=m*1e9+(D.node[i]+1)*1e6+(D.rssi[i]+128)*1000+D.chan[i];
+        if(genStamp[m]===gen){dup++;B[b].dup++;if(hasNodeD&&nOf[m]>=0&&nOf[m]!==D.node[i]){nBoth++;nOf[m]=-1}}else{genStamp[m]=gen;dist++;B[b].distinct++;if(hasNodeD)nOf[m]=D.node[i]}
+        const ch=D.chan[i];chRows.set(ch,(chRows.get(ch)||0)+1);if(!chBand.has(ch))chBand.set(ch,D.band[i]);const ck=m*256+(ch&255);if(!chSeen.has(ck)){chSeen.add(ck);chAps.set(ch,(chAps.get(ch)||0)+1)}if(D.rssi[i]>pk[m])pk[m]=D.rssi[i];
+        if(ex2.has(k)){exact++;B[b].exact++}else ex2.add(k);
+        if(seenInDrive[m]!==di){seenInDrive[m]=di;uniq++;B[b].newAps++;if(firstDrive[m]<0)firstDrive[m]=di;lastDrive[m]=di;chNew.set(ch,(chNew.get(ch)||0)+1);fr[m]=D.rssi[i];macsSeen.push(m);firstB[D.band[i]].push(D.rssi[i])}}
+    }
+    const RV=61,rvAll=new Int32Array(RV),rvB=[0,1,2,3].map(()=>new Int32Array(RV)),nLT=new Map(),rvN=new Map();
+    const fT=new Int32Array(mC).fill(-1),lT=new Int32Array(mC),fS=new Int32Array(mC),lS=new Int32Array(mC),cnt=new Int32Array(mC);const ENC=60;const encMoving=[],encAll=[];let encOnce=0,encDist=[];
+    const fin=(m)=>{const du=lT[m]-fT[m];const sp=(v[fS[m]]+v[lS[m]])/2;const b=bandOf(sp);const km=Math.hypot(X[lS[m]]-X[fS[m]],Y[lS[m]]-Y[fS[m]]);B[b].enc.push(du);B[b].encKm.push(km);if(cnt[m]===1){B[b].once++;encOnce++}encAll.push(du);if(sp>=5){encMoving.push(du);encDist.push(km)}};
+    for(let s=0;s<S;s++){const t=sT[s];for(let i=sStart[s];i<sStart[s+1];i++){if(!keep(D.flags[i]))continue;const m=D.mac[i];if(fT[m]>=0&&t>lT[m]&&t-lT[m]<=ENC){const g=t-lT[m];rvAll[g]++;rvB[D.band[i]][g]++}if(hasNodeD&&D.node[i]>=0){const nd=D.node[i];let a=nLT.get(nd);if(!a){a=new Uint32Array(mC);nLT.set(nd,a)}const p=a[m];if(p&&t>p&&t-p<=ENC){let h=rvN.get(nd);if(!h){h=new Int32Array(RV);rvN.set(nd,h)}h[t-p]++}a[m]=t}if(fT[m]>=0&&t-lT[m]>ENC){fin(m);fT[m]=-1}if(fT[m]<0){fT[m]=t;fS[m]=s;cnt[m]=0}lT[m]=t;lS[m]=s;cnt[m]++}}
+    for(let m=0;m<mC;m++)if(fT[m]>=0)fin(m);
+    const mS=B.slice(1).reduce((a,b)=>a+b.sec,0),mK=B.slice(1).reduce((a,b)=>a+b.km,0);
+    const u=new Set();let open=0,hidden=0,rand=0,b5=0,b24=0,b6=0,bleDev=0,bleRows=0,wep=0,wpa3=0;const ssids=new Set();const rs=[];const mseen=new Set();
+    for(let i=0;i<d.n;i++){if(D.flags[i]&1){bleRows++}if(!keep(D.flags[i]))continue;rs.push(D.rssi[i]);const m=D.mac[i];if(D.ssid[i])ssids.add(D.ssid[i]);if(!u.has(m)){u.add(m);const a=authNames[D.auth[i]]||'';if(a==='OPEN')open++;if(a.startsWith('WEP'))wep++;if(a.indexOf('WPA3')>=0)wpa3++;if(D.flags[i]&2)hidden++;if(macRand[m])rand++;const bd=D.band[i];if(bd===1)b24++;else if(bd===2)b5++;else if(bd===3)b6++}}
+    const bleSet=new Set();for(let i=0;i<d.n;i++)if(D.flags[i]&1)bleSet.add(D.mac[i]);
+    const nodes=new Map();const only=new Int32Array(mC).fill(-2);if(d.files.some(f=>f.hasNode)){for(let i=0;i<d.n;i++){if(!keep(D.flags[i])||D.node[i]<0)continue;const nd=D.node[i];let e=nodes.get(nd);if(!e){e={rows:0,set:new Set(),chs:new Set()};nodes.set(nd,e)}e.rows++;e.set.add(D.mac[i]);e.chs.add(D.chan[i]);const m=D.mac[i];only[m]=only[m]===-2?nd:(only[m]===nd?nd:-1)}
+      const uo=new Map();for(const m of u){if(only[m]>=0)uo.set(only[m],(uo.get(only[m])||0)+1)}nodes.forEach((e,k)=>{e.only=uo.get(k)||0})}
+    const fin2=(a,digits)=>a;const km=kmAll/1000;
+    summaries.push({key:d.key,start:sT[0],end:sT[S-1],device:d.files[0].device,files:d.files.map(f=>f.name),km,elapsed:el,movingS:mS,movingKm:mK/1000,avgMoving:mS?mK/mS*3.6:0,avgAll:el?kmAll/el*3.6:0,rows,aps:uniq,
+      netsPerS:el?dist/el:0,dupPerS:el?dup/el:0,exactPerS:el?exact/el:0,rowsPerS:el?rows/el:0,newPerS:el?uniq/el:0,apsPerKm:km?uniq/km:0,visMean:mean(encMoving),visMedian:med(encMoving),visAll:mean(encAll),visKm:mean(encDist),encounters:encAll.length,oncePct:encAll.length?encOnce/encAll.length*100:0,
+      bands:B.map((x,i)=>({band:BANDS[i][2],sec:x.sec,km:x.km/1000,rowsPerS:x.sec?x.rows/x.sec:null,netsPerS:x.sec?x.distinct/x.sec:null,dupPerS:x.sec?x.dup/x.sec:null,newPerS:x.sec?x.newAps/x.sec:null,newPerKm:x.km>=1000?x.newAps/(x.km/1000):null,visMean:mean(x.enc),visMedian:med(x.enc),visKm:mean(x.encKm),encounters:x.enc.length,oncePct:x.enc.length?x.once/x.enc.length*100:null})),
+      legs:d.legs.map((l,i)=>{let k=0;for(let s=l.a+1;s<=l.b;s++)if(d.dt[s]<60)k+=d.ds[s];return{i,start:sT[l.a],end:sT[l.b],km:k/1000}}),
+      mix:{ssids:ssids.size,medianRssi:med(rs.slice(0,500000)),b24:u.size?b24/u.size*100:0,b5:u.size?b5/u.size*100:0,b6:u.size?b6/u.size*100:0,open:u.size?open/u.size*100:0,hidden:u.size?hidden/u.size*100:0,rand:u.size?rand/u.size*100:0,wpa3:u.size?wpa3/u.size*100:0,wep:u.size?wep/u.size*100:0,bleDev:bleSet.size,bleRows},
+      nodes:[...nodes.entries()].map(([k,e])=>({node:nodeNames[k],rows:e.rows,aps:e.set.size,only:e.only,perS:el?e.rows/el:0,chans:e.chs.size,chList:[...e.chs].sort((a,b)=>a-b),revisit:hStat(rvN.get(k)||new Int32Array(RV))})).sort((a,b)=>b.aps-a.aps),
+      hasNode:d.files.some(f=>f.hasNode),
+      chans:[...chRows.keys()].sort((a,b)=>a-b).map(ch=>({ch,band:chBand.get(ch)||0,rows:chRows.get(ch),aps:chAps.get(ch)||0,newAps:chNew.get(ch)||0})),
+      first:{med:med(macsSeen.map(m=>fr[m])),gain:med(macsSeen.map(m=>pk[m]-fr[m])),atPeak:macsSeen.length?macsSeen.filter(m=>pk[m]===fr[m]).length/macsSeen.length*100:null,b24:med(firstB[1]),b5:med(firstB[2])},
+      revisit:{all:hStat(rvAll),b24:hStat(rvB[1]),b5:hStat(rvB[2]),b6:hStat(rvB[3])},nodeOverlap:hasNodeD&&dist?nBoth/dist*100:null});
+  });
+  // near flags
+  say({type:'progress',text:'Matching tracks between drives',frac:.4});
+  const H=ds.map(d=>hashOf(d.px,d.py,Math.max(R,20)));
+  const nearF=ds.map(d=>ds.map(()=>null));
+  for(let i=0;i<N;i++){for(let j=0;j<N;j++){if(i===j)continue;const d=ds[i],f=new Uint8Array(d.S);for(let s=0;s<d.S;s++)f[s]=near(H[j],d.X[s],d.Y[s],R)?1:0;nearF[i][j]=f}say({type:'progress',text:`Matching tracks: drive ${i+1} of ${N}`,frac:.4+.2*i/Math.max(1,N)})}
+  // point-level coverage count
+  const cov=ds.map((d,i)=>{const c=new Uint16Array(d.px.length);for(let p=0;p<c.length;p++){let n=1;for(let j=0;j<N;j++){if(j===i)continue;if(near(H[j],d.px[p],d.py[p],R))n++}c[p]=n}return c});
+  // road length at each K, deduped between legs at 40 m
+  const roadKm={};const walk=(K)=>{const com=hashOf([],[],40);const cx=[],cy=[];const H2={h:new Map(),size:40,xs:cx,ys:cy};let tot=0;const perDrive=[];ds.forEach((d,i)=>{const leg=(p)=>{let lo=0;const s=d.ps[p];for(let l=0;l<d.legs.length;l++)if(s>=d.legs[l].a&&s<=d.legs[l].b)return l;return 0};let cl=-1,pend=[];const flush=()=>{pend.forEach(p=>{const k=Math.floor(d.px[p]/40)*4194304+Math.floor(d.py[p]/40);const ind=cx.length;cx.push(d.px[p]);cy.push(d.py[p]);let l=H2.h.get(k);if(!l){l=[];H2.h.set(k,l)}l.push(ind)});pend=[]};for(let p=0;p<d.px.length;p++){if(cov[i][p]<K)continue;const l=leg(p);if(l!==cl){flush();cl=l}if(!near(H2,d.px[p],d.py[p],40))tot+=d.pl[p];pend.push(p)}flush();perDrive.push(tot/1000)});return{km:tot/1000,cum:perDrive}};
+  let cumRoad=[];if(N)cumRoad=walk(1).cum;for(let K=2;K<=N;K++)roadKm[K]=walk(K).km;
+  // Thin tracks for map
+  const tracks=ds.map((d,i)=>{const la=[],lo=[],cv=[],tm=[],seg=[];let sg=0,acc=0;const L=d.S;for(let s=0;s<L;s++){let n=1;for(let j=0;j<N;j++)if(j!==i&&nearF[i][j][s])n++;if(s&&d.dt[s]>60){sg++}acc+=d.ds[s]*(d.dt[s]<=60?1:0);const pc=cv.length?cv[cv.length-1]:0;if(s===0||s===L-1||acc>=60||n!==pc||(s&&d.dt[s]>60)){la.push(d.sLa[s]);lo.push(d.sLo[s]);cv.push(n);tm.push(d.sT[s]);seg.push(sg);acc=0}}return{key:d.key,lat:la,lon:lo,cov:cv,t:tm,seg}});
+  // share of driving on shared road
+  const sharedShare=ds.map((d,i)=>{let on=0,to=0;for(let s=1;s<d.S;s++){if(d.dt[s]>=60)continue;to+=d.ds[s];let hit=false;for(let j=0;j<N;j++)if(j!==i&&nearF[i][j][s]){hit=true;break}if(hit)on+=d.ds[s]}return{key:d.key,onKm:on/1000,pct:to?on/to*100:0}});
+  // pair matrix on shared road
+  say({type:'progress',text:'Comparing APs between drives',frac:.65});
+  const markA=new Int32Array(mC).fill(-1),markB=new Int32Array(mC).fill(-1);let pid=0;const pairs=[];
+  for(let i=0;i<N;i++)for(let j=i+1;j<N;j++){pid++;const a=ds[i],b=ds[j],fa=nearF[i][j],fb=nearF[j][i];let na=0,nb=0,m=0;
+    for(let s=0;s<a.S;s++){if(!fa[s])continue;for(let r=a.sStart[s];r<a.sStart[s+1];r++){if(!keep(a.D.flags[r]))continue;const q=a.D.mac[r];if(markA[q]!==pid){markA[q]=pid;na++}}}
+    for(let s=0;s<b.S;s++){if(!fb[s])continue;for(let r=b.sStart[s];r<b.sStart[s+1];r++){if(!keep(b.D.flags[r]))continue;const q=b.D.mac[r];if(markB[q]!==pid){markB[q]=pid;nb++;if(markA[q]===pid)m++}}}
+    let ka=0;for(let s=1;s<a.S;s++)if(fa[s]&&a.dt[s]<60)ka+=a.ds[s];
+    pairs.push({a:a.key,b:b.key,na,nb,shared:m,jaccard:(na+nb-m)?m/(na+nb-m)*100:null,km:ka/1000,estimate:(na&&nb)?(na+1)*(nb+1)/(m+1)-1:null})}
+  // leg matrix
+  const legList=[];ds.forEach((d,i)=>d.legs.forEach((l,li)=>{let km=0;for(let s=l.a+1;s<=l.b;s++)if(d.dt[s]<60)km+=d.ds[s];if(km>=.5)legList.push({d:i,origin:d.origin,li,a:l.a,b:l.b,key:d.key,km:km/1000,start:d.sT[l.a]})}));
+  let legPairs=null,sameMean=null,crossMean=null;const legsCapped=legList.length>80;
+  if(!legsCapped&&legList.length>1){say({type:'progress',text:'Comparing legs',frac:.75});
+    legList.forEach(l=>{const d=ds[l.d];const n0=l.d;let st=d.ps.findIndex?0:0;const xs=[],ys=[];for(let p=0;p<d.px.length;p++){const s=d.ps[p];if(s>=l.a&&s<=l.b){xs.push(d.px[p]);ys.push(d.py[p])}}l.H=hashOf(xs,ys,Math.max(R,20))});
+    legPairs=[];const same=[],cross=[];for(let x=0;x<legList.length;x++)for(let y=x+1;y<legList.length;y++){pid++;const A=legList[x],Bb=legList[y],da=ds[A.d],db=ds[Bb.d];let na=0,nb=0,m=0,km=0,kb=0,ra=0,rb=0;
+      for(let s=A.a;s<=A.b;s++){if(!near(Bb.H,da.X[s],da.Y[s],R))continue;if(s>A.a&&da.dt[s]<60)km+=da.ds[s];for(let r=da.sStart[s];r<da.sStart[s+1];r++){if(!keep(da.D.flags[r]))continue;ra++;const q=da.D.mac[r];if(markA[q]!==pid){markA[q]=pid;na++}}}
+      if(km<2000){legPairs.push({x,y,j:null,km:km/1000,da:A.d,db:Bb.d});continue}
+      for(let s=Bb.a;s<=Bb.b;s++){if(!near(A.H,db.X[s],db.Y[s],R))continue;if(s>Bb.a&&db.dt[s]<60)kb+=db.ds[s];for(let r=db.sStart[s];r<db.sStart[s+1];r++){if(!keep(db.D.flags[r]))continue;rb++;const q=db.D.mac[r];if(markB[q]!==pid){markB[q]=pid;nb++;if(markA[q]===pid)m++}}}
+      const j=(na+nb-m)?m/(na+nb-m)*100:null;legPairs.push({x,y,j,km:km/1000,da:A.d,db:Bb.d,na,nb,ka:km/1000,kb:kb/1000,ra,rb});if(j!==null)(A.origin===Bb.origin?same:cross).push(j)}
+    sameMean=mean(same);crossMean=mean(cross)}
+  // baseline detail
+  let bi=ds.findIndex(d=>d.key===cfg.baseline);if(bi<0)bi=N-1;const base=ds[bi];const detail=[];let profile=null;
+  if(N>1){say({type:'progress',text:'Comparing against the baseline drive',frac:.85});
+    const summ=(d,flags)=>{const m=new Map();for(let s=0;s<d.S;s++){if(!flags[s])continue;for(let r=d.sStart[s];r<d.sStart[s+1];r++){if(!keep(d.D.flags[r]))continue;const q=d.D.mac[r];let e=m.get(q);if(!e){e={w:0,x:0,y:0,max:-128,n:0,ch:0,bd:0};m.set(q,e)}const w=Math.pow(10,d.D.rssi[r]/10);e.w+=w;e.x+=w*d.X[s];e.y+=w*d.Y[s];if(d.D.rssi[r]>e.max){e.max=d.D.rssi[r];e.ch=d.D.chan[r];e.bd=d.D.band[r]}e.n++}}return m};
+    // paired stretches, bootstrap and sign test; fairness measures
+    const CELL=400;const ckey=(x,y)=>Math.floor(x/CELL)*4194304+Math.floor(y/CELL);
+    const accCells=(cells,d,s0,s1,isNear,side)=>{for(let s=s0;s<=s1;s++){if(!isNear(s))continue;const k=ckey(d.X[s],d.Y[s]);let c=cells.get(k);if(!c){c={a:null,b:null,va:0,na:0,vb:0,nb:0,hxa:0,hya:0,hxb:0,hyb:0};cells.set(k,c)}let set=c[side];if(!set){set=new Set();c[side]=set}for(let r=d.sStart[s];r<d.sStart[s+1];r++)if(keep(d.D.flags[r]))set.add(d.D.mac[r]);c['v'+side]+=d.v[s];c['n'+side]++;if(s>0&&d.dt[s]<60){c['hx'+side]+=d.X[s]-d.X[s-1];c['hy'+side]+=d.Y[s]-d.Y[s-1]}}};
+    const obsOf=(cells,out)=>{cells.forEach(c=>{if(!c.a||!c.b)return;out.push({nb:c.a.size,no:c.b.size,va:c.va/c.na,vb:c.vb/c.nb,dot:c.hxa*c.hxb+c.hya*c.hyb,hasDir:!!((c.hxa||c.hya)&&(c.hxb||c.hyb))})})};
+    let rs=12345;const rnd=()=>{rs=(rs*1664525+1013904223)>>>0;return rs/4294967296};
+    const logC=(n,k)=>{let v=0;for(let i=1;i<=k;i++)v+=Math.log(n-k+i)-Math.log(i);return v};
+    const signP=(w,l)=>{const n=w+l;if(!n)return null;const k=Math.min(w,l);let p=0;for(let i=0;i<=k;i++)p+=Math.exp(logC(n,i)-n*Math.LN2);return Math.min(1,2*p)};
+    const pairStat=(obs,perLeg)=>{const n=obs.length;let sB=0,sO=0,w=0,l=0,dir=0,nd=0;obs.forEach(o=>{sB+=o.nb;sO+=o.no;if(o.nb>o.no)w++;else if(o.nb<o.no)l++;if(o.hasDir){nd++;if(o.dot>0)dir++}});const est=sO?(sB/sO-1)*100:null;let lo=null,hi=null;if(n>=5&&sO){rs=12345;const rr=[];for(let b=0;b<1000;b++){let x=0,y=0;for(let i=0;i<n;i++){const o=obs[Math.floor(rnd()*n)];x+=o.nb;y+=o.no}rr.push(y?(x/y-1)*100:0)}rr.sort((a,b)=>a-b);lo=rr[25];hi=rr[974]}const mt=obs.filter(o=>Math.abs(o.va-o.vb)<=15);let mB=0,mO=0;mt.forEach(o=>{mB+=o.nb;mO+=o.no});return{n,cell:CELL,perLeg,est,lo,hi,wins:w,losses:l,p:signP(w,l),nMatched:mt.length,estMatched:mt.length>=5&&mO?(mB/mO-1)*100:null,dirAgree:nd?dir/nd*100:null}};
+    const off=(cfg.tzOff||0)*60;const wk=t=>{const w=Math.floor((t-off)/86400+4)%7;return w===0||w===6};const gpsPct=x=>{let r=0,n=0;x.files.forEach(f=>{r+=f.raw;n+=f.noGps});return r?n/r*100:0};
+    ds.forEach((d,j)=>{if(j===bi)return;const A=summ(base,nearF[bi][j]),O=summ(d,nearF[j][bi]);const sh=[],dr=[];let moved=0;let rows=0;A.forEach((e,q)=>{const o=O.get(q);if(!o)return;const dist=Math.hypot(e.x/e.w-o.x/o.w,e.y/e.w-o.y/o.w);sh.push(dist);dr.push(e.max-o.max);if(dist>500)moved++});
+      let km=0;for(let s=1;s<d.S;s++)if(nearF[j][bi][s]&&d.dt[s]<60)km+=d.ds[s];let kmb=0;for(let s=1;s<base.S;s++)if(nearF[bi][j][s]&&base.dt[s]<60)kmb+=base.ds[s];
+      let rB=0,rO=0;A.forEach(e=>rB+=e.n);O.forEach(e=>rO+=e.n);
+      const ret=CUTS.map(c=>{let to=0,hit=0;O.forEach((e,q)=>{if(e.max>=c[0]&&e.max<=c[1]){to++;if(A.has(q))hit++}});return{bucket:c[2],pct:to?hit/to*100:null,n:to}});
+      let lA=0,lK=0,lR=0,oA=0,oK=0,oR=0,lp=0;(legPairs||[]).forEach(p=>{if(p.j===null||p.j===undefined)return;if(p.da===bi&&p.db===j){lA+=p.na;lK+=p.ka;lR+=p.ra;oA+=p.nb;oK+=p.kb;oR+=p.rb;lp++}else if(p.da===j&&p.db===bi){lA+=p.nb;lK+=p.kb;lR+=p.rb;oA+=p.na;oK+=p.ka;oR+=p.ra;lp++}});
+      const oneOnly=[...O.entries()].filter(([q])=>!A.has(q)).map(([,e])=>e);
+      const bandRow=[1,2,3].map(b=>{let oT=0,oH=0,bT=0,bH=0;O.forEach((e,q)=>{if(e.bd!==b)return;oT++;if(A.has(q))oH++});A.forEach((e,q)=>{if(e.bd!==b)return;bT++;if(O.has(q))bH++});return{band:b,otherAps:oT,otherSeenByBase:oT?oH/oT*100:null,baseAps:bT,baseSeenByOther:bT?bH/bT*100:null}});
+      const chM=new Map();const chE=(ch,bd)=>{let c=chM.get(ch);if(!c){c={ch,band:bd,other:0,bothO:0,base:0,bothB:0};chM.set(ch,c)}return c};O.forEach((e,q)=>{const c=chE(e.ch,e.bd);c.other++;if(A.has(q))c.bothO++});A.forEach((e,q)=>{const c=chE(e.ch,e.bd);c.base++;if(O.has(q))c.bothB++});
+      const obs=[];let perLeg=false;(legPairs||[]).forEach(p=>{if(p.j===null||p.j===undefined)return;const LA=legList[p.x],LB=legList[p.y];let L0,L1;if(LA.d===bi&&LB.d===j){L0=LA;L1=LB}else if(LA.d===j&&LB.d===bi){L0=LB;L1=LA}else return;const cells=new Map();accCells(cells,base,L0.a,L0.b,s=>near(L1.H,base.X[s],base.Y[s],R),'a');accCells(cells,d,L1.a,L1.b,s=>near(L0.H,d.X[s],d.Y[s],R),'b');obsOf(cells,obs);perLeg=true});
+      if(!obs.length){const cells=new Map();const fb0=nearF[bi][j],fo0=nearF[j][bi];accCells(cells,base,0,base.S-1,s=>!!fb0[s],'a');accCells(cells,d,0,d.S-1,s=>!!fo0[s],'b');obsOf(cells,obs)}
+      const stat=pairStat(obs,perLeg);
+      const fb=nearF[bi][j],fo=nearF[j][bi];const tb=BANDS.map(()=>0),to=BANDS.map(()=>0);let kB=0,kO=0,tB=0,tO=0,allB=0,allO=0;const hB=[],hO=[];
+      for(let s=1;s<base.S;s++){if(base.dt[s]>=60)continue;allB+=base.ds[s];if(!fb[s])continue;kB+=base.ds[s];tB+=base.dt[s];tb[bandOf(base.v[s])]+=base.dt[s];hB.push(base.sT[s]%86400)}
+      for(let s=1;s<d.S;s++){if(d.dt[s]>=60)continue;allO+=d.ds[s];if(!fo[s])continue;kO+=d.ds[s];tO+=d.dt[s];to[bandOf(d.v[s])]+=d.dt[s];hO.push(d.sT[s]%86400)}
+      let ov=0;if(tB&&tO)for(let b=0;b<BANDS.length;b++)ov+=Math.abs(tb[b]/tB-to[b]/tO);const hmB=med(hB),hmO=med(hO);let tod=null;if(hmB!==null&&hmO!==null){const g=Math.abs(hmB-hmO);tod=Math.min(g,86400-g)/3600}
+      const fair={kmBase:kB/1000,kmOther:kO/1000,pctBase:allB?kB/allB*100:0,pctOther:allO?kO/allO*100:0,speedOverlap:tB&&tO?(1-ov/2)*100:null,avgSpeedBase:tB?kB/tB*3.6:null,avgSpeedOther:tO?kO/tO*3.6:null,todGapH:tod,weekendBase:wk(base.sT[0]),weekendOther:wk(d.sT[0]),daysApart:Math.abs(base.sT[0]-d.sT[0])/86400,gpsBase:gpsPct(base),gpsOther:gpsPct(d),randBase:summaries[bi].mix.rand,randOther:summaries[j].mix.rand};
+      detail.push({key:d.key,legPairs:lp,passBase:lK?lA/lK:null,passOther:oK?oA/oK:null,passRowsBase:lK?lR/lK:null,passRowsOther:oK?oR/oK:null,baseAps:A.size,otherAps:O.size,shared:sh.length,kmBase:kmb/1000,kmOther:km/1000,apsPerKmBase:kmb?A.size/(kmb/1000):0,apsPerKmOther:km?O.size/(km/1000):0,rowsPerKmBase:kmb?rB/(kmb/1000):0,rowsPerKmOther:km?rO/(km/1000):0,shiftMedian:med(sh),shiftP90:qt(sh,.9),moved,rssiDiff:med(dr),retention:ret,estimate:(A.size&&O.size)?(A.size+1)*(O.size+1)/(sh.length+1)-1:null,onlyOnce:oneOnly.length?oneOnly.filter(e=>e.n===1).length/oneOnly.length*100:null,onlyCount:oneOnly.length,bands:bandRow,chans:[...chM.values()].sort((a,b)=>a.ch-b.ch),fair,stat})});
+    // profile along baseline's longest leg
+    let lg=base.legs[0],best=-1;base.legs.forEach(l=>{let k=0;for(let s=l.a+1;s<=l.b;s++){if(base.dt[s]<60)k+=base.ds[s]}if(k>best){best=k;lg=l}});
+    const ax=[],ay=[],al=[];let ac=0;for(let p=0;p<base.px.length;p++){const s=base.ps[p];if(s>=lg.a&&s<=lg.b){ax.push(base.px[p]);ay.push(base.py[p]);ac+=base.pl[p];al.push(ac)}}
+    const AX=hashOf(ax,ay,60);const toKm=(x,y)=>{const cx=Math.floor(x/60),cy=Math.floor(y/60);let bd=3600,bi2=-1;for(let i=-1;i<=1;i++)for(let j=-1;j<=1;j++){const l=AX.h.get((cx+i)*4194304+(cy+j));if(!l)continue;for(const q of l){const dx=ax[q]-x,dy=ay[q]-y,e=dx*dx+dy*dy;if(e<bd){bd=e;bi2=q}}}return bi2<0?-1:Math.floor(al[bi2]/1000)};
+    const kmN=Math.ceil(ac/1000);const seriesK={};ds.forEach((d,i)=>{const sets=Array.from({length:kmN},()=>new Set());for(let s=0;s<d.S;s++){let onShared=false;for(let j=0;j<N;j++)if(j!==i&&nearF[i][j][s]){onShared=true;break}if(!onShared)continue;const b=toKm(d.X[s],d.Y[s]);if(b<0||b>=kmN)continue;for(let r=d.sStart[s];r<d.sStart[s+1];r++)if(keep(d.D.flags[r]))sets[b].add(d.D.mac[r])}seriesK[d.key]=sets.map(x=>x.size)});
+    profile={km:kmN,series:seriesK,legStart:base.sT[lg.a]};
+  }
+  // AP history
+  const hist=[];let cumAps=0;const lat=new Float32Array(mC),lon=new Float32Array(mC),hasPos=new Uint8Array(mC);
+  ds.forEach((d,i)=>{const m=new Map();for(let r=0;r<d.n;r++){if(!keep(d.D.flags[r]))continue;const q=d.D.mac[r];let e=m.get(q);if(!e){e={w:0,x:0,y:0};m.set(q,e)}const w=Math.pow(10,d.D.rssi[r]/10);e.w+=w;e.x+=w*d.D.lat[r];e.y+=w*d.D.lon[r]}
+    let nw=0,back=0,moved=0;m.forEach((e,q)=>{const la=e.x/e.w,lo=e.y/e.w;if(!hasPos[q]){nw++;hasPos[q]=1}else{back++;if(Math.hypot((la-lat[q])*110950,(lo-lon[q])*111320*COS)>500)moved++}lat[q]=la;lon[q]=lo});cumAps+=nw;
+    let notAgain=0;if(i<N-1){m.forEach((_,q)=>{if(lastDrive[q]===i)notAgain++})}
+    hist.push({key:d.key,aps:m.size,newAps:nw,returning:back,moved,notAgain:i<N-1?notAgain:null,cumAps,cumRoad:cumRoad[i]||0})});
+  const quality=files.map(f=>({file:f.name,device:f.device,raw:f.raw,kept:f.n,noGps:f.noGps,corrupt:f.corrupt,badSignal:f.badSignal,other:f.other,outOfOrder:f.outOfOrder,start:f.tmin,end:f.tmax,hasNode:f.hasNode}));
+  const pointsOf=d=>{const pts=[];const gaps=[];for(let s=1;s<d.S;s++)if(d.dt[s]>=60)gaps.push(s);gaps.sort((x,y)=>d.dt[y]-d.dt[x]).slice(0,8).sort((x,y)=>x-y).forEach(s=>pts.push({t:d.sT[s],kind:'gap',gap:d.dt[s]}));let far=-1,fd=0;for(let s=0;s<d.S;s++){const e=Math.hypot(d.X[s]-d.X[0],d.Y[s]-d.Y[0]);if(e>fd){fd=e;far=s}}if(far>0&&far<d.S-1&&fd>500)pts.push({t:d.sT[far],kind:'far'});d.files.slice(1).forEach(f=>{if(f.tmin>d.sT[0])pts.push({t:f.tmin,kind:'file'})});return pts.sort((x,y)=>x.t-y.t)};
+  const allKeys=all.map(d=>({partial:d.partial,origin:d.origin,points:pointsOf(d),key:d.key,start:d.sT[0],end:d.sT[d.S-1],device:d.files[0].device,solo:d.files.length===1&&!!d.files[0].solo,files:d.files.map(f=>f.name),included:!ex.has(d.key),km:d.ds.reduce((a,x,i)=>a+(d.dt[i]<60?x:0),0)/1000,rows:d.n}));
+  const legsOut=legList.map(l=>({key:l.key,li:l.li,km:l.km,start:l.start}));
+  say({type:'result',result:{mode,drives:summaries,allDrives:allKeys,tracks,roadKm,sharedShare,pairs,legs:legsOut,legPairs,legsCapped,sameMean,crossMean,baseline:base?base.key:null,detail,profile,hist,quality,n:N,ms:Date.now()-t0,memRows:files.reduce((a,f)=>a+f.n,0),macs:mC}});
+}
+async function exportUnit(key,id){const u=lastUnits.get(key);if(!u)throw new Error('That part is no longer loaded.');const fl=[...u.files].sort((x,y)=>x.tmin-y.tmin);let first=null,cols=null,same=true;const chunks=[];let cur=[],rows=0,dropped=0;const hdrs=[];
+  const q=(v)=>/[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;
+  const scan=async(f,fn)=>{const r=f.file.stream().pipeThrough(new TextDecoderStream('utf-8')).getReader();let buf='',done=false;while(!done){const x=await r.read();done=x.done;if(x.value){buf+=x.value;let i,st=0;while((i=buf.indexOf('\n',st))>=0){fn(buf.slice(st,i));st=i+1}buf=buf.slice(st)}}if(buf)fn(buf)};
+  for(const f of fl){let ln0=true,got=false;await scan(f,(l)=>{if(got)return;if(l.endsWith('\r'))l=l.slice(0,-1);if(ln0){ln0=false;if(l.startsWith('WigleWifi')){if(first===null)first=l;return}}hdrs.push(l);got=true})}
+  same=hdrs.every(x=>x===hdrs[0]);cols=[];hdrs.forEach(x=>splitCsv(x).forEach(c=>{c=c.trim();if(!cols.includes(c))cols.push(c)}));
+  const head=(first!==null?first+'\n':'')+(same?hdrs[0]:cols.join(','))+'\n';chunks.push(head);
+  for(let fi=0;fi<fl.length;fi++){const f=fl[fi];let ln0=true,ix=null,hn=null;say({type:'progress',text:`Writing CSV from ${f.name}`,frac:(fi+.5)/fl.length});await scan(f,(l)=>{if(l.endsWith('\r'))l=l.slice(0,-1);if(!l)return;if(ln0){ln0=false;if(l.startsWith('WigleWifi'))return}if(!ix){hn=splitCsv(l).map(s=>s.trim());ix={};hn.forEach((n,i)=>ix[n]=i);return}const c=splitCsv(l);const t=parseTs(c[ix.FirstSeen]);if(!(t>0)){dropped++;return}if(t<u.a||t>=u.b)return;rows++;if(same)cur.push(l);else cur.push(cols.map(n=>ix[n]===undefined?'':(n==='SSID'?'"'+(c[ix[n]]||'').replace(/"/g,'""')+'"':q(c[ix[n]]||''))).join(','));if(cur.length>=20000){chunks.push(cur.join('\n')+'\n');cur=[]}})}
+  if(cur.length)chunks.push(cur.join('\n')+'\n');say({type:'exported',id,key,rows,dropped,blob:new Blob(chunks,{type:'text/csv'})})}
+onmessage=async(e)=>{const m=e.data;try{
+  if(m.type==='add'){const errors=[];const total=m.files.length;for(let i=0;i<total;i++){const fl=m.files[i];if(files.some(f=>f.name===fl.name&&f.size===fl.size)){errors.push({file:fl.name,msg:'Already added.'});continue}try{const pf=await parseFile(fl,i,total);if(m.solo)pf.solo=true;files.push(pf)}catch(er){errors.push({file:fl.name,msg:er.message})}}say({type:'added',errors});analyse(m.cfg)}
+  else if(m.type==='analyse')analyse(m.cfg);
+  else if(m.type==='export')await exportUnit(m.key,m.id);
+  else if(m.type==='clear'){files=[];macIdx.clear();macStr.length=0;macRand.length=0;ssidIdx.clear();say({type:'result',result:null})}
+  else if(m.type==='remove'){files=files.filter(f=>f.name!==m.name);analyse(m.cfg)}
+}catch(er){say({type:'error',msg:er.message||String(er)})}};
+
+</script>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=(v,d=1)=>v===null||v===undefined||Number.isNaN(v)?'–':Number(v).toLocaleString('en',{minimumFractionDigits:d,maximumFractionDigits:d});
+const fi=v=>fmt(v,0);
+const hms=s=>{if(s===null||s===undefined)return'–';const h=Math.floor(s/3600),m=Math.round((s%3600)/60);return h?`${h} h ${m} min`:`${m} min`};
+const secs=s=>s===null||s===undefined?'–':s>=100?`${fi(s)} s`:`${fmt(s,1)} s`;
+const blob=new Blob([document.getElementById('wk').textContent],{type:'text/javascript'});
+// In the app the analysis runs in its Go engine (internal/compare, a line-for-line port of the worker above);
+// opened in a plain browser, the worker above runs here.
+const W=window.SignalAtlasApp?{postMessage:(m)=>SignalAtlasApp.compare.post(m)}:new Worker(URL.createObjectURL(blob));
+let mode='drive',cuts=new Set(),joins=new Set(),exportsPending={},expId=0;
+let R=null,isExample=false,names={},notes={},excluded=new Set(),baseline=null,heatMode='drives',kmin=2,store=null,uid=null,hasReal=false,mapView=null,profileCache=null;
+const cfg=()=>({mode,cuts:[...cuts],joins:[...joins],driveGapH:+$('driveGap').value,legGapMin:+$('legGap').value,radius:+$('radius').value,typ:$('typ').value,baseline,excluded:[...excluded],tzOff:new Date().getTimezoneOffset()});
+const col=(i)=>i<8?`var(--s${i+1})`:'var(--other)';
+const driveIx=k=>R.drives.findIndex(d=>d.key===k);
+const tzOpt=()=>$('tz').value==='utc'?{}:{timeZone:'UTC'};
+const fmtTime=t=>new Date(t*1000).toLocaleTimeString('en-CA',{hour:'2-digit',minute:'2-digit',hour12:false,...tzOpt()});
+const fmtDate=t=>new Date(t*1000).toLocaleDateString('en-CA',{month:'short',day:'numeric',...tzOpt()});
+const defName=(s)=>`${fmtDate(s)}, ${fmtTime(s)}`;
+const nm=k=>{if(names[k])return names[k];const a=R&&R.allDrives.find(d=>d.key===k);if(!a)return k;return k[0]==='f'||(a.solo&&k[0]==='d')?a.files[0].replace(/\.csv$/i,''):defName(a.start)};
+const noun=(n)=>{const w={drive:'drive',file:'file',leg:'leg'}[mode];return n===1?w:w+'s'};const U=()=>{const w=noun(1);return w[0].toUpperCase()+w.slice(1)};
+const saveLayout=()=>{const v={mode,cuts:[...cuts],joins:[...joins]};try{localStorage.setItem('wardrive-layout',JSON.stringify(v))}catch(e){}};
+const applyLayout=(v)=>{if(!v)return;if(v.mode)mode=v.mode;cuts=new Set(v.cuts||[]);joins=new Set(v.joins||[]);$('mode').value=mode};
+const setDis=()=>{$('driveGap').disabled=mode==='file'};
+const label=(k)=>`<span class="sw" style="background:${col(driveIx(k))}"></span>${esc(nm(k))}`;
+const tbl=(heads,rows)=>`<table><thead><tr>${heads.map(h=>`<th class="${h[1]?'n':''}">${h[0]}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map((c,i)=>`<td class="${heads[i][1]?'n':''}">${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+
+// ---- notes ----
+const lsGet=()=>{try{return JSON.parse(localStorage.getItem('wardrive-notes')||'{}')}catch(e){return{}}};
+const lsSet=(o)=>{try{localStorage.setItem('wardrive-notes',JSON.stringify(o))}catch(e){}};
+async function initStore(){let lay=null;try{lay=JSON.parse(localStorage.getItem('wardrive-layout')||'null')}catch(e){}applyLayout(lay);setDis();const l=lsGet();Object.keys(l).forEach(k=>{if(l[k].name)names[k]=l[k].name;if(l[k].note)notes[k]=l[k].note});}
+const timers={};function saveNote(k,el){if(isExample){if(el)el.textContent='Example data isn\'t saved';return}clearTimeout(timers[k]);timers[k]=setTimeout(async()=>{const l=lsGet();l[k]={name:names[k]||'',note:notes[k]||''};lsSet(l);if(el)el.textContent='Saved'},500)}
+
+// ---- worker wiring ----
+W.onmessage=(e)=>{const m=e.data;
+  if(m.type==='progress'){$('prog').hidden=false;$('progText').textContent=m.text;$('progBar').style.width=Math.round(m.frac*100)+'%'}
+  else if(m.type==='added'){$('msgs').innerHTML=m.errors.map(x=>`<div class="notice err">${esc(x.file)}: ${esc(x.msg)}</div>`).join('')}
+  else if(m.type==='error'){$('prog').hidden=true;$('msgs').innerHTML=`<div class="notice err">Couldn't finish the analysis: ${esc(m.msg)}. Try fewer files or reload the page.</div>`}
+  else if(m.type==='exported'){$('prog').hidden=true;window.__lastExport=m;saveCsv(m)}
+  else if(m.type==='result'){$('prog').hidden=true;R=m.result;window.__result=R;if(R){baseline=R.baseline;kmin=Math.min(kmin,Math.max(2,R.n))}renderAll()}
+};
+if(window.SignalAtlasApp)SignalAtlasApp.compare.listen((m)=>W.onmessage({data:m}));
+function run(){W.postMessage({type:'analyse',cfg:cfg()})}
+async function saveCsv(m){const stat=$('saved-'+m.key);const base=nm(m.key).replace(/\.csv$/i,'').replace(/[^\w.\- ,]+/g,'_');const say_=t=>{if(stat)stat.textContent=t};say_(`${fi(m.rows)} rows ready`);try{if(m.file&&window.SignalAtlasApp){const r=await SignalAtlasApp.saveFile(m.file,base+'.csv');say_(r&&r.saved?`Saved ${fi(m.rows)} rows`:'Save cancelled');return}const u=URL.createObjectURL(m.blob),l=document.createElement('a');l.href=u;l.download=base+'.csv';document.body.appendChild(l);l.click();l.remove();setTimeout(()=>URL.revokeObjectURL(u),60000);say_(`Saved ${fi(m.rows)} rows`)}catch(e){say_("Couldn't save the file")}}
+function addFiles(list,opts={}){const fl=[...list].filter(f=>f.size>0);if(!fl.length)return;if(isExample){isExample=false;W.postMessage({type:'clear'});names={...names};Object.keys(names).forEach(k=>{if(k.startsWith('ex'))delete names[k]});Object.keys(notes).forEach(k=>{if(k.startsWith('ex'))delete notes[k]});$('exBanner').hidden=true;baseline=null;excluded=new Set()}hasReal=true;$('prog').hidden=false;$('progText').textContent='Reading files';W.postMessage({type:'add',files:fl,cfg:cfg(),solo:!!opts.solo})}
+$('file').addEventListener('change',e=>{addFiles(e.target.files);e.target.value=''});
+const dz=$('drop');['dragenter','dragover'].forEach(t=>dz.addEventListener(t,e=>{e.preventDefault();dz.classList.add('over')}));['dragleave','drop'].forEach(t=>dz.addEventListener(t,e=>{e.preventDefault();dz.classList.remove('over')}));dz.addEventListener('drop',e=>addFiles(e.dataTransfer.files));
+document.addEventListener('dragover',e=>e.preventDefault());document.addEventListener('drop',e=>{e.preventDefault();if(!dz.contains(e.target))addFiles(e.dataTransfer.files)});
+$('clear').addEventListener('click',()=>{W.postMessage({type:'clear'});isExample=false;hasReal=false;excluded=new Set();baseline=null;$('exBanner').hidden=true;$('msgs').innerHTML=''});
+['radius','typ','driveGap','legGap'].forEach(id=>$(id).addEventListener('change',run));
+$('tz').addEventListener('change',()=>{if(R)renderAll()});
+$('mode').addEventListener('change',e=>{mode=e.target.value;setDis();saveLayout();baseline=null;run()});
+$('resetLayout').addEventListener('click',()=>{cuts=new Set();joins=new Set();saveLayout();run()});
+$('baseline').addEventListener('change',e=>{baseline=e.target.value;run()});
+$('kmin').addEventListener('change',e=>{kmin=+e.target.value;renderLede();renderTiles();drawMap();renderMapLede()});
+$('metric').addEventListener('change',renderSpeedChart);$('speedDrive').addEventListener('change',renderSpeedTable);
+$('chMetric').addEventListener('change',renderChChart);$('chDrive').addEventListener('change',renderChTable);
+$('heatMode').addEventListener('change',e=>{heatMode=e.target.value;drawHeat()});
+$('fitAll').addEventListener('click',()=>{mapView=null;drawMap()});$('fitShared').addEventListener('click',()=>{mapView='shared';drawMap()});$('hideEnds').addEventListener('change',drawMap);
+
+// ---- charts ----
+const tipOf=(el)=>{let t=el.querySelector('.tip');if(!t){t=document.createElement('div');t.className='tip';t.hidden=true;el.appendChild(t)}return{show(x,y,lines){t.innerHTML=lines.map((l,i)=>`<div>${l}</div>`).join('');t.hidden=false;const w=t.offsetWidth,h=t.offsetHeight,W_=el.clientWidth;t.style.left=Math.max(0,Math.min(W_-w,x+12))+'px';t.style.top=Math.max(0,y-h-8)+'px'},hide(){t.hidden=true}}};
+function lineChart(el,{xs,series,yfmt=(v)=>fi(v),ytitle='',xtitle='',h=270,band=false}){
+  el.innerHTML='';const w=Math.max(280,el.clientWidth||600),m={t:14,r:14,b:xtitle?44:30,l:48};
+  const vals=series.flatMap(s=>s.values).filter(v=>v!==null&&v!==undefined&&!Number.isNaN(v));if(!vals.length){el.innerHTML='<p class="sm mut">Nothing to show for this selection.</p>';return}
+  const maxV=Math.max(...vals)||1;const mag=Math.pow(10,Math.floor(Math.log10(maxV)));const step=[.2,.25,.5,1,2].map(s=>s*mag).find(s=>maxV/s<=5)||mag;const top=Math.ceil(maxV/step)*step;
+  const X=i=>m.l+(xs.length>1?(i*(w-m.l-m.r)/(xs.length-1)):(w-m.l-m.r)/2),Y=v=>h-m.b-(v/top)*(h-m.t-m.b);
+  let s=`<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(ytitle||'Chart')}">`;
+  for(let v=0;v<=top+1e-9;v+=step){s+=`<line x1="${m.l}" x2="${w-m.r}" y1="${Y(v)}" y2="${Y(v)}" style="stroke:var(--grid)"/><text class="d" x="${m.l-6}" y="${Y(v)+4}" text-anchor="end">${esc(yfmt(v))}</text>`}
+  const ev=Math.max(1,Math.ceil(xs.length/Math.floor((w-m.l-m.r)/(band?90:48))));xs.forEach((x,i)=>{if(i%ev===0||(band&&i===xs.length-1))s+=`<text x="${X(i)}" y="${h-m.b+16}" text-anchor="${i===0?'start':i===xs.length-1?'end':'middle'}">${esc(x)}</text>`});
+  if(xtitle)s+=`<text x="${w-m.r}" y="${h-6}" text-anchor="end">${esc(xtitle)}</text>`;
+  series.forEach(sr=>{let d='',pen=false;sr.values.forEach((v,i)=>{if(v===null||v===undefined||Number.isNaN(v)){pen=false;return}d+=(pen?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1);pen=true});s+=`<path d="${d}" fill="none" style="stroke:${sr.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;if(xs.length<=12)sr.values.forEach((v,i)=>{if(v!==null&&v!==undefined&&!Number.isNaN(v))s+=`<circle cx="${X(i)}" cy="${Y(v)}" r="3.5" style="fill:${sr.color};stroke:var(--panel)" stroke-width="1.5"/>`})});
+  s+=`<line id="rule" y1="${m.t}" y2="${h-m.b}" style="stroke:var(--axis);display:none"/></svg>`;el.insertAdjacentHTML('beforeend',s);
+  const svg=el.querySelector('svg'),rule=svg.querySelector('#rule'),tip=tipOf(el);
+  svg.addEventListener('pointermove',ev=>{const r=svg.getBoundingClientRect(),k=w/r.width,px=(ev.clientX-r.left)*k;const i=Math.max(0,Math.min(xs.length-1,Math.round((px-m.l)/((w-m.l-m.r)/Math.max(1,xs.length-1)))));rule.style.display='';rule.setAttribute('x1',X(i));rule.setAttribute('x2',X(i));const rows=series.filter(sr=>sr.values[i]!==null&&sr.values[i]!==undefined).slice(0,10).map(sr=>`<span class="sw" style="background:${sr.color}"></span>${esc(sr.name)} <b>${esc(yfmt(sr.values[i]))}</b>`);tip.show(X(i)/k,Math.max(30,(ev.clientY-r.top)),[esc(xs[i]),...rows])});
+  svg.addEventListener('pointerleave',()=>{rule.style.display='none';tip.hide()});
+}
+const METRICS={netsPerS:['Networks per second',v=>fmt(v,1)],dupPerS:['Duplicates per second',v=>fmt(v,1)],rowsPerS:['Sightings per second',v=>fmt(v,1)],newPerS:['New networks per second',v=>fmt(v,1)],newPerKm:['New networks per km',v=>fi(v)],visMean:['Average time visible (s)',v=>fmt(v,1)],visMedian:['Median time visible (s)',v=>fmt(v,1)],visKm:['Average distance visible (m)',v=>fi(v)],oncePct:['Seen only once (%)',v=>fi(v)],sec:['Time spent (min)',v=>fmt(v/60,1)],km:['Distance (km)',v=>fmt(v,1)]};
+function renderSpeedChart(){if(!R||!R.drives.length)return;const m=$('metric').value||'netsPerS',M=METRICS[m];const ds=R.drives.slice(0,8);const xs=ds[0].bands.map(b=>b.band);
+  $('speedKey').innerHTML=ds.map((d,i)=>`<span>${label(d.key)}</span>`).join('')+(R.drives.length>8?`<span>First 8 of ${R.drives.length} drives charted. All are in the table.</span>`:'');
+  lineChart($('speedChart'),{xs,series:ds.map((d,i)=>({name:nm(d.key),color:col(i),values:d.bands.map(b=>b[m])})),yfmt:M[1],ytitle:M[0],xtitle:'Speed, km/h',band:true})}
+function renderSpeedTable(){if(!R||!R.drives.length)return;const k=$('speedDrive').value;const list=k==='all'?R.drives:R.drives.filter(d=>d.key===k);const heads=[[U()],['Speed, km/h'],['Time',1],['km',1],['Networks/s',1],['Duplicates/s',1],['Sightings/s',1],['New/s',1],['New/km',1],['Avg visible',1],['Median visible',1],['Avg distance',1],['Seen once',1]];
+  $('speedTable').innerHTML=tbl(heads,list.flatMap(d=>d.bands.map(b=>[label(d.key),esc(b.band),hms(b.sec),fmt(b.km),fmt(b.netsPerS),fmt(b.dupPerS),fmt(b.rowsPerS),fmt(b.newPerS),fi(b.newPerKm),secs(b.visMean),secs(b.visMedian),b.visKm===null?'–':fi(b.visKm)+' m',b.oncePct===null?'–':fi(b.oncePct)+'%'])))}
+
+// ---- map ----
+function drawMapSvg(){const el=$('map');if(!R||!R.tracks.length){el.innerHTML='';return}el.innerHTML='';const w=Math.max(280,el.clientWidth||700),h=Math.min(620,Math.max(380,w*.72));
+  const COS=Math.cos(R.tracks[0].lat[0]*Math.PI/180);const XK=lo=>lo*111.32*COS,YK=la=>-la*110.95;
+  const hide=$('hideEnds').checked;const ends=R.tracks.flatMap(t=>[[XK(t.lon[0]),YK(t.lat[0])],[XK(t.lon[t.lon.length-1]),YK(t.lat[t.lat.length-1])]]);
+  const hidden=(x,y)=>hide&&ends.some(e=>Math.hypot(e[0]-x,e[1]-y)<.5);
+  const bx=[],by=[];R.tracks.forEach(t=>{t.lat.forEach((la,i)=>{if(mapView==='shared'&&t.cov[i]<Math.max(2,kmin))return;bx.push(XK(t.lon[i]));by.push(YK(la))})});if(!bx.length){R.tracks.forEach(t=>t.lat.forEach((la,i)=>{bx.push(XK(t.lon[i]));by.push(YK(la))}))}
+  const x0=Math.min(...bx.slice(0,200000)),x1=Math.max(...bx.slice(0,200000)),y0=Math.min(...by.slice(0,200000)),y1=Math.max(...by.slice(0,200000));const pad=28;const sc0=Math.min((w-2*pad)/Math.max(.1,x1-x0),(h-2*pad)/Math.max(.1,y1-y0));
+  const ox=(w-(x1-x0)*sc0)/2,oy=(h-(y1-y0)*sc0)/2;const PX=x=>ox+(x-x0)*sc0,PY=y=>oy+(y-y0)*sc0;
+  const pts=[];let under='',over='';R.tracks.forEach((t,ti)=>{let d='',pen=false,du='',pu=false,ps=-1;for(let i=0;i<t.lat.length;i++){const X=XK(t.lon[i]),Y=YK(t.lat[i]);if(hidden(X,Y)){pen=false;pu=false;continue}if(t.seg[i]!==ps){pen=false;pu=false;ps=t.seg[i]}const a=PX(X).toFixed(1),b=PY(Y).toFixed(1);d+=(pen?'L':'M')+a+' '+b;pen=true;if(t.cov[i]>=kmin&&R.n>1){du+=(pu?'L':'M')+a+' '+b;pu=true}else pu=false;pts.push({x:+a,y:+b,t:ti,i})}
+    under+=`<path d="${du}" fill="none" style="stroke:var(--shared)" stroke-opacity=".22" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;over+=`<path d="${d}" fill="none" style="stroke:${col(ti)}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`});
+  el.innerHTML=`<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Map of routes with shared road highlighted"><g id="mapg">${under}${over}</g><g id="scale"></g></svg>`;
+  const svg=el.querySelector('svg'),g=svg.querySelector('#mapg');let z=1,tx=0,ty=0,drag=null;const apply=()=>{g.setAttribute('transform',`translate(${tx} ${ty}) scale(${z})`);const km=[.5,1,2,5,10,20,50,100,200].find(k=>k*sc0*z>=70)||200;svg.querySelector('#scale').innerHTML=`<line x1="14" x2="${14+km*sc0*z}" y1="${h-12}" y2="${h-12}" style="stroke:var(--muted)" stroke-width="1.5"/><text x="${20+km*sc0*z}" y="${h-8}">${km} km</text>`};apply();
+  const tip=tipOf(el);const ratio=()=>w/svg.getBoundingClientRect().width;
+  svg.addEventListener('wheel',e=>{e.preventDefault();const r=ratio(),b=svg.getBoundingClientRect(),mx=(e.clientX-b.left)*r,my=(e.clientY-b.top)*r,f=e.deltaY<0?1.2:1/1.2,n=Math.max(.5,Math.min(60,z*f));tx=mx-(mx-tx)*n/z;ty=my-(my-ty)*n/z;z=n;apply()},{passive:false});
+  svg.addEventListener('pointerdown',e=>{drag={x:e.clientX,y:e.clientY,tx,ty};svg.setPointerCapture(e.pointerId)});
+  svg.addEventListener('pointerup',()=>drag=null);
+  svg.addEventListener('pointermove',e=>{const r=ratio();if(drag){tx=drag.tx+(e.clientX-drag.x)*r;ty=drag.ty+(e.clientY-drag.y)*r;apply();tip.hide();return}const b=svg.getBoundingClientRect(),mx=(e.clientX-b.left)*r,my=(e.clientY-b.top)*r;let best=null,bd=18*18;for(let q=0;q<pts.length;q+=1){const p=pts[q],dx=p.x*z+tx-mx,dy=p.y*z+ty-my,dd=dx*dx+dy*dy;if(dd<bd){bd=dd;best=p}}if(!best){tip.hide();return}const tr=R.tracks[best.t];tip.show((best.x*z+tx)/r,(best.y*z+ty)/r,[`<span class="sw" style="background:${col(best.t)}"></span>${esc(nm(tr.key))}`,`${fmtDate(tr.t[best.i])}, ${fmtTime(tr.t[best.i])}`,tr.cov[best.i]>1?`Driven on ${tr.cov[best.i]} drives`:'This drive only'])});
+  svg.addEventListener('pointerleave',()=>tip.hide());
+  setMapKey(' No street map: the map library didn\'t load.');
+}
+function setMapKey(extra){$('mapKey').innerHTML=R.drives.slice(0,8).map(d=>`<span>${label(d.key)}</span>`).join('')+(R.n>1?`<span><span class="sw" style="background:var(--shared);opacity:.3"></span>Shared road</span>`:'')+(R.n>8?`<span><span class="sw" style="background:var(--other)"></span>Other drives</span>`:'')+`<span>Scroll to zoom, drag to pan.${extra||''}</span>`}
+let LM=null,LG=null,LTiles=null,LTip=null,LPts=null;
+const cssVar=s=>{const m=/^var\((--[\w-]+)\)$/.exec(s);return m?getComputedStyle(document.documentElement).getPropertyValue(m[1]).trim():s};
+function drawMap(){
+  if(!window.L)return drawMapSvg();
+  const el=$('map');el.style.height=Math.min(620,Math.max(380,(el.clientWidth||700)*.72))+'px';
+  if(!LM){el.innerHTML='';LM=L.map(el,{preferCanvas:true,zoomSnap:.25,wheelPxPerZoomLevel:90});
+    LTiles=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'});
+    LM.attributionControl.setPrefix('<a href="https://leafletjs.com">Leaflet</a>');L.control.scale({imperial:false}).addTo(LM);LG=L.layerGroup().addTo(LM);LTip=tipOf(el);
+    LM.on('mousemove',mapHover);LM.on('mouseout movestart zoomstart',()=>LTip.hide())}
+  LM.invalidateSize();LG.clearLayers();LPts=null;LTip.hide();
+  if(!R||!R.tracks.length){LTiles.remove();$('mapKey').innerHTML='';return}
+  if(isExample)LTiles.remove();else LTiles.addTo(LM);
+  const COS=Math.cos(R.tracks[0].lat[0]*Math.PI/180),XK=lo=>lo*111.32*COS,YK=la=>-la*110.95;
+  const hide=$('hideEnds').checked;const ends=R.tracks.flatMap(t=>[[XK(t.lon[0]),YK(t.lat[0])],[XK(t.lon[t.lon.length-1]),YK(t.lat[t.lat.length-1])]]);
+  const hidden=(x,y)=>hide&&ends.some(e=>Math.hypot(e[0]-x,e[1]-y)<.5);
+  let n=0;R.tracks.forEach(t=>n+=t.lat.length);const px=new Float64Array(n),py=new Float64Array(n),pt=new Int32Array(n),pi=new Int32Array(n);let np=0;
+  let la0=Infinity,la1=-Infinity,lo0=Infinity,lo1=-Infinity,sla0=Infinity,sla1=-Infinity,slo0=Infinity,slo1=-Infinity;
+  const under=[],over=[];
+  R.tracks.forEach((t,ti)=>{const segs=[],shared=[];let cur=null,sc=null,ps=-1;
+    for(let i=0;i<t.lat.length;i++){const la=t.lat[i],lo=t.lon[i],X=XK(lo),Y=YK(la);
+      if(la<la0)la0=la;if(la>la1)la1=la;if(lo<lo0)lo0=lo;if(lo>lo1)lo1=lo;
+      if(t.cov[i]>=Math.max(2,kmin)){if(la<sla0)sla0=la;if(la>sla1)sla1=la;if(lo<slo0)slo0=lo;if(lo>slo1)slo1=lo}
+      if(hidden(X,Y)){cur=null;sc=null;continue}
+      if(t.seg[i]!==ps){cur=null;sc=null;ps=t.seg[i]}
+      if(!cur){cur=[];segs.push(cur)}cur.push([la,lo]);
+      if(t.cov[i]>=kmin&&R.n>1){if(!sc){sc=[];shared.push(sc)}sc.push([la,lo])}else sc=null;
+      px[np]=X;py[np]=Y;pt[np]=ti;pi[np]=i;np++}
+    if(shared.length)under.push(L.polyline(shared,{color:cssVar('var(--shared)'),opacity:.22,weight:8,lineCap:'round',lineJoin:'round',interactive:false}));
+    over.push(L.polyline(segs,{color:cssVar(col(ti)),opacity:.95,weight:2.4,lineCap:'round',lineJoin:'round',interactive:false}))});
+  under.concat(over).forEach(l=>LG.addLayer(l));
+  LPts={px,py,pt,pi,n:np,XK,YK};
+  const useShared=mapView==='shared'&&sla0<=sla1;
+  const b=useShared?[[sla0,slo0],[sla1,slo1]]:[[la0,lo0],[la1,lo1]];
+  LM.fitBounds(b,{padding:[28,28],maxZoom:17,animate:false});
+  setMapKey(isExample?' Example drives are generated, so there\'s no street map under them.':'');
+}
+function mapHover(e){if(!LPts||!R)return;const{px,py,pt,pi,n,XK,YK}=LPts;const X=XK(e.latlng.lng),Y=YK(e.latlng.lat);
+  const kmPerPx=40075.016*Math.cos(e.latlng.lat*Math.PI/180)/(256*Math.pow(2,LM.getZoom()));const lim=18*kmPerPx;let best=-1,bd=lim*lim;
+  for(let q=0;q<n;q++){const dx=px[q]-X,dy=py[q]-Y,dd=dx*dx+dy*dy;if(dd<bd){bd=dd;best=q}}
+  if(best<0){LTip.hide();return}const tr=R.tracks[pt[best]],i=pi[best];const c=LM.latLngToContainerPoint([tr.lat[i],tr.lon[i]]);
+  LTip.show(c.x,c.y,[`<span class="sw" style="background:${col(pt[best])}"></span>${esc(nm(tr.key))}`,`${fmtDate(tr.t[i])}, ${fmtTime(tr.t[i])}`,tr.cov[i]>1?`Driven on ${tr.cov[i]} drives`:'This drive only'])}
+function drawHeat(){const el=$('heat');if(!R||R.n<2){el.innerHTML='<p class="sm mut">Add a second drive to compare.</p>';return}
+  let names_,get;if(heatMode==='legs'){if(!R.legPairs){el.innerHTML=`<p class="sm mut">${R.legsCapped?'Too many legs to compare at once. Switch to drives.':'Not enough legs to compare.'}</p>`;return}names_=R.legs.map(l=>`${nm(l.key)}, leg ${l.li+1}`);const M={};R.legPairs.forEach(p=>{M[p.x+'|'+p.y]=p;M[p.y+'|'+p.x]=p});get=(a,b)=>{const p=M[a+'|'+b];return p&&p.j!==null?{v:p.j,sub:`${fmt(p.km)} km shared`}:null}}
+  else{names_=R.drives.map(d=>nm(d.key));const ix=Object.fromEntries(R.drives.map((d,i)=>[d.key,i]));const M={};R.pairs.forEach(p=>{const a=ix[p.a],b=ix[p.b];M[a+'|'+b]=p;M[b+'|'+a]=p});get=(a,b)=>{const p=M[a+'|'+b];return p&&p.jaccard!==null&&p.km>=.5?{v:p.jaccard,sub:`${fi(p.shared)} shared, ${fmt(p.km)} km`}:null}}
+  const n=names_.length,w=Math.max(280,el.clientWidth||400),lab=Math.min(w*.42,150),cell=Math.max(16,Math.min(70,(w-lab)/n)),h=lab*.0+n*cell+6;
+  let s=`<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Heatmap of AP match between ${heatMode}">`;names_.forEach((name,i)=>{s+=`<text class="lbl" x="${lab-6}" y="${i*cell+cell/2+4}" text-anchor="end">${esc(name.length>24?name.slice(0,23)+'…':name)}</text>`});
+  const css=getComputedStyle(document.documentElement);const mix=(a,b,t)=>`color-mix(in oklab, var(--heat1) ${Math.round(t*100)}%, var(--heat0))`;
+  for(let a=0;a<n;a++)for(let b=0;b<n;b++){const x=lab+b*cell,y=a*cell;if(a===b){s+=`<rect x="${x+1}" y="${y+1}" width="${cell-2}" height="${cell-2}" rx="2" style="fill:var(--wash)"/>`;continue}const v=get(a,b);if(!v){s+=`<rect x="${x+1}" y="${y+1}" width="${cell-2}" height="${cell-2}" rx="2" style="fill:none;stroke:var(--line)"/>`;continue}const t=Math.min(1,v.v/70);s+=`<rect class="c" data-a="${a}" data-b="${b}" x="${x+1}" y="${y+1}" width="${cell-2}" height="${cell-2}" rx="2" style="fill:${mix(0,0,t)}"/>`;if(cell>=34)s+=`<text class="d" x="${x+cell/2}" y="${y+cell/2+4}" text-anchor="middle" style="fill:${t>.55?'var(--panel)':'var(--fg)'};pointer-events:none">${fi(v.v)}</text>`}
+  el.innerHTML=s+'</svg>';const tip=tipOf(el);el.querySelectorAll('.c').forEach(r=>{r.addEventListener('pointermove',e=>{const a=+r.dataset.a,b=+r.dataset.b,v=get(a,b),q=el.getBoundingClientRect();tip.show(e.clientX-q.left,e.clientY-q.top,[`${esc(names_[a])} / ${esc(names_[b])}`,`<b>${fmt(v.v)}%</b> match`,esc(v.sub)])});r.addEventListener('pointerleave',()=>tip.hide())})}
+
+// ---- render ----
+function renderLede(){const el=$('lede');if(!R||!R.n){el.textContent='';return}const d=R.drives;if(R.n===1){el.innerHTML=`One log loaded: <b>${fmt(d[0].km)}</b> km, <b>${fi(d[0].aps)}</b> networks at an average moving speed of <b>${fi(d[0].avgMoving)}</b> km/h. Add another log to compare them.`;return}
+  const road=R.roadKm[kmin]||0;let s=`These <b>${R.n}</b> ${noun(2)} share <b>${fmt(road)}</b> km of road${kmin>2?` driven at least ${kmin} times`:''}.`;
+  const dt=R.detail.filter(x=>x.passOther);if(dt.length){const pct=dt.map(x=>(x.passBase/x.passOther-1)*100);const a=Math.min(...pct),b=Math.max(...pct);const f=v=>`${v>=0?'+':''}${fmt(v,0)}%`;s+=` On that road, ${esc(nm(R.baseline))} found ${dt.length===1?`<b>${f(a)}</b>`:`<b>${f(a)}</b> to <b>${f(b)}</b>`} APs per km on each pass compared with ${dt.length===1?esc(nm(dt[0].key)):'the others'}.`}
+  const st=R.detail.filter(x=>x.stat&&x.stat.n>=5&&x.stat.lo!==null);if(st.length){const pf=v=>`${v>=0?'+':''}${fmt(v,0)}%`;if(st.length===1){const x=st[0].stat;s+=` Cut into <b>${x.n}</b> stretches of ${x.cell} m, that is <b>${pf(x.est)}</b> with a 95% range of <b>${pf(x.lo)}</b> to <b>${pf(x.hi)}</b>; the baseline found more on <b>${x.wins}</b> and fewer on <b>${x.losses}</b>${x.lo>0||x.hi<0?', so the gap is unlikely to be chance.':x.p!==null&&x.p<.05?', so it was consistently ahead stretch by stretch even though the size of the total gap could be chance.':', so the gap could be chance.'}`}else{const real=st.filter(x=>x.stat.lo>0||x.stat.hi<0).length;s+=` Of the <b>${st.length}</b> ${noun(2)} with enough shared road, the gap is unlikely to be chance for <b>${real}</b>.`}}
+  const warns=R.detail.reduce((a,x)=>a+(x.fair?fairChecks(x).filter(y=>y[0]===false).length:0),0);if(warns)s+=` <b>${warns}</b> fairness ${warns===1?'check fails':'checks fail'}, see <a href="#s-road">Is the difference real</a>.`;
+  if(R.sameMean!==null&&R.crossMean!==null){const g=Math.abs(R.sameMean-R.crossMean);s+=g<3?` Legs from different drives match about as well as legs from the same drive (<b>${fmt(R.crossMean)}</b>% vs <b>${fmt(R.sameMean)}</b>%), so these differences look like scan chance.`:` Legs on different drives match <b>${fmt(R.crossMean)}</b>%, against <b>${fmt(R.sameMean)}</b>% on the same drive, which points to a real difference between drives.`}
+  el.innerHTML=s}
+function renderTiles(){const el=$('tiles');if(!R||!R.n){el.innerHTML='';return}const t=(l,b,n)=>`<div class="tile"><span class="sm mut">${l}</span><span class="big">${b}</span><span class="sm mut">${n||''}</span></div>`;const dr=R.drives;
+  const tot=dr.reduce((a,d)=>a+d.km,0);let h=t(noun(2)[0].toUpperCase()+noun(2).slice(1),fi(R.n),`${fmt(tot)} km logged`);const macs=R.hist.length?R.hist[R.hist.length-1].cumAps:0;h+=t('Distinct networks',fi(macs),`${fi(R.memRows)} rows kept`);
+  if(R.n>1){h+=t('Shared road',`${fmt(R.roadKm[kmin]||0)} km`,kmin===2?'on two or more '+noun(2):`on ${kmin} or more ${noun(2)}`);if(R.detail.length){const x=R.detail[0];h+=t(`Median AP shift vs ${esc(nm(x.key))}`,`${x.shiftMedian===null?'–':fi(x.shiftMedian)} m`,`90% within ${x.shiftP90===null?'–':fi(x.shiftP90)} m`)}if(R.sameMean!==null&&R.crossMean!==null)h+=t('Leg match across drives',`${fmt(R.crossMean)}%`,`Same-drive legs: ${fmt(R.sameMean)}%`)}
+  else h+=t('Average moving speed',`${fi(dr[0].avgMoving)} km/h`,''),h+=t('Average time visible',secs(dr[0].visMean),'while moving');el.innerHTML=h}
+function renderMapLede(){if(!R||!R.n)return;const s=R.sharedShare.map(x=>`${esc(nm(x.key))} ${fi(x.pct)}%`).join(', ');$('mapLede').innerHTML=R.n>1?`The shaded road has been driven at least ${kmin} times. Share of each drive on road another drive also covered: ${s}.`:'Load a second log to see which road the drives share.'}
+function renderDrives(){const el=$('drives');if(!R){el.innerHTML='';return}el.innerHTML=R.allDrives.map((a,i2)=>{const d=R.drives.find(x=>x.key===a.key);const i=d?driveIx(a.key):-1;return `<div class="drive"><div style="min-width:0;display:flex;flex-direction:column;gap:5px"><div><span class="sw" style="background:${d?col(i):'var(--line)'}"></span><input type="text" id="name-${a.key}" data-key="${a.key}" value="${esc(nm(a.key))}" aria-label="Drive name"></div><div class="stat"><span>${fmtDate(a.start)}, ${fmtTime(a.start)} to ${fmtTime(a.end)}</span><span><b>${fmt(a.km)}</b> km</span><span><b>${fi(a.rows)}</b> rows</span>${d?`<span><b>${d.legs.length}</b> ${d.legs.length===1?'leg':'legs'}</span>`:''}${a.partial?'<span class="pill">Part of a file</span>':''}</div><div class="sm mut" style="overflow-wrap:anywhere">${esc(a.device)} · ${a.files.length} ${a.files.length===1?'file':'files'}: ${a.files.map(esc).join(', ')}</div><div class="btnrow"><label class="sm"><input type="checkbox" class="inc" id="inc-${a.key}" data-key="${a.key}" ${a.included?'checked':''}> Include in comparison</label></div>
+    <div class="btnrow"><label class="sm mut" for="sp-${a.key}">Split at</label><select id="sp-${a.key}" data-key="${a.key}" class="spsel">${a.points.map(p=>`<option value="${p.t}">${fmtTime(p.t)}, ${p.kind==='gap'?`after a ${hms(p.gap)} gap`:p.kind==='far'?'farthest from start':'next file starts'}</option>`).join('')}<option value="custom">Choose a time</option></select><input type="time" id="spt-${a.key}" aria-label="Split time" ${a.points.length?'hidden':''}><button class="btn sp" type="button" data-key="${a.key}">Split</button>${i2<R.allDrives.length-1?`<button class="btn mg" type="button" data-key="${a.key}">Merge with next</button>`:''}<button class="btn sv" type="button" data-key="${a.key}">Save as CSV</button></div></div>
+    <div style="min-width:0"><label class="sm mut" for="note-${a.key}">Notes</label><textarea id="note-${a.key}" data-key="${a.key}" placeholder="Nodes, antennas, mounting, firmware, weather…">${esc(notes[a.key]||'')}</textarea><div class="saved" id="saved-${a.key}"></div></div></div>`}).join('');
+  el.querySelectorAll('input[type=text]').forEach(x=>x.addEventListener('input',()=>{const k=x.dataset.key;names[k]=x.value;saveNote(k,$('saved-'+k));renderLabels()}));
+  el.querySelectorAll('textarea').forEach(x=>x.addEventListener('input',()=>{const k=x.dataset.key;notes[k]=x.value;$('saved-'+k).textContent='';saveNote(k,$('saved-'+k))}));
+  el.querySelectorAll('.spsel').forEach(x=>x.addEventListener('change',()=>{$('spt-'+x.dataset.key).hidden=x.value!=='custom'}));
+  el.querySelectorAll('.sp').forEach(b=>b.addEventListener('click',()=>{const k=b.dataset.key,a=R.allDrives.find(x=>x.key===k);const sel=$('sp-'+k);let t=sel.value==='custom'?null:+sel.value;if(sel.value==='custom'){const v=$('spt-'+k).value;if(!v){$('saved-'+k).textContent='Choose a time first';return}const [hh,mm]=v.split(':').map(Number);const utc=$('tz').value==='local';const s=new Date(a.start*1000);if(utc)s.setUTCHours(hh,mm,0,0);else s.setHours(hh,mm,0,0);t=s.getTime()/1000;if(t<a.start)t+=86400}if(!(t>a.start&&t<=a.end)){$('saved-'+k).textContent='That time isn\'t within this log';return}cuts.add(t);joins.delete(t);saveLayout();run()}));
+  el.querySelectorAll('.mg').forEach(b=>b.addEventListener('click',()=>{const ix=R.allDrives.findIndex(x=>x.key===b.dataset.key),nx=R.allDrives[ix+1];if(!nx)return;let c=[...cuts].find(t=>t>R.allDrives[ix].end-1&&t<=nx.start);if(c!==undefined)cuts.delete(c);else joins.add(nx.start);saveLayout();run()}));
+  el.querySelectorAll('.sv').forEach(b=>b.addEventListener('click',()=>{$('saved-'+b.dataset.key).textContent='Preparing CSV…';W.postMessage({type:'export',key:b.dataset.key,id:++expId})}));
+  $('resetLayout').hidden=!(cuts.size||joins.size);
+  el.querySelectorAll('.inc').forEach(x=>x.addEventListener('change',()=>{const k=x.dataset.key;if(x.checked)excluded.delete(k);else excluded.add(k);run()}))}
+function renderPerf(){const heads=[[U()],['km',1],['Active time',1],['Avg speed, moving',1],['Avg speed, all',1],['Networks/s',1],['Duplicates/s',1],['Exact dupes/s',1],['Sightings/s',1],['New/s',1],['APs/km',1],['Avg visible',1],['Median visible',1],['Avg distance',1],['Seen once',1]];
+  $('perf').innerHTML=tbl(heads,R.drives.map(d=>[label(d.key),fmt(d.km),hms(d.elapsed),fi(d.avgMoving)+' km/h',fi(d.avgAll)+' km/h',fmt(d.netsPerS),fmt(d.dupPerS),fmt(d.exactPerS,2),fmt(d.rowsPerS),fmt(d.newPerS),fi(d.apsPerKm),secs(d.visMean),secs(d.visMedian),d.visKm===null?'–':fi(d.visKm)+' m',fi(d.oncePct)+'%']))}
+function renderBase(){if(R.n<2){$('baseTable').innerHTML='<p class="sm mut">Add a second log to compare.</p>';$('profChart').innerHTML='';$('profKey').innerHTML='';$('profLede').textContent='';return}
+  const heads=[[U()],['Shared km driven',1],['Its APs',1],['Baseline APs',1],['APs on both',1],['Its APs/km per pass',1],['Baseline APs/km per pass',1],['Baseline vs it',1],['Its sightings/km',1],['Baseline sightings/km',1],['Median AP shift',1],['Moved over 500 m',1],['Peak signal diff',1],['Estimated APs on road',1]];
+  $('baseTable').innerHTML=tbl(heads,R.detail.map(x=>{const pct=x.passOther?(x.passBase/x.passOther-1)*100:null;return[label(x.key),fmt(x.kmOther),fi(x.otherAps),fi(x.baseAps),fi(x.shared),x.passOther===null?'–':fmt(x.passOther),x.passBase===null?'–':fmt(x.passBase),pct===null?'–':(pct>=0?'+':'')+fmt(pct,0)+'%',x.passRowsOther===null?'–':fi(x.passRowsOther),x.passRowsBase===null?'–':fi(x.passRowsBase),x.shiftMedian===null?'–':fi(x.shiftMedian)+' m',fi(x.moved),x.rssiDiff===null?'–':fmt(x.rssiDiff)+' dB',x.estimate===null?'–':fi(x.estimate)]}));
+  const P=R.profile;if(!P)return;const ds=R.drives.slice(0,8);const xs=Array.from({length:P.km},(_,i)=>i);$('profKey').innerHTML=ds.map(d=>`<span>${label(d.key)}</span>`).join('');$('profLede').textContent=`Route km counts from the start of ${nm(R.baseline)}'s longest leg, at ${fmtTime(P.legStart)}. Each line combines every pass that drive made, so a stretch driven twice reads higher than one driven once.`;
+  lineChart($('profChart'),{xs,series:ds.map((d,i)=>({name:nm(d.key),color:col(i),values:P.series[d.key].map(v=>v||null)})),ytitle:'APs per km',xtitle:'Route km',h:290})}
+function renderRepeat(){if(R.n<2){$('repeatLede').textContent='';$('retChart').innerHTML='';$('retKey').innerHTML='';drawHeat();return}
+  $('repeatLede').textContent=R.sameMean!==null&&R.crossMean!==null?`Match is the share of APs two passes have in common, out of all APs either saw. Comparing two legs of the same drive gives a baseline for how much scan chance alone changes results.`:'Match is the share of APs two drives have in common, out of all APs either saw.';
+  drawHeat();const list=R.detail.slice(0,8);$('retKey').innerHTML=list.map(x=>`<span>${label(x.key)}</span>`).join('');const xs=list.length?list[0].retention.map(b=>b.bucket):[];lineChart($('retChart'),{xs,series:list.map(x=>({name:nm(x.key),color:col(driveIx(x.key)),values:x.retention.map(b=>b.pct)})),yfmt:v=>fi(v)+'%',ytitle:'Share also seen by baseline',band:true})}
+function renderRest(){const heads=[[U()],['APs',1],['New',1],['Seen before',1],['Moved',1],['Not seen again',1],['Total APs so far',1],['Total road so far',1]];$('histTable').innerHTML=tbl(heads,R.hist.map(h=>[label(h.key),fi(h.aps),fi(h.newAps),fi(h.returning),fi(h.moved),h.notAgain===null?'–':fi(h.notAgain),fi(h.cumAps),fmt(h.cumRoad)+' km']));
+  const nh=[[U()],['Node'],['Sightings',1],['APs',1],['Only this node',1],['Sightings/s',1],['Channels',1],['Median revisit',1],['90% within',1]];const nr=R.drives.flatMap(d=>d.nodes.map(n=>[label(d.key),esc(n.node),fi(n.rows),fi(n.aps),fi(n.only),fmt(n.perS,2),`<span title="${esc(n.chList.join(', '))}">${fi(n.chans)}</span>`,secs(n.revisit.med),secs(n.revisit.p90)]));const nov=R.drives.filter(d=>d.nodeOverlap!==null).map(d=>`${esc(nm(d.key))} <b>${fi(d.nodeOverlap)}%</b>`);$('nodes').innerHTML=nr.length?tbl(nh,nr)+(nov.length?`<p class="sm mut" style="margin-top:8px">Node overlap, the share of networks two or more nodes heard in the same second (the mesh's [PAIR] redundancy metric; lower is more complementary): ${nov.join(', ')}. Hover Channels for the list.</p>`:''):'<p class="sm mut">None of these logs has a Node column.</p>';
+  const mh=[[U()],['Named SSIDs',1],['Median signal',1],['2.4 GHz',1],['5 GHz',1],['6 GHz',1],['Open',1],['Hidden',1],['Randomized MAC',1],['WPA3',1],['WEP',1],['BLE devices',1]];$('mix').innerHTML=tbl(mh,R.drives.map(d=>{const m=d.mix;return[label(d.key),fi(m.ssids),m.medianRssi===null?'–':fi(m.medianRssi)+' dBm',fmt(m.b24)+'%',fmt(m.b5)+'%',fmt(m.b6)+'%',fmt(m.open)+'%',fmt(m.hidden)+'%',fmt(m.rand)+'%',fmt(m.wpa3)+'%',fmt(m.wep)+'%',fi(m.bleDev)]}));
+  const qh=[['File'],['Logger'],['Rows read',1],['Kept',1],['No GPS',1],['Corrupted',1],['Impossible signal',1],['Other radio types',1],['Out of order',1]];$('quality').innerHTML=tbl(qh,R.quality.map(q=>[esc(q.file),esc(q.device),fi(q.raw),fi(q.kept),fi(q.noGps),fi(q.corrupt),fi(q.badSignal),fi(q.other),fi(q.outOfOrder)]));
+  $('perfNote').textContent=`Analysed ${fi(R.memRows)} rows and ${fi(R.macs)} addresses in ${fmt(R.ms/1000)} seconds. Reload clears the logs, so add them again next visit.`}
+// ---- real difference + fairness ----
+const chip=(ok,t)=>`<span class="${ok===null?'mut':ok?'ok':'warn'}">${ok===null?'·':ok?'✓':'⚠'} ${t}</span>`;
+function fairChecks(x){const f=x.fair,s=x.stat;const c=[];
+  c.push([f.kmOther>=2&&Math.min(f.pctBase,f.pctOther)>=30,`Shared road ${fmt(f.kmOther)} km (${fi(f.pctOther)}% of it, ${fi(f.pctBase)}% of the baseline)`]);
+  c.push([f.speedOverlap===null?null:f.speedOverlap>=70,`Speed mix ${f.speedOverlap===null?'unknown':fi(f.speedOverlap)+'% alike'} (${fi(f.avgSpeedOther)} vs ${fi(f.avgSpeedBase)} km/h on shared road)`]);
+  c.push([s.dirAgree===null||s.n<5?null:s.dirAgree>=50,`Same direction on ${s.dirAgree===null?'–':fi(s.dirAgree)+'%'} of stretches`]);
+  c.push([f.todGapH===null?null:f.todGapH<=3&&f.weekendBase===f.weekendOther,`Time of day ${f.todGapH===null?'unknown':fmt(f.todGapH)+' h apart'}${f.weekendBase!==f.weekendOther?', weekday vs weekend':''}${f.daysApart>=1?`, ${fi(f.daysApart)} ${Math.round(f.daysApart)===1?'day':'days'} apart`:''}`]);
+  c.push([Math.max(f.gpsBase,f.gpsOther)<=10,`GPS: ${fi(f.gpsOther)}% / ${fi(f.gpsBase)}% of rows without a fix`]);
+  c.push([Math.max(f.randBase,f.randOther)<=50&&Math.abs(f.randBase-f.randOther)<=15,`Randomized MACs ${fi(f.randOther)}% / ${fi(f.randBase)}% of networks`]);
+  return c}
+const verdictOf=s=>{if(!(s.n>=5)||s.lo===null)return'Too little shared road';if(s.lo>0)return'Baseline found more';if(s.hi<0)return'Baseline found fewer';if(s.p!==null&&s.p<.05)return s.wins>s.losses?'Baseline ahead on most stretches, but the total gap could be chance':'Baseline behind on most stretches, but the total gap could be chance';return'Could be chance'};
+function renderStat(){if(!R||R.n<2||!R.detail.length||!R.detail[0].stat){$('statTable').innerHTML=R&&R.n>=2?'':'<p class="sm mut">Add a second log to compare.</p>';$('fairList').innerHTML='';$('statLede').textContent='';return}
+  const pc=v=>v===null||v===undefined?'–':(v>=0?'+':'')+fmt(v,0)+'%';
+  const heads=[[U()],['Stretches',1],['Baseline vs it',1],['95% range',1],['Baseline ahead on',1],['Behind on',1],['p',1],['Speed-matched',1],['Verdict']];
+  $('statTable').innerHTML=tbl(heads,R.detail.map(x=>{const s=x.stat;const v=verdictOf(s);return[label(x.key),fi(s.n),pc(s.est),s.lo===null?'–':`${pc(s.lo)} to ${pc(s.hi)}`,fi(s.wins),fi(s.losses),s.p===null?'–':s.p<.001?'<0.001':fmt(s.p,3),s.estMatched===null?'–':`${pc(s.estMatched)} (${fi(s.nMatched)})`,v]}));
+  const any=R.detail.some(x=>x.stat.perLeg);$('statLede').textContent=`The shared road is cut into ${R.detail[0].stat.cell} m stretches${any?', for each pair of legs that drove the same road,':''} and each stretch is a paired count of distinct networks. The 95% range comes from resampling the stretches 1,000 times; p is a two-sided sign test on how many stretches each side won. Speed-matched keeps only stretches the two drove within 15 km/h of each other (count in brackets). Under 5 stretches there is nothing to estimate from.`;
+  $('fairList').innerHTML=R.detail.map(x=>{const c=fairChecks(x);const ok=c.filter(y=>y[0]===true).length,kn=c.filter(y=>y[0]!==null).length;return`<div class="fair"><div class="sm"><b>${esc(nm(x.key))}</b> vs baseline: <b>${ok}</b> of ${kn} fairness checks pass</div><div class="chips">${c.map(y=>chip(y[0],esc(y[1]))).join('')}</div></div>`}).join('')}
+// ---- scheduler ----
+const CH_METRICS={aps:['Distinct APs',v=>fi(v)],rows:['Sightings',v=>fi(v)],newAps:['New APs (first sightings)',v=>fi(v)],perAp:['Sightings per AP',v=>fmt(v,1)],rowShare:['Share of sightings (%)',v=>fmt(v,1)],apShare:['Share of APs (%)',v=>fmt(v,1)],missPct:['Baseline missed (% of its APs on shared road)',v=>fi(v)]};
+const chName=ch=>ch?String(ch):'?';
+function chanRows(d){const tr=d.chans.reduce((a,c)=>a+c.rows,0),ta=d.chans.reduce((a,c)=>a+c.aps,0);const det=R.detail.find(x=>x.key===d.key);return d.chans.map(c=>{const m=det&&det.chans.find(x=>x.ch===c.ch);return{...c,perAp:c.aps?c.rows/c.aps:null,rowShare:tr?c.rows/tr*100:0,apShare:ta?c.aps/ta*100:0,both:m?m.bothO:null,onlyIt:m?m.other-m.bothO:null,onlyBase:m?m.base-m.bothB:null,missPct:m&&m.other?(m.other-m.bothO)/m.other*100:null}})}
+function renderChChart(){if(!R||!R.n)return;const m=$('chMetric').value||'aps',M=CH_METRICS[m];let ds=R.drives.slice(0,8);if(m==='missPct')ds=ds.filter(d=>d.key!==R.baseline);const chs=[...new Set(ds.flatMap(d=>d.chans.map(c=>c.ch)))].sort((a,b)=>a-b);
+  $('chKey').innerHTML=ds.map(d=>`<span>${label(d.key)}</span>`).join('')+(R.drives.length>8?`<span>First 8 of ${R.drives.length} drives charted. All are in the table.</span>`:'');
+  if(!ds.length||!chs.length){$('chChart').innerHTML=`<p class="sm mut">${m==='missPct'?'Add a second log to compare.':'Nothing to show.'}</p>`;return}
+  lineChart($('chChart'),{xs:chs.map(chName),series:ds.map(d=>{const by=new Map(chanRows(d).map(r=>[r.ch,r]));return{name:nm(d.key),color:col(driveIx(d.key)),values:chs.map(ch=>{const r=by.get(ch);return r?r[m]:null})}}),yfmt:M[1],ytitle:M[0],xtitle:'Channel',h:280})}
+function renderChTable(){if(!R||!R.n)return;const k=$('chDrive').value;const list=k==='all'?R.drives:R.drives.filter(d=>d.key===k);const BN=['?','2.4','5','6'];const heads=[[U()],['Channel'],['Band, GHz'],['APs',1],['Sightings',1],['New APs',1],['Sightings per AP',1],['Share of sightings',1],['Share of APs',1],['Both',1],['Only it',1],['Only baseline',1],['Baseline missed',1]];
+  $('chTable').innerHTML=tbl(heads,list.flatMap(d=>chanRows(d).map(r=>[label(d.key),chName(r.ch),BN[r.band]||'?',fi(r.aps),fi(r.rows),fi(r.newAps),fmt(r.perAp),fmt(r.rowShare)+'%',fmt(r.apShare)+'%',r.both===null?'–':fi(r.both),r.onlyIt===null?'–':fi(r.onlyIt),r.onlyBase===null?'–':fi(r.onlyBase),r.missPct===null?'–':fi(r.missPct)+'%'])))}
+function renderSched(){if(!R||!R.n||!R.drives[0].chans)return;renderChChart();renderChTable();const BN={1:'2.4 GHz',2:'5 GHz',3:'6 GHz'};
+  const bm=R.detail.flatMap(x=>(x.bands||[]).filter(b=>b.otherAps||b.baseAps).map(b=>[label(x.key),BN[b.band],fi(b.otherAps),b.otherSeenByBase===null?'–':fi(b.otherSeenByBase)+'%',fi(b.baseAps),b.baseSeenByOther===null?'–':fi(b.baseSeenByOther)+'%']));
+  $('bandMiss').innerHTML=R.n<2?'<p class="sm mut">Add a second log to compare.</p>':bm.length?tbl([[U()],['Band'],['Its APs',1],['Baseline also heard',1],['Baseline APs',1],['It also heard',1]],bm):'<p class="sm mut">No shared road with the baseline.</p>';
+  const rh=[[U()],['Median revisit',1],['90% within',1],['Within 2 s',1],['2.4 GHz median',1],['5 GHz median',1],['Median first signal',1],['Loudest at first sight',1],['Median gain after first',1],['Node overlap',1]];
+  $('revisit').innerHTML=tbl(rh,R.drives.map(d=>{const r=d.revisit,f=d.first;return[label(d.key),secs(r.all.med),secs(r.all.p90),r.all.fast===null?'–':fi(r.all.fast)+'%',secs(r.b24.med),secs(r.b5.med),f.med===null?'–':fi(f.med)+' dBm',f.atPeak===null?'–':fi(f.atPeak)+'%',f.gain===null?'–':fi(f.gain)+' dB',d.nodeOverlap===null?'–':fi(d.nodeOverlap)+'%']}))}
+function renderLabels(){if(!R)return;renderPerf();renderSpeedChart();renderSpeedTable();renderBase();renderRepeat();renderRest();renderStat();renderSched();drawMap();renderMapLede();renderLede();renderTiles();fillBaseline()}
+function fillBaseline(){const b=$('baseline'),v=R.baseline;b.innerHTML=R.drives.map(d=>`<option value="${d.key}">${esc(nm(d.key))}</option>`).join('');b.value=v;const k=$('kmin'),opts=[];for(let i=2;i<=Math.max(2,R.n);i++)opts.push(`<option value="${i}">${i} ${noun(2)}</option>`);k.innerHTML=opts.join('');k.value=kmin;const sd=$('speedDrive'),cur=sd.value;sd.innerHTML=`<option value="all">All drives</option>`+R.drives.map(d=>`<option value="${d.key}">${esc(nm(d.key))}</option>`).join('');if([...sd.options].some(o=>o.value===cur))sd.value=cur;const m=$('metric');if(!m.options.length)m.innerHTML=Object.entries(METRICS).map(([a,b])=>`<option value="${a}">${b[0]}</option>`).join('');const cm=$('chMetric');if(!cm.options.length)cm.innerHTML=Object.entries(CH_METRICS).map(([a,b])=>`<option value="${a}">${b[0]}</option>`).join('');const cd=$('chDrive'),cur2=cd.value;cd.innerHTML=`<option value="all">All drives</option>`+R.drives.map(d=>`<option value="${d.key}">${esc(nm(d.key))}</option>`).join('');if([...cd.options].some(o=>o.value===cur2))cd.value=cur2}
+function renderAll(){const has=!!R&&R.n>0;$('driveTitle').textContent={drive:'Drives',file:'Files',leg:'Legs'}[mode];$('driveHelp').textContent={drive:'Files that run on from each other are lumped into one drive. Split a drive, merge two, or save any of them as its own CSV.',file:'Each CSV stands alone. Split a file at a gap or a chosen time, merge files, or save any part as its own CSV.',leg:'Each stretch between logging gaps stands alone. Split or merge legs, or save any of them as its own CSV.'}[mode]+' Name each one and note its setup. Names and notes come back when you add the same logs again.';['settings','rail','tiles','s-drives','s-perf','s-speed','s-map','s-road','s-repeat','s-sched','s-history','s-nodes','s-mix','s-data','s-method'].forEach(id=>{$(id).hidden=!(has||(id==='s-drives'&&R))});$('exBanner').hidden=!isExample;$('lede').hidden=!has;if(!R){$('lede').hidden=false;$('lede').textContent='Drop your CSVs above to compare them.';return}renderDrives();if(!has)return;fillBaseline();$('speedLede').textContent='Speed bands use GPS speed in km/h. Time visible is measured per encounter, so a stop can make it look very long.';renderLede();renderTiles();renderPerf();renderSpeedChart();renderSpeedTable();drawMap();renderMapLede();renderBase();renderRepeat();renderRest();renderStat();renderSched()}
+let rw=0;new ResizeObserver(()=>{const w=$('s-speed').clientWidth;if(w&&w!==rw&&R&&R.n){rw=w;renderSpeedChart();drawMap();renderBase();renderRepeat();renderChChart()}}).observe(document.body);
+
+// ---- example data ----
+function exampleFiles(){let seed=7;const rnd=()=>{seed=(seed*16807)%2147483647;return(seed-1)/2147483646};const hdr='WigleWifi-1.6,appRelease=example,model=Example-Rig,device=Example\nMAC,SSID,AuthMode,FirstSeen,Channel,Frequency,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,RCOIs,MfgrId,Type\n';
+  const L=18000;const road=d=>({la:10.0+d/110950,lo:-140+Math.sin(d/2500)*.012});const hex=n=>n.toString(16).toUpperCase().padStart(2,'0');const aps=[];let at=0;while(at<L){const dense=Math.sin(at/3000)>0?1:.25;at+=(9+rnd()*16)/dense;aps.push({d:at,off:12+rnd()*90,tx:-38-rnd()*22,mac:`${hex(2+Math.floor(rnd()*60)*4)}:${hex(rnd()*256|0)}:${hex(rnd()*256|0)}:${hex(rnd()*256|0)}:${hex(rnd()*256|0)}:${hex(rnd()*256|0)}`,ch:[1,6,11,36,44,149][rnd()*6|0],hid:rnd()<.3,open:rnd()<.04})}
+  const trip=(start,pSee,boost,rig)=>{const out=[hdr.replace('Example-Rig',rig)];let t=start,d=0;const sp=x=>12+11*Math.abs(Math.sin(x/2200))+6;const stamp=s=>new Date(s*1000).toISOString().slice(0,19).replace('T',' ');const pass=(dir)=>{while(dir>0?d<L:d>0){const v=sp(d);d+=dir*v;t+=1;const p=road(d);const near=aps.filter(a=>Math.abs(a.d-d)<260);for(const a of near){const dist=Math.hypot(a.d-d,a.off);const rs=a.tx-22*Math.log10(Math.max(1,dist))+(rnd()-.5)*6;if(rs<-96||rnd()>pSee)continue;const n=rnd()<boost?2:1;for(let i=0;i<n;i++)out.push(`${a.mac},${a.hid?'':'"example-'+a.mac.slice(-2)+'"'},${a.open?'OPEN':'WPA2'},${stamp(t)},${a.ch},${a.ch<20?2407+a.ch*5:5000+a.ch*5},${Math.round(rs+(rnd()-.5)*3)},${p.la.toFixed(6)},${p.lo.toFixed(6)},20,1,,,WIFI`)}}};pass(1);t+=900;pass(-1);return out.join('\n')};
+  return[new File([trip(1767261600,.34,.08,'Rig-A')],'example-drive-1.csv'),new File([trip(1767348000,.28,.02,'Rig-A')],'example-drive-2.csv')]}
+const start=()=>{renderAll();isExample=true;W.postMessage({type:'add',files:exampleFiles(),cfg:cfg()});initStore()};start();
+window.__setLayout=(v)=>{applyLayout(v);setDis();run()};window.__cuts=()=>[...cuts];
+
+</script>
+
+</body></html>

@@ -1,0 +1,33 @@
+Signal Atlas - quick start
+==========================
+Extract the entire ZIP before running anything.
+Requires Python 3.10+ with SQLite/RTree support.
+
+Open a terminal in the extracted SignalAtlas folder and run:
+
+    python -m venv .venv
+
+On Windows:
+    .venv\Scripts\python.exe -m pip install -r requirements.txt
+    .venv\Scripts\python.exe survey.py init
+    .venv\Scripts\python.exe survey.py import demo-survey.csv
+    .venv\Scripts\python.exe survey.py serve --port 8765
+
+On macOS/Linux:
+    .venv/bin/python -m pip install -r requirements.txt
+    .venv/bin/python survey.py init
+    .venv/bin/python survey.py import demo-survey.csv
+    .venv/bin/python survey.py serve --port 8765
+
+Open http://127.0.0.1:8765/ in your browser.
+Keep the terminal open; Ctrl+C stops the app.
+To reopen later, run the serve command again. No reimport is needed.
+For your own surveys, use Import CSV in the browser or see README.md.
+
+You can also open outputs/demo-map.html for the portable demo report.
+Street tiles and the Leaflet CDN require internet; satellite needs your own Esri key.
+The local survey canvas and database features work without those services.
+
+This bundle includes the current app source, tests and the supplied ExampleNet demo.
+It excludes local SQLite databases, private inputs, logs, virtual environments,
+Git history and Python caches. Python and dependencies are not bundled.

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Signal Atlas
+GenericName=Wardriving analysis
+Comment=Compare wardrives and locate access points in WiGLE CSV surveys
+Exec=signal-atlas
+Icon=signal-atlas
+Terminal=false
+Categories=Network;Utility;
+StartupWMClass=signal-atlas

@@ -1,0 +1,9 @@
+# built programs and release files
+/build/
+*.exe
+# a development run's data and caches
+/data/
+__pycache__/
+python/outputs/
+/dist/
+*.syso
