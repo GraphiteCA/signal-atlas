@@ -14,6 +14,16 @@ files on the repository's Releases page.
 
 The files go to dist/<version>/ with SHA256SUMS.txt. The version comes from the VERSION file
 unless --version is given.
+
+Code signing is optional and runs on this computer:
+- Windows: set SIGNAL_ATLAS_SIGN_COMMAND to a command that signs one file, with {file} where its
+  path goes. signal-atlas.exe is signed before it is zipped and packed into the installer, then the
+  installer is signed. For example, with a certificate on a USB token:
+    signtool sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 /a {file}
+  or with Azure Trusted Signing:
+    signtool sign /fd sha256 /tr http://timestamp.acs.microsoft.com /td sha256 /dlib <Azure.CodeSigning.Dlib.dll> /dmdf metadata.json {file}
+- macOS (on the Mac): SIGNAL_ATLAS_MAC_IDENTITY="Developer ID Application: Name (TEAMID)" signs
+  the app, and SIGNAL_ATLAS_MAC_NOTARY_PROFILE=<a notarytool keychain profile> also notarizes it.
 """
 import argparse
 import hashlib
@@ -43,20 +53,47 @@ def go_version():
     return re.search(r"^go\s+(\S+)", src, re.M).group(1)
 
 
+def sign(path):
+    """Signs one file with SIGNAL_ATLAS_SIGN_COMMAND, if it is set."""
+    template = os.environ.get("SIGNAL_ATLAS_SIGN_COMMAND", "").strip()
+    if not template:
+        return False
+    cmd = template.replace("{file}", '"' + os.path.abspath(path) + '"')
+    print("+ sign", os.path.basename(path), flush=True)
+    subprocess.run(cmd, shell=True, check=True)
+    return True
+
+
 def build_in_docker(version, out, targets):
+    """Builds in the container: the Windows program first (so it can be signed here), then its zip
+    and installer, and Linux. The installer is signed last."""
     if not shutil.which("docker"):
         sys.exit("Docker is needed to build for Windows and Linux. Install Docker Desktop, or use --only macos on a Mac.")
     go = go_version()
     image = IMAGE.format(go=go)
     run(["docker", "build", "--build-arg", "GO_VERSION=" + go, "-t", image, os.path.join(ROOT, "packaging", "linux")])
-    cmd = ["docker", "run", "--rm",
-           "-v", ROOT + ":/src:ro", "-v", os.path.abspath(out) + ":/out",
-           "-v", "signal-atlas-gomod:/root/go/pkg/mod", "-v", "signal-atlas-gocache:/root/.cache/go-build",
-           "-e", "VERSION=" + version, "-e", "TARGETS=" + " ".join(targets), "-e", "PROJECT_URL=" + project_url()]
-    if hasattr(os, "getuid"):
-        cmd += ["-e", "OWNER=%d:%d" % (os.getuid(), os.getgid())]
-    cmd += [image, "sh", "/src/packaging/linux/build-in-container.sh"]
-    run(cmd)
+    def container(stage_targets):
+        cmd = ["docker", "run", "--rm",
+               "-v", ROOT + ":/src:ro", "-v", os.path.abspath(out) + ":/out",
+               "-v", "signal-atlas-gomod:/root/go/pkg/mod", "-v", "signal-atlas-gocache:/root/.cache/go-build",
+               "-e", "VERSION=" + version, "-e", "TARGETS=" + " ".join(stage_targets), "-e", "PROJECT_URL=" + project_url()]
+        if hasattr(os, "getuid"):
+            cmd += ["-e", "OWNER=%d:%d" % (os.getuid(), os.getgid())]
+        cmd += [image, "sh", "/src/packaging/linux/build-in-container.sh"]
+        run(cmd)
+
+    stage = os.path.join(out, ".stage")
+    first = (["windows-exe"] if "windows" in targets else []) + (["linux"] if "linux" in targets else [])
+    container(first)
+    if "windows" in targets:
+        signed = sign(os.path.join(stage, "signal-atlas.exe"))
+        container(["windows-pack"])
+        setup = "signal-atlas-%s-windows-amd64-setup.exe" % version
+        sign(os.path.join(stage, setup))
+        os.replace(os.path.join(stage, setup), os.path.join(out, setup))
+        if not signed:
+            print("Not code-signed (set SIGNAL_ATLAS_SIGN_COMMAND to sign): Windows SmartScreen will warn on first run.")
+    shutil.rmtree(stage, ignore_errors=True)
 
 
 def build_macos(version, out):
@@ -90,7 +127,8 @@ def upload(version, out, repo):
     else:
         names = [os.path.basename(f) for f in files]
         lines = ["Signal Atlas %s." % version, ""]
-        for suffix, label in (("-windows-amd64.zip", "Windows 10 and 11"),
+        for suffix, label in (("-windows-amd64-setup.exe", "Windows 10 and 11, installer (updates itself)"),
+                              ("-windows-amd64.zip", "Windows 10 and 11, portable zip"),
                               ("-macos-universal.zip", "macOS 12 and newer, Apple silicon and Intel"),
                               ("_amd64.deb", "Ubuntu 22.04+ and Debian 12+"),
                               ("-linux-amd64.tar.gz", "other Linux with GTK 3 and WebKitGTK 4.1")):

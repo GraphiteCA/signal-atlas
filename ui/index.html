@@ -6,6 +6,7 @@
 :root{--bg:#111614;--panel:#181f1c;--fg:#e8eeea;--muted:#a2aea8;--line:#2b3430;--accent:#52c2b0;--accent-ink:#06211c;--wash:#222b27;color-scheme:dark;
   --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;--body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;--data:"IBM Plex Mono",ui-monospace,Consolas,monospace}
 body{margin:0;background:var(--bg);color:var(--fg);font:400 15px/1.45 var(--body)}
+[hidden]{display:none!important}
 .wrap{max-width:1000px;margin:0 auto;padding:28px 20px 48px;display:flex;flex-direction:column;gap:22px}
 h1{font:600 2.1rem/1.05 var(--display);margin:0}h2{font:600 1.35rem/1.1 var(--display);margin:0}
 p{margin:0;max-width:74ch}.mut{color:var(--muted)}.sm{font-size:.86rem}
@@ -29,14 +30,20 @@ a{color:var(--accent)}code{font-family:var(--data);font-size:.85em;overflow-wrap
       <div class="row"><a class="btn pri" href="/compare.html">Open Compare</a></div></div>
     <div class="card"><h2>Signal Atlas explorer</h2><span class="sm mut">by <a href="https://github.com/GraphiteCA">Graphite</a></span>
       <p>An access-point locator: import CSV surveys or open SQLite databases, filter by SSID, band, date and signal, and fit where each network's AP is, <span id="fits">several</span> at a time.</p>
-      <div class="row"><a class="btn pri" href="/atlas/">Open the explorer</a></div></div>
+      <div class="row"><a class="btn pri" href="/atlas/">Open the explorer</a><a class="btn" href="/map">GPU map</a></div></div>
     <div class="card"><h2>Drive database</h2><span class="sm mut">every log in one file</span>
       <p>Collect every log and database into one SQLite file on this PC: WiGLE CSV logs, a logger's per-day database files copied off its SD card, WiGLE app backups. Sightings already in it are left out. Export it all as WiGLE CSV, in one file or one per day.</p>
       <div class="row"><a class="btn pri" href="/database">Open the Drive database</a></div></div>
   </section>
   <section><h2 style="margin-bottom:10px">Explorer store</h2>
     <div class="stats" id="stats"><div class="stat"><span class="sm mut">Engine</span><b>starting…</b></div></div></section>
-  <section class="row sm mut"><span>Version <code id="ver"></code></span><span>Data: <code id="data"></code></span><button class="btn" id="showData" hidden>Show data folder</button></section>
+  <section class="card" id="askUpdates" hidden><h2>Check for new versions?</h2>
+    <p>Signal Atlas can ask GitHub once a day whether a newer release is out. That request carries only the app's version; apart from map tiles, it is the only thing the app sends anywhere.</p>
+    <div class="row"><button class="btn pri" id="updOn">Check once a day</button><button class="btn" id="updOff">Don't check</button></div></section>
+  <section class="card" id="updateCard" hidden><h2 id="updTitle"></h2><p id="updText"></p>
+    <div class="row"><button class="btn pri" id="updInstall" hidden>Install the update</button><button class="btn" id="updPage" hidden>Open the release page</button></div></section>
+  <section class="row sm mut"><span>Version <code id="ver"></code></span><span>Data: <code id="data"></code></span><button class="btn" id="showData" hidden>Show data folder</button>
+    <button class="btn" id="updNow">Check for updates</button><span id="updAuto"></span></section>
 </main>
 <script src="/app/bridge.js"></script>
 <script>
@@ -58,5 +65,31 @@ async function refresh() {
 }
 SignalAtlasApp.ready.then((i) => { if (i.window) { $('showData').hidden = false; $('showData').onclick = () => SignalAtlasApp.showData(); } });
 refresh(); setInterval(refresh, 4000);
+
+// ---- updates: asked before the first check; the engine talks to GitHub (internal/engine/settings.go)
+const post = (p, body) => fetch(p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
+  .then(async (r) => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || r.status); return j; });
+function showUpdate(u, s, asked) {
+  $('askUpdates').hidden = !(s && s.update_checks === 'ask');
+  const setting = s ? s.update_checks : u.setting;
+  $('updAuto').innerHTML = setting === 'on' ? 'Checks daily · <a href="#" id="updToggle">turn off</a>' : setting === 'off' ? 'Automatic checks off · <a href="#" id="updToggle">turn on</a>' : '';
+  const t = $('updToggle');
+  if (t) t.onclick = (e) => { e.preventDefault(); post('/api/app/settings', { update_checks: setting === 'on' ? 'off' : 'on' }).then((j) => showUpdate(j.update, j.settings)); };
+  if (!u || !u.latest) { $('updateCard').hidden = !asked; if (asked) { $('updTitle').textContent = 'Couldn\'t check'; $('updText').textContent = asked; } return; }
+  $('updateCard').hidden = !(u.newer || asked);
+  $('updTitle').textContent = u.newer ? `Signal Atlas ${u.latest} is out` : `You have the newest version (${u.current})`;
+  $('updText').textContent = u.newer ? (u.installer ? 'Install it now: the app downloads the installer, checks it against the release\'s checksums, closes, installs and opens the new version. Your data stays as it is.' : 'Download it from the release page.') : '';
+  $('updInstall').hidden = !(u.newer && u.installer);
+  $('updPage').hidden = !u.newer;
+  $('updPage').onclick = () => post('/api/app/open-url', { url: u.url });
+}
+$('updOn').onclick = () => post('/api/app/settings', { update_checks: 'on' }).then((j) => { showUpdate(j.update, j.settings); setTimeout(loadUpdate, 3000); });
+$('updOff').onclick = () => post('/api/app/settings', { update_checks: 'off' }).then((j) => showUpdate(j.update, j.settings));
+$('updNow').onclick = () => { $('updNow').disabled = true; post('/api/app/update/check').then((u) => showUpdate(u, null, true)).catch((e) => showUpdate(null, null, e.message)).finally(() => { $('updNow').disabled = false; }); };
+$('updInstall').onclick = () => { $('updInstall').disabled = true; $('updText').textContent = 'Downloading and checking the installer…';
+  post('/api/app/update/install').then(() => { $('updText').textContent = 'Installing. Signal Atlas closes now and opens again when it is done.'; })
+    .catch((e) => { $('updText').textContent = "Couldn't install: " + e.message; $('updInstall').disabled = false; }); };
+async function loadUpdate() { try { const j = await (await fetch('/api/app/settings', { cache: 'no-store' })).json(); showUpdate(j.update, j.settings); } catch (e) { /* engine starting */ } }
+loadUpdate();
 </script>
 </body></html>

@@ -333,6 +333,11 @@ func (m *LocationModel) Fit(idx []int, exponent, extentM, stepM float64, predict
 			best, bx, by, first = scores[j], fx[j], fy[j], false
 		}
 	}
+	return m.finish(idx, s, exponent, extentM, stepM, best, bx, by, predictions), nil
+}
+
+// finish turns the best candidate into a Fit: intercepts, RMS, position, predictions.
+func (m *LocationModel) finish(idx []int, s *subset, exponent, extentM, stepM, best, bx, by float64, predictions bool) *Fit {
 	dist := make([]float64, s.m)
 	for j := 0; j < s.m; j++ {
 		dx, dy := s.x[j]-bx, s.y[j]-by
@@ -382,7 +387,7 @@ func (m *LocationModel) Fit(idx []int, exponent, extentM, stepM float64, predict
 			f.Predictions = append(f.Predictions, map[string]any{"key": key, "distance_m": dist[j], "predicted_rssi_dbm": pred[j], "residual_db": m.rssi[i] - pred[j]})
 		}
 	}
-	return f, nil
+	return f
 }
 
 func stripFit(f *Fit) map[string]any {

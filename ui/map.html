@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark">
+<title>GPU map · Signal Atlas</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1f5fa;</text></svg>">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<style>
+:root{--bg:#111614;--panel:#181f1c;--fg:#e8eeea;--muted:#a2aea8;--line:#2b3430;--accent:#52c2b0;--accent-ink:#06211c;color-scheme:dark;
+  --body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;--data:"IBM Plex Mono",ui-monospace,Consolas,monospace}
+[hidden]{display:none!important}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:400 14px/1.4 var(--body)}
+body{display:flex;flex-direction:column}
+header{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;padding:8px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+header a{color:var(--accent);text-decoration:none;font-size:13px}header a:hover{text-decoration:underline}
+h1{font:600 1.15rem/1 var(--body);margin:0 6px 0 0}
+label{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:5px}
+select,input{background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:4px;padding:4px 6px;font:inherit;font-size:13px}
+input[type=number]{width:64px}input[type=search]{width:150px}
+#map{flex:1;position:relative}
+#status{font:12px var(--data);color:var(--muted);margin-left:auto}
+.legend{position:absolute;left:10px;bottom:28px;z-index:2;background:rgba(17,22,20,.88);border:1px solid var(--line);border-radius:6px;padding:7px 9px;font-size:12px}
+.ramp{width:170px;height:8px;border-radius:3px;margin:4px 0 2px}
+.legend .row{display:flex;justify-content:space-between;color:var(--muted)}
+#nogl{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:30px;color:var(--muted)}
+.maplibregl-ctrl-attrib{background:rgba(17,22,20,.75)!important;color:var(--muted)}.maplibregl-ctrl-attrib a{color:var(--muted)!important}
+.maplibregl-ctrl-group{background:var(--panel)!important}.maplibregl-ctrl-group button span{filter:invert(.9)}
+</style></head>
+<body>
+<header>
+  <a href="/">&larr; Home</a><a href="/atlas/">Signal Atlas explorer</a>
+  <h1>GPU map</h1>
+  <label>Points <select id="max"><option value="500000">0.5 M</option><option value="2000000" selected>2 M</option><option value="5000000">5 M</option><option value="8000000">8 M</option></select></label>
+  <label>Band <select id="band"><option value="">all</option><option>2.4</option><option>5</option><option>6</option></select></label>
+  <label>Min signal <input id="minRssi" type="number" value="-150" step="5"> dBm</label>
+  <label>SSID <input id="ssid" type="search" placeholder="contains…"></label>
+  <label><input id="showObs" type="checkbox" checked> sightings</label>
+  <label><input id="showFits" type="checkbox" checked> fitted APs</label>
+  <span id="status">loading…</span>
+</header>
+<div id="map">
+  <div class="legend"><b>Signal</b><div class="ramp" id="ramp"></div><div class="row"><span>−95 dBm</span><span>−40 dBm</span></div>
+    <div style="margin-top:6px"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#ff5fa2;vertical-align:middle"></span> fitted AP</div></div>
+  <div id="nogl" hidden>This map needs WebGL, which this window doesn't offer. The explorer's map still works.</div>
+</div>
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/deck.gl@9.4.1/dist.min.js"></script>
+<script>
+// The GPU map: every sighting in view (thinned evenly past the chosen limit) and every saved fit,
+// drawn by deck.gl over MapLibre. The engine packs the points as float32 offsets from a local
+// origin (internal/engine/gpumap.go); colours are worked out here, three bytes a point.
+const $ = (id) => document.getElementById(id);
+const fi = (n) => Number(n || 0).toLocaleString();
+const VIEW = 'signal-atlas.gpumap.view';
+
+// signal colour ramp, -95 .. -40 dBm
+const STOPS = [[-95, [40, 60, 160]], [-85, [50, 120, 200]], [-75, [40, 190, 170]], [-62, [170, 220, 80]], [-50, [250, 200, 60]], [-40, [255, 110, 60]]];
+function color(rssi, out, o) {
+  let i = 0;
+  while (i < STOPS.length - 2 && rssi > STOPS[i + 1][0]) i++;
+  const [a, ca] = STOPS[i], [b, cb] = STOPS[i + 1];
+  const t = Math.max(0, Math.min(1, (rssi - a) / (b - a)));
+  out[o] = ca[0] + (cb[0] - ca[0]) * t; out[o + 1] = ca[1] + (cb[1] - ca[1]) * t; out[o + 2] = ca[2] + (cb[2] - ca[2]) * t;
+}
+$('ramp').style.background = 'linear-gradient(90deg,' + STOPS.map(([v, c]) => `rgb(${c}) ${((v + 95) / 55 * 100).toFixed(0)}%`).join(',') + ')';
+
+if (!window.maplibregl || !window.deck) {
+  $('status').textContent = 'The map libraries load from unpkg.com; this window is offline.';
+  throw new Error('offline');
+}
+let map;
+try {
+  map = new maplibregl.Map({
+    container: 'map', center: [0, 20], zoom: 1.5, maxPitch: 0, dragRotate: false, attributionControl: { compact: true },
+    style: { version: 8, sources: { osm: { type: 'raster', tiles: [location.origin + '/tiles/osm/{z}/{x}/{y}.png'], tileSize: 256, maxzoom: 19,
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' } },
+      layers: [{ id: 'bg', type: 'background', paint: { 'background-color': '#0b1110' } },
+        { id: 'osm', type: 'raster', source: 'osm', paint: { 'raster-brightness-min': 1, 'raster-brightness-max': 0.12, 'raster-hue-rotate': 180, 'raster-saturation': -0.35, 'raster-opacity': 0.9 } }] },
+  });
+} catch (e) { $('nogl').hidden = false; $('status').textContent = ''; throw e; }
+map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+const overlay = new deck.MapboxOverlay({ interleaved: false, layers: [],
+  getTooltip: ({ layer, index }) => layer && layer.id === 'fits' && fits ? { html: tip(index), style: { background: '#181f1c', color: '#e8eeea', border: '1px solid #2b3430', fontSize: '12px' } } : null });
+map.addControl(overlay);
+
+let points = null, fits = null;
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+function tip(i) {
+  return `<b>${esc(fits.ssid[i] || '(hidden)')}</b><br>${esc(fits.mac[i])}<br>${fits.shared[i] ? 'shared AP estimate' : 'single-radio estimate'} · ${fi(fits.used[i])} observations` +
+    `<br>residual ${fits.rms[i].toFixed(1)} dB${fits.edge[i] ? ' · at the search edge' : ''}`;
+}
+
+function query() {
+  const b = map.getBounds();
+  const w = Math.max(-180, b.getWest()), e = Math.min(180, b.getEast()), s = Math.max(-85, b.getSouth()), n = Math.min(85, b.getNorth());
+  const p = new URLSearchParams({ bbox: [w, s, e, n].map((v) => v.toFixed(6)).join(','), min_rssi: $('minRssi').value || '-150' });
+  if ($('band').value) p.append('band', $('band').value);
+  if ($('ssid').value.trim()) p.set('ssid_query', $('ssid').value.trim());
+  return p;
+}
+
+function draw() {
+  const layers = [];
+  if (points && $('showObs').checked && points.n) {
+    layers.push(new deck.ScatterplotLayer({ id: 'obs', data: { length: points.n, attributes: {
+        getPosition: { value: points.xy, size: 2 }, getFillColor: { value: points.colors, size: 3 } } },
+      coordinateSystem: deck.COORDINATE_SYSTEM.LNGLAT_OFFSETS, coordinateOrigin: [points.lon0, points.lat0, 0],
+      radiusUnits: 'pixels', getRadius: 1.6, radiusMinPixels: 1, opacity: 0.75, pickable: false }));
+  }
+  if (fits && $('showFits').checked && fits.count) {
+    layers.push(new deck.ScatterplotLayer({ id: 'fits', data: { length: fits.count },
+      getPosition: (_, { index }) => [fits.lon[index], fits.lat[index]], getFillColor: [255, 95, 162], getLineColor: [17, 22, 20],
+      stroked: true, lineWidthUnits: 'pixels', getLineWidth: 1, radiusUnits: 'pixels', getRadius: 4, pickable: true, autoHighlight: true,
+      highlightColor: [255, 255, 255, 200] }));
+  }
+  overlay.setProps({ layers });
+}
+
+let seq = 0, timer = null;
+async function load() {
+  const my = ++seq, p = query();
+  $('status').textContent = 'loading…';
+  try {
+    const want = [];
+    if ($('showObs').checked) {
+      const pp = new URLSearchParams(p); pp.set('max', $('max').value);
+      want.push(fetch('/api/app/map/points?' + pp, { cache: 'no-store' }).then(async (r) => {
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
+        const buf = await r.arrayBuffer(), n = Number(r.headers.get('X-Shown'));
+        const xy = new Float32Array(buf, 0, 2 * n), rssi = new Float32Array(buf, 8 * n, n), colors = new Uint8Array(3 * n);
+        for (let i = 0; i < n; i++) color(rssi[i], colors, 3 * i);
+        return { n, xy, colors, lon0: Number(r.headers.get('X-Origin-Lon')), lat0: Number(r.headers.get('X-Origin-Lat')), total: Number(r.headers.get('X-Total')) };
+      }));
+    } else want.push(Promise.resolve(null));
+    want.push($('showFits').checked ? fetch('/api/app/map/fits?' + p, { cache: 'no-store' }).then((r) => r.json()) : Promise.resolve(null));
+    const [pt, ft] = await Promise.all(want);
+    if (my !== seq) return;
+    points = pt; fits = ft && !ft.error ? ft : null;
+    draw();
+    const parts = [];
+    if (points) parts.push(points.total > points.n ? `${fi(points.n)} of ${fi(points.total)} sightings in view (every ${fi(Math.ceil(points.total / points.n))}th)` : `${fi(points.n)} sightings in view`);
+    if (fits) parts.push(`${fi(fits.count)} fitted APs`);
+    $('status').textContent = parts.join(' · ') || 'nothing to show';
+  } catch (e) { if (my === seq) $('status').textContent = e.message; }
+}
+const soon = () => { clearTimeout(timer); timer = setTimeout(load, 250); };
+map.on('moveend', () => { const c = map.getCenter(); localStorage.setItem(VIEW, JSON.stringify({ lng: c.lng, lat: c.lat, zoom: map.getZoom() })); soon(); });
+for (const id of ['max', 'band', 'minRssi', 'showObs', 'showFits']) $(id).addEventListener('change', soon);
+$('ssid').addEventListener('input', soon);
+
+// first view: where it was left, else the whole survey
+map.on('load', async () => {
+  let v = null;
+  try { v = JSON.parse(localStorage.getItem(VIEW) || 'null'); } catch (e) { /* none */ }
+  if (v && isFinite(v.lng)) { map.jumpTo({ center: [v.lng, v.lat], zoom: v.zoom }); return load(); }
+  try {
+    const b = await (await fetch('/api/app/map/bounds', { cache: 'no-store' })).json();
+    if (!b.empty) { map.fitBounds([[b.west, b.south], [b.east, b.north]], { padding: 40, duration: 0, maxZoom: 16 }); return; }
+  } catch (e) { /* the engine is starting */ }
+  load();
+});
+</script>
+</body></html>

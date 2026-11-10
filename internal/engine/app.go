@@ -217,6 +217,14 @@ func (s *Server) appGet(w http.ResponseWriter, r *http.Request, p string, params
 		fmt.Sscan(params.First("size", "0"), &size)
 		sendJSON(w, map[string]any{"path": s.drops.find(params.First("name", ""), size, 1500*time.Millisecond)}, 200)
 		return nil
+	case strings.HasPrefix(p, "/api/app/map/"):
+		if ok, err := s.mapGet(w, r, p, params); ok || err != nil {
+			return err
+		}
+		return herr(404, "Not found")
+	case p == "/api/app/settings":
+		sendJSON(w, map[string]any{"settings": s.set.get(), "update": s.updateState(), "window": s.o.Host != nil}, 200)
+		return nil
 	case p == "/api/app/drives/status":
 		sendJSON(w, s.drv.status(), 200)
 		return nil
@@ -238,6 +246,8 @@ func (s *Server) appPost(w http.ResponseWriter, r *http.Request, p string, param
 	case p == "/api/app/compare/new":
 		sendJSON(w, map[string]any{"id": s.cmp.create().id}, 200)
 		return nil
+	case p == "/api/app/settings" || strings.HasPrefix(p, "/api/app/update/"):
+		return s.settingsPost(w, r, p)
 	case strings.HasPrefix(p, "/api/app/drives/"):
 		return s.drv.post(w, r, strings.TrimPrefix(p, "/api/app/drives/"))
 	case strings.HasPrefix(p, "/api/app/compare/"):
@@ -344,7 +354,7 @@ func (s *Server) appPost(w http.ResponseWriter, r *http.Request, p string, param
 		return nil
 	case p == "/api/app/fit-all" && r.Method == http.MethodPost:
 		// every network the explorer's filters keep, fitted in batches as a background job
-		job, err := s.Jobs.FitAll(py.ParseQs(r.URL.RawQuery))
+		job, err := s.Jobs.FitAll(params)
 		if err != nil {
 			return err
 		}

@@ -194,7 +194,11 @@ func (a *Atlas) FitRadio(group Group, p py.Params, cancelled func() bool) (map[s
 			idx[i] = i
 		}
 		var fit *Fit
-		if fit, err = model.Fit(idx, 3.0, 500, 10, false); err == nil {
+		fitter := model.Fit
+		if p.Is("solver", fitSolverFast) {
+			fitter = model.FitFast
+		}
+		if fit, err = fitter(idx, 3.0, 500, 10, false); err == nil {
 			note := "Fast sampled estimate. "
 			if mode == "all" {
 				note = "All matching observations; identical GPS positions are exactly aggregated. "

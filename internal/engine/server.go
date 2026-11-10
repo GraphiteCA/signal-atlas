@@ -61,6 +61,7 @@ type Server struct {
 	cmp     *compareSessions
 	drops   *dropRegistry
 	drv     *drives
+	set     *settingsStore
 	hostsMu sync.RWMutex
 	hosts   map[string]bool
 	origins map[string]bool
@@ -86,6 +87,8 @@ func New(o Options) (*Server, error) {
 	for _, h := range o.Hosts {
 		s.AllowHost(h)
 	}
+	s.set = newSettings(o.Data)
+	go s.autoCheck()
 	s.drv = newDrives(s)
 	return s, nil
 }
@@ -184,6 +187,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 	p := r.URL.Path
 	params := py.ParseQs(r.URL.RawQuery)
+	// the fast solver, when chosen in the settings, for every fit and every cached-fit lookup
+	if strings.HasPrefix(p, "/api/") && !strings.HasPrefix(p, "/api/app/compare") && !params.Has("solver") && s.set.get().FastFits {
+		params["solver"] = []string{"fast"}
+	}
 	if r.Method == http.MethodGet || r.Method == http.MethodHead {
 		switch {
 		case p == "/" || p == "/index.html":
@@ -192,6 +199,8 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return s.serveFS(w, s.o.UI, "bridge.js", false)
 		case p == "/compare.html" || p == "/compare":
 			return s.serveFS(w, s.o.Compare, "compare.html", true)
+		case p == "/map" || p == "/map.html":
+			return s.serveFS(w, s.o.UI, "map.html", true)
 		case p == "/database" || p == "/database.html":
 			return s.serveFS(w, s.o.UI, "database.html", true)
 		case p == "/atlas" || p == "/atlas/":

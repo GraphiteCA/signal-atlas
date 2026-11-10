@@ -17,6 +17,6 @@ ENV PATH=/usr/local/go/bin:$PATH \
     GOFLAGS=-buildvcs=false \
     CGO_ENABLED=1
 WORKDIR /src
-# windres, to compile the Windows icon, manifest and version information into a .syso, and zip
-RUN apt-get update && apt-get install -y --no-install-recommends binutils-mingw-w64-x86-64 zip \
+# windres, to compile the Windows icon, manifest and version information into a .syso; zip; NSIS for the Windows installer
+RUN apt-get update && apt-get install -y --no-install-recommends binutils-mingw-w64-x86-64 zip nsis \
     && rm -rf /var/lib/apt/lists/*

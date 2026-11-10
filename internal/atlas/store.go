@@ -410,15 +410,53 @@ func (a *Atlas) ImportCSV(path string, skipInvalid bool, progress Progress, file
 			importID, filename, h.sum, py.UTCNowISO(), valid, invalid, nonWifi); err != nil {
 			return err
 		}
-		// Appending data can change fitted locations; stale results are never reused.
-		_, err := db.Exec(c, "DELETE FROM estimates")
-		return err
+		// New sightings can move a network's fitted location: its fits are dropped, so they are
+		// fitted again; every other network keeps its fits (Graphite's Python drops them all).
+		return DropStaleEstimates(c, a.Obs.State(), seg)
 	})
 	if err != nil {
 		a.Obs.Commit(obs.Change{Drop: map[int64]bool{importID: true}})
 		return nil, err
 	}
 	return map[string]any{"duplicate": false, "valid_rows": valid, "invalid_rows": invalid, "non_wifi_rows": nonWifi, "invalid_examples": examples}, nil
+}
+
+// DropStaleEstimates deletes the saved fits of every network that has sightings in seg: named
+// networks by SSID (shared and single-radio fits alike), hidden ones by MAC. Fits of networks seg
+// doesn't touch stay, so adding a drive only refits what it changed.
+func DropStaleEstimates(c *sqlite.Conn, st *obs.State, seg *obs.Segment) error {
+	ssids, macs := map[uint32]bool{}, map[uint32]bool{}
+	for i := 0; i < seg.N; i++ {
+		if st.Str[seg.SSID[i]] == "" {
+			macs[seg.MAC[i]] = true
+		} else {
+			ssids[seg.SSID[i]] = true
+		}
+	}
+	if _, err := db.Exec(c, "CREATE TEMP TABLE IF NOT EXISTS stale_ssid(v TEXT PRIMARY KEY)"); err != nil {
+		return err
+	}
+	if _, err := db.Exec(c, "CREATE TEMP TABLE IF NOT EXISTS stale_mac(v TEXT PRIMARY KEY)"); err != nil {
+		return err
+	}
+	db.Exec(c, "DELETE FROM stale_ssid")
+	db.Exec(c, "DELETE FROM stale_mac")
+	for id := range ssids {
+		if _, err := db.Exec(c, "INSERT OR IGNORE INTO stale_ssid VALUES(?)", st.Str[id]); err != nil {
+			return err
+		}
+	}
+	for id := range macs {
+		if _, err := db.Exec(c, "INSERT OR IGNORE INTO stale_mac VALUES(?)", st.Str[id]); err != nil {
+			return err
+		}
+	}
+	_, err := db.Exec(c, `DELETE FROM estimates WHERE
+		(coalesce(json_extract(result,'$.ssid'),'') <> '' AND json_extract(result,'$.ssid') IN (SELECT v FROM stale_ssid))
+		OR (coalesce(json_extract(result,'$.ssid'),'') = '' AND upper(json_extract(result,'$.mac')) IN (SELECT v FROM stale_mac))`)
+	db.Exec(c, "DELETE FROM stale_ssid")
+	db.Exec(c, "DELETE FROM stale_mac")
+	return err
 }
 
 // errCancelled is what a cancelled job reports.

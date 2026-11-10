@@ -320,8 +320,7 @@ func (a *Atlas) ImportWiGLE(path string, skipInvalid bool, progress func(valid, 
 			importID, filepath.Base(path), sum, py.UTCNowISO(), valid, invalid, nonWifi); err != nil {
 			return err
 		}
-		_, err := db.Exec(c, "DELETE FROM estimates") // new data can change fitted locations
-		return err
+		return DropStaleEstimates(c, a.Obs.State(), seg) // only networks with new sightings refit
 	})
 	if err != nil {
 		a.Obs.Commit(obs.Change{Drop: map[int64]bool{importID: true}})

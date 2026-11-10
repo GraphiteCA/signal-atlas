@@ -65,6 +65,9 @@ func (h *host) ShowFolder(dir string) {
 
 func (h *host) OpenURL(url string) { wr.BrowserOpenURL(h.ctx, url) }
 
+// Quit closes the window and ends the program (before an update installs).
+func (h *host) Quit() { wr.Quit(h.ctx) }
+
 func (h *host) PickFolder(title string) (string, error) {
 	return wr.OpenDirectoryDialog(h.ctx, wr.OpenDialogOptions{Title: title, CanCreateDirectories: true})
 }

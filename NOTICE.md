@@ -23,6 +23,9 @@ implementation, its tests and the explorer pages the app shows. `internal/atlas`
 | [modernc.org/sqlite](https://gitlab.com/cznic/sqlite) | SQLite in pure Go | BSD-3-Clause |
 | [SQLite](https://sqlite.org) | the explorer's metadata store | public domain |
 | [Leaflet](https://leafletjs.com) | maps (loaded from unpkg.com) | BSD-2-Clause |
+| [MapLibre GL JS](https://maplibre.org) | the GPU map's base map (loaded from unpkg.com) | BSD-3-Clause |
+| [deck.gl](https://deck.gl) | the GPU map's points (loaded from unpkg.com) | MIT |
+| [NSIS](https://nsis.sourceforge.io) | the Windows installer | zlib/libpng |
 
 The full dependency list is in `go.mod`; each module carries its own license.
 

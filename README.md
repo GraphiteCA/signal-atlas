@@ -27,12 +27,18 @@ Download your system's file from the Releases page.
 
 | System | File | Notes |
 |---|---|---|
-| Windows 10 or 11 | `signal-atlas-<version>-windows-amd64.zip` | Unzip and run `signal-atlas.exe`. The screens are drawn by WebView2, which Windows already includes. |
+| Windows 10 or 11 | `signal-atlas-<version>-windows-amd64-setup.exe` | Installs for you alone (no administrator prompt), with Start-menu and desktop shortcuts and an uninstaller in **Settings → Apps**. Updates install from inside the app. |
+| Windows, portable | `signal-atlas-<version>-windows-amd64.zip` | Unzip and run `signal-atlas.exe`. |
 | macOS 12 or newer | `signal-atlas-<version>-macos-universal.zip` | Unzip and move **Signal Atlas** to Applications. One app runs on Apple silicon and Intel Macs. |
 | Ubuntu 22.04+, Debian 12+ | `signal-atlas_<version>_amd64.deb` | `sudo apt install ./signal-atlas_<version>_amd64.deb` installs it and what it needs. |
 | Other Linux | `signal-atlas-<version>-linux-amd64.tar.gz` | Needs GTK 3 and WebKitGTK 4.1 (`libwebkit2gtk-4.1-0` on Debian and Ubuntu, `webkit2gtk4.1` on Fedora). |
 
-The builds are not code-signed, so each system warns the first time:
+The screens are drawn by the system's web view: WebView2 on Windows (Windows 11 has it; the
+installer offers Microsoft's download on a Windows 10 PC without it), WKWebView on macOS, WebKitGTK on
+Linux.
+
+Unless a release says it is signed, the builds are not code-signed, so each system warns the first
+time:
 
 - **Windows.** SmartScreen may say the app is unrecognised. Choose **More info**, then **Run anyway**.
 - **macOS.** The first open is refused. Open **System Settings → Privacy & Security** and choose
@@ -64,6 +70,24 @@ one CSV per day (`wigle_YYYY-MM-DD.csv` in a folder you pick), or a compact copy
 Files are read where they are and nothing is uploaded; the Drive database opened last opens again
 next time. The sightings are kept as the text the logs had, in a table any SQLite tool can read.
 
+**Fits are kept across imports.** Adding a drive drops only the saved fits of networks it has new
+sightings of (named networks by SSID, hidden ones by MAC); every other fit stays. **Fit every AP**
+then refits just those. Graphite's Python drops every fit on every import; the app keeps the rest
+because they can't have changed.
+
+**Fast fits.** The explorer's **Fast fits** switch uses a quicker solver. It scores the same coarse
+grid as the exact search and starts from the same eight best cells, but walks downhill from each
+instead of scoring every 0.25 m point, then checks the 0.25 m points around where it lands. On a
+test of 300 noisy networks it landed on exactly the same point 292 times and within a metre 298
+times, about 7 times faster per network. Fast and exact fits are cached apart, and the switch is
+off by default; the exact search is Graphite's method, checked against his Python.
+
+**GPU map.** **GPU map** (on the home page and at the top of the explorer) draws every sighting in
+view and every fitted AP with deck.gl over MapLibre, coloured by signal. Past the chosen number of
+points (half a million to eight million) it shows every k-th sighting so the whole view is covered;
+zoom in for all of them. It filters by band, signal and SSID, and hovering a fitted AP shows what it
+is. It needs WebGL, which every supported system's web view has.
+
 **Fit every AP.** The explorer normally fits access points near the map view as you pan. **Fit every
 AP** fits every network the current filters keep, as one background job. It works through them a
 batch of 256 networks at a time, saves each fit as it finishes and shows them on the map as it goes,
@@ -82,10 +106,17 @@ cache live in the app's data folder:
 | macOS | `~/Library/Application Support/Signal Atlas/data` |
 | Linux | `~/.config/Signal Atlas/data` (or under `$XDG_CONFIG_HOME`) |
 
-**Offline.** Everything that reads, analyses and stores data works offline. The map library
-(Leaflet) loads from unpkg.com, map tiles come from OpenStreetMap, and fonts come from Google Fonts.
-Without a connection, Compare draws its map as a plain outline of the tracks, the explorer's map
-doesn't load, and the pages use the system's own fonts. Map tiles are cached for a week, and the app
+**Updates.** The home page asks once whether Signal Atlas may check GitHub for new releases. If you
+say yes, it asks once a day; **Check for updates** asks at any time. The request carries only the
+app's version. When a newer release is out, the installed Windows app can install it: it downloads
+the release's installer, checks it against the release's `SHA256SUMS.txt`, closes, installs quietly
+and opens the new version. Elsewhere it opens the release page. Your data is never touched by an
+update.
+
+**Offline.** Everything that reads, analyses and stores data works offline. The map libraries
+(Leaflet, MapLibre and deck.gl) load from unpkg.com, map tiles come from OpenStreetMap, and fonts
+come from Google Fonts. Without a connection, Compare draws its map as a plain outline of the
+tracks, the explorer's map and the GPU map don't load, and the pages use the system's own fonts. Map tiles are cached for a week, and the app
 identifies itself to OpenStreetMap as their tile policy asks.
 
 ## Speed
@@ -122,7 +153,8 @@ engine through the window's own origin, and nothing listens on the network.
 | `internal/obs` | The column store that holds the explorer's observations. |
 | `internal/engine` | The local server: Signal Atlas's API, background jobs, compare sessions, native dialogs, saving exports, the map tile cache. |
 | `internal/py`, `internal/pycsv` | Python's behaviour where results depend on it: `json.dumps` text for cache keys and group hashes, `float()` and `int()`, the `csv` module's record splitting. |
-| `ui/` | The home page, the Drive database page, and the bridge script loaded into each page. |
+| `ui/` | The home page, the Drive database page, the GPU map, and the bridge script loaded into each page. |
+| `internal/engine/settings.go` | The app's settings, and the update check and install. |
 | `packaging/`, `scripts/release.py` | The app icon, the Windows manifest, the Linux build container and desktop entry, the macOS app bundle, and the script that builds releases. |
 
 Graphite's Python keeps observations in SQLite with an R-tree and six indexes, which spends minutes
@@ -183,12 +215,28 @@ It writes the release files and `SHA256SUMS.txt` to `dist/<version>/`, taking th
 `VERSION` file.
 
 - **Windows and Linux** are built in a Docker container (`packaging/linux/Dockerfile`, Ubuntu 22.04),
-  so any computer with Docker makes the same files: the Windows zip, the Linux tar.gz and the .deb.
+  so any computer with Docker makes the same files: the Windows installer (NSIS,
+  `packaging/windows/installer.nsi`) and zip, the Linux tar.gz and the .deb.
 - **macOS** builds only on a Mac. Run the same command there to add the universal app.
 
 `--only windows,linux,macos` builds a subset. `--upload` publishes the files as the GitHub release
 `v<version>` with the GitHub CLI, and adds to it if it already exists, so a Mac can add the macOS app
 to a release made on Windows. The app icon is drawn by `packaging/icon/make_icon.py`.
+
+**Code signing** is optional and happens on the maintainer's computer, with their own certificate:
+
+- **Windows.** Set `SIGNAL_ATLAS_SIGN_COMMAND` to a command that signs one file, with `{file}` where
+  its path goes. The script signs `signal-atlas.exe` before it is zipped and packed into the
+  installer, then signs the installer. Code-signing certificates now live on a hardware token or a
+  cloud service, so the command is usually `signtool` with the token, or with Azure Trusted Signing:
+
+  ```bash
+  SIGNAL_ATLAS_SIGN_COMMAND='signtool sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 /a {file}' python scripts/release.py
+  ```
+
+- **macOS** (on the Mac). `SIGNAL_ATLAS_MAC_IDENTITY="Developer ID Application: Name (TEAMID)"` signs
+  the app for distribution, and `SIGNAL_ATLAS_MAC_NOTARY_PROFILE` (a profile saved once with
+  `xcrun notarytool store-credentials`) also has Apple notarize it and staples the ticket.
 
 The releases are for 64-bit Intel and AMD PCs on Windows and Linux, and for every Mac. Windows on Arm
 runs the Windows build through its built-in emulation.

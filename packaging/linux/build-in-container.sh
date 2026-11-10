@@ -3,8 +3,10 @@
 # scripts/release.py runs it; it is not meant to be run by hand.
 #
 #   /src  the project, mounted read-only     /out  where the release files go
-#   VERSION  e.g. 0.1.0     TARGETS  "windows linux" (the default) or one of them
-#   OWNER    uid:gid to give the release files (on a Linux PC, so they aren't root's)
+#   VERSION  e.g. 0.1.0     OWNER  uid:gid to give the release files (on a Linux PC)
+#   TARGETS  any of:  windows-exe   build signal-atlas.exe into /out/.stage/ (to be signed there)
+#                     windows-pack  the zip and the installer, from /out/.stage/signal-atlas.exe
+#                     windows       both;  linux  the Linux tar.gz and .deb
 set -eu
 : "${VERSION:?set VERSION}"
 TARGETS=${TARGETS:-windows linux}
@@ -19,8 +21,9 @@ LD="-s -w -X main.Version=$VERSION"
 NUM=$(echo "${VERSION%%-*}" | awk -F. '{printf "%d,%d,%d,0", $1, $2, $3}')
 
 want() { case " $TARGETS " in *" $1 "*) return 0;; esac; return 1; }
+want windows && TARGETS="$TARGETS windows-exe windows-pack"
 
-if want windows; then
+if want windows-exe; then
 echo "== Windows amd64"
 cp packaging/icon/icon.ico packaging/windows/signal-atlas.exe.manifest /tmp/
 # the icon is resource 3, which is where Wails looks for the window icon
@@ -56,12 +59,20 @@ x86_64-w64-mingw32-windres --preprocessor=cpp -O coff -i /tmp/res.rc -o rsrc_win
 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -tags desktop,production \
   -ldflags "$LD -H windowsgui" -o "/tmp/win/$NAME.exe" .
 rm rsrc_windows_amd64.syso
-mkdir -p "/tmp/win/$NAME-$VERSION-windows-amd64"
-mv "/tmp/win/$NAME.exe" "/tmp/win/$NAME-$VERSION-windows-amd64/"
-cp README.md NOTICE.md "/tmp/win/$NAME-$VERSION-windows-amd64/"
-[ -f LICENSE ] && cp LICENSE "/tmp/win/$NAME-$VERSION-windows-amd64/"
-(cd /tmp/win && rm -f "/out/$NAME-$VERSION-windows-amd64.zip" && zip -qr "/out/$NAME-$VERSION-windows-amd64.zip" "$NAME-$VERSION-windows-amd64")
+mkdir -p /out/.stage
+cp "/tmp/win/$NAME.exe" /out/.stage/
+fi
 
+if want windows-pack; then
+echo "== Windows zip and installer"
+P="/tmp/win/$NAME-$VERSION-windows-amd64"
+rm -rf "$P" && mkdir -p "$P"
+cp "/out/.stage/$NAME.exe" README.md NOTICE.md LICENSE "$P/"
+(cd /tmp/win && rm -f "/out/$NAME-$VERSION-windows-amd64.zip" && zip -qr "/out/$NAME-$VERSION-windows-amd64.zip" "$NAME-$VERSION-windows-amd64")
+# 1.2.3-beta -> 1.2.3.0 for the installer's version information
+V4=$(echo "${VERSION%%-*}" | awk -F. '{printf "%d.%d.%d.0", $1, $2, $3}')
+makensis -V2 -DVERSION="$VERSION" -DVERSION4="$V4" -DSRC="$P" -DICON="$W/packaging/icon/icon.ico" \
+  -DOUT="/out/.stage/$NAME-$VERSION-windows-amd64-setup.exe" packaging/windows/installer.nsi
 fi
 
 if want linux; then

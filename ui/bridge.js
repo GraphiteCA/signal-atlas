@@ -199,6 +199,10 @@
         const a = document.createElement('a');
         a.className = 'sa-home'; a.href = '/'; a.textContent = '← Home';
         head.insertBefore(a, head.firstChild);
+        const g = document.createElement('a');
+        g.className = 'sa-home'; g.href = '/map'; g.textContent = 'GPU map'; g.style.marginLeft = '14px';
+        g.title = 'Every sighting and fitted AP in view, drawn on the GPU';
+        a.after(g);
       }
       const save = document.getElementById('save-database');
       if (save && !document.querySelector('.sa-db-actions')) {
@@ -213,6 +217,15 @@
         };
         button('sa-fit-all', 'Fit every AP', 'Fit the location of every network the filters keep, a batch at a time, instead of only those near the map view')
           .addEventListener('click', fitEveryAP);
+        const fast = document.createElement('label');
+        fast.className = 'tiny'; fast.title = 'About 7 times faster fits that walk downhill from the coarse grid instead of scoring every 0.25 m point. They land on the same point as the exact search almost always, within a metre nearly always. Fast and exact fits are kept apart.';
+        fast.innerHTML = '<input type="checkbox" id="sa-fast-fits"> Fast fits';
+        box.appendChild(fast);
+        fetch('/api/app/settings', { cache: 'no-store' }).then((r) => r.json()).then((j) => { document.getElementById('sa-fast-fits').checked = !!(j.settings && j.settings.fast_fits); }).catch(() => {});
+        fast.querySelector('input').addEventListener('change', async (e) => {
+          await post('/api/app/settings', { fast_fits: e.target.checked }).catch((err) => alert(err.message));
+          location.reload();   // every cached fit the page shows changes with the solver
+        });
         if (info.window) {
           button('sa-open-db', 'Open database…', 'Open a Signal Atlas database (replaces what is here), or add a logger database (WiGLE columns) or a WiGLE app backup')
             .addEventListener('click', async () => {

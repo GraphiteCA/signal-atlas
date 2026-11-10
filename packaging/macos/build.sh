@@ -43,9 +43,23 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
-# Apple silicon runs only signed code; an ad-hoc signature is enough to run (not to skip Gatekeeper)
-codesign --force --deep --sign - "$APP"
+# Signing: with SIGNAL_ATLAS_MAC_IDENTITY ("Developer ID Application: Name (TEAMID)") the app is
+# signed for distribution (hardened runtime, timestamp); without it, ad hoc, which is enough to run
+# on Apple silicon but not to pass Gatekeeper.
+if [ -n "${SIGNAL_ATLAS_MAC_IDENTITY:-}" ]; then
+  codesign --force --deep --options runtime --timestamp --sign "$SIGNAL_ATLAS_MAC_IDENTITY" "$APP"
+else
+  codesign --force --deep --sign - "$APP"
+fi
 mkdir -p "$OUT"
 rm -f "$OUT/$NAME-$VERSION-macos-universal.zip"
 ditto -c -k --keepParent "$APP" "$OUT/$NAME-$VERSION-macos-universal.zip"
+# Notarizing: with SIGNAL_ATLAS_MAC_NOTARY_PROFILE (made once with `xcrun notarytool
+# store-credentials`) Apple checks the signed app, the ticket is stapled to it, and it is zipped again.
+if [ -n "${SIGNAL_ATLAS_MAC_IDENTITY:-}" ] && [ -n "${SIGNAL_ATLAS_MAC_NOTARY_PROFILE:-}" ]; then
+  xcrun notarytool submit "$OUT/$NAME-$VERSION-macos-universal.zip" --keychain-profile "$SIGNAL_ATLAS_MAC_NOTARY_PROFILE" --wait
+  xcrun stapler staple "$APP"
+  rm -f "$OUT/$NAME-$VERSION-macos-universal.zip"
+  ditto -c -k --keepParent "$APP" "$OUT/$NAME-$VERSION-macos-universal.zip"
+fi
 echo "== done: $OUT/$NAME-$VERSION-macos-universal.zip"
