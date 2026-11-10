@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"signal-atlas/internal/atlas"
 	"signal-atlas/internal/compare"
 	"signal-atlas/internal/py"
 )
@@ -334,6 +335,35 @@ func (s *Server) appPost(w http.ResponseWriter, r *http.Request, p string, param
 			return err
 		}
 		sendJSON(w, map[string]any{"saved": true, "path": dest}, 200)
+		return nil
+	case p == "/api/app/database-kind" || p == "/api/app/open-database":
+		// an SQLite file on this computer (picked in the file dialog, or dropped on the window)
+		body, err := readJSON(r, 1<<16)
+		if err != nil {
+			return err
+		}
+		path, _ := body["path"].(string)
+		if path == "" {
+			return py.Errorf("No database file was given")
+		}
+		kind, err := atlas.DatabaseKind(path)
+		if err != nil {
+			return err
+		}
+		if p == "/api/app/database-kind" {
+			var have int64
+			for _, sg := range s.Atlas.Obs.State().Segs {
+				have += int64(sg.N)
+			}
+			sendJSON(w, map[string]any{"kind": kind, "name": filepath.Base(path), "observations": atlas.Count(path, kind), "store_observations": have}, 200)
+			return nil
+		}
+		skip, _ := body["skip_invalid"].(bool)
+		job, err := s.Jobs.OpenDatabase(path, kind, skip)
+		if err != nil {
+			return err
+		}
+		sendJSON(w, map[string]any{"job": job, "kind": kind}, 202)
 		return nil
 	case p == "/api/app/save-bytes" && r.Method == http.MethodPost:
 		// a file a page made itself (the explorer's GeoJSON export), saved where the user picks:

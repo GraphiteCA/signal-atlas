@@ -38,6 +38,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSLocationWhenInUseUsageDescription</key><string>Signal Atlas opens its map where you are.</string>
   <key>NSRequiresAquaSystemAppearance</key><false/>
 </dict>
 </plist>

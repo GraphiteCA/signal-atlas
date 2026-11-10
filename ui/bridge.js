@@ -146,8 +146,98 @@
     // always dark: OpenStreetMap's street tiles get the same night treatment as Compare's map
     // (satellite imagery and the offline styles are left as they are)
     const st = document.createElement('style');
-    st.textContent = 'img.leaflet-tile[src^="/tiles/osm/"]{filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9)}';
+    st.textContent = 'img.leaflet-tile[src^="/tiles/osm/"]{filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9)}' +
+      '.sa-home{display:inline-block;margin-bottom:10px;font-size:13px;color:#52c2b0;text-decoration:none}.sa-home:hover{text-decoration:underline}' +
+      '.database-bar .sa-db-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}' +
+      'body.sa-dropping::after{content:"Drop a CSV survey or an SQLite database";position:fixed;inset:12px;display:flex;align-items:center;justify-content:center;' +
+      'border:2px dashed #52c2b0;border-radius:14px;background:rgba(10,20,18,.82);color:#e8eeea;font-size:20px;z-index:100000;pointer-events:none}';
     document.documentElement.appendChild(st);
+
+    // the map opens on where the user is (or where they left it, or the whole world); never on a
+    // fixed place. The view is remembered between visits.
+    const VIEW = 'signal-atlas.explorer.view';
+    const hookMap = (L) => {
+      if (!L || !L.Map || L.Map.__saView) return;
+      L.Map.__saView = true;
+      L.Map.addInitHook(function () {
+        const m = this;
+        if (!m.getContainer || m.getContainer().id !== 'map') return;
+        let touched = false;
+        setTimeout(() => {   // after the page's own setView
+          try {
+            const v = JSON.parse(localStorage.getItem(VIEW) || 'null');
+            if (v && isFinite(v.lat) && isFinite(v.lng)) m.setView([v.lat, v.lng], v.zoom || 15, { animate: false });
+          } catch (e) { /* no saved view */ }
+          m.on('dragstart zoomstart', () => { touched = true; });
+          m.on('moveend', () => { const c = m.getCenter(); localStorage.setItem(VIEW, JSON.stringify({ lat: c.lat, lng: c.lng, zoom: m.getZoom() })); });
+          if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition((p) => {
+              if (!touched) m.setView([p.coords.latitude, p.coords.longitude], 16);
+            }, () => { /* no location: stay on the saved view or the world */ }, { enableHighAccuracy: false, timeout: 15000, maximumAge: 600000 });
+          }
+        }, 0);
+      });
+    };
+    if (window.L) hookMap(window.L); else { const prev = Object.getOwnPropertyDescriptor(window, 'L'); if (prev && prev.set) { const set = prev.set; Object.defineProperty(window, 'L', { configurable: true, enumerable: true, get: prev.get, set: (v) => { set(v); try { hookMap(v); } catch (e) { /* not Leaflet */ } } }); } }
+
+    // back to the home page, and SQLite databases from this computer
+    const isDb = (name) => /\.(sqlite3?|db)$/i.test(name || '');
+    async function openDatabase(path) {
+      try {
+        const k = await post('/api/app/database-kind', { path });
+        if (k.kind === 'atlas' && k.store_observations > 0 &&
+            !confirm('Open ' + k.name + '?\n\nIt replaces the ' + k.store_observations.toLocaleString() + ' observations in the explorer now, with their saved estimates and comparisons. ' +
+                     'Use "Save SQLite database" first if you want to keep them.')) return;
+        const skip = !!(document.getElementById('skip-invalid') || {}).checked;
+        await post('/api/app/open-database', { path, skip_invalid: skip });
+        if (typeof window.pollJob === 'function') window.pollJob();
+      } catch (err) { alert("Couldn't open the database: " + err.message); }
+    }
+    const addControls = () => {
+      const head = document.querySelector('header > div');
+      if (head && !document.querySelector('.sa-home')) {
+        const a = document.createElement('a');
+        a.className = 'sa-home'; a.href = '/'; a.textContent = '← Home';
+        head.insertBefore(a, head.firstChild);
+      }
+      const save = document.getElementById('save-database');
+      if (save && !document.getElementById('sa-open-db') && info.window) {
+        const box = document.createElement('div'), b = document.createElement('button');
+        box.className = 'sa-db-actions'; b.id = 'sa-open-db'; b.className = 'button'; b.type = 'button';
+        b.textContent = 'Open database…';
+        b.title = 'Open a Signal Atlas database (replaces what is here) or add a WiGLE app backup';
+        save.parentNode.insertBefore(box, save); box.appendChild(b); box.appendChild(save);
+        b.addEventListener('click', async () => {
+          const list = await window.SignalAtlasApp.pickFiles({ title: 'Open an SQLite database', exts: ['sqlite3', 'sqlite', 'db'], multiple: false }).catch(() => []);
+          if (list.length) openDatabase(list[0].path);
+        });
+      }
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => ready.then(addControls)); else ready.then(addControls);
+
+    // drop a CSV survey or a database anywhere on the explorer
+    let depth = 0;
+    const hasFiles = (e) => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
+    addEventListener('dragenter', (e) => { if (hasFiles(e)) { depth++; document.body.classList.add('sa-dropping'); } });
+    addEventListener('dragleave', (e) => { if (hasFiles(e) && --depth <= 0) { depth = 0; document.body.classList.remove('sa-dropping'); } });
+    addEventListener('dragover', (e) => { if (hasFiles(e)) e.preventDefault(); });
+    addEventListener('drop', async (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault(); depth = 0; document.body.classList.remove('sa-dropping');
+      const f = e.dataTransfer.files[0];
+      if (!f) return;
+      await sleep(150);   // the window reports a drop's file paths just after the page sees it
+      if (isDb(f.name)) {
+        const p = await pathOf(f);
+        if (p) openDatabase(p); else alert("Couldn't find where " + f.name + ' is on disk; use Open database… instead.');
+        return;
+      }
+      if (/\.csv$/i.test(f.name)) {
+        const input = document.getElementById('csv-file'), dt = new DataTransfer();
+        dt.items.add(f); input.files = dt.files;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    });
     const open = XMLHttpRequest.prototype.open, send = XMLHttpRequest.prototype.send, setHeader = XMLHttpRequest.prototype.setRequestHeader;
     XMLHttpRequest.prototype.open = function (method, url) { this.__sa = { method: String(method).toUpperCase(), url: String(url) }; return open.apply(this, arguments); };
     XMLHttpRequest.prototype.send = function (body) {

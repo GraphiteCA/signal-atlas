@@ -107,6 +107,32 @@ func (j *Jobs) ImportFile(path, filename string, skip, deleteAfter bool) (map[st
 }
 
 // Estimate validates and picks the groups (errors go back to the request), then fits them.
+// OpenDatabase runs a database from the user's computer as an import job: a Signal Atlas database
+// replaces the explorer's data, a WiGLE app backup is added to it.
+func (j *Jobs) OpenDatabase(path, kind string, skip bool) (map[string]any, error) {
+	total := atlas.Count(path, kind)
+	return j.start("import", func() (any, error) {
+		j.update(map[string]any{"bytes_total": max(total, 1), "bytes_read": 0, "invalid": 0, "database_kind": kind})
+		say := func(stage string) { j.update(map[string]any{"stage": stage}) }
+		if kind == atlas.KindAtlas {
+			return j.a.OpenDatabase(path, func(done int64) error {
+				if j.isCancelled() {
+					return py.Errorf("Opening the database was cancelled; nothing changed")
+				}
+				j.update(map[string]any{"completed": done, "bytes_read": done})
+				return nil
+			}, say)
+		}
+		return j.a.ImportWiGLE(path, skip, func(valid, invalid int64) error {
+			if j.isCancelled() {
+				return py.Errorf("Import cancelled; changes rolled back")
+			}
+			j.update(map[string]any{"completed": valid, "invalid": invalid, "bytes_read": valid + invalid})
+			return nil
+		}, say)
+	})
+}
+
 func (j *Jobs) Estimate(p py.Params, groups []atlas.Group, kind string) (map[string]any, error) {
 	if j.Running() {
 		return nil, py.Errorf("Another background job is running; wait or cancel it first")

@@ -101,5 +101,20 @@ func main() {
 			panic(err)
 		}
 		fmt.Printf("export to SQLite: %.1fs\n", time.Since(t).Seconds())
+		// and opening that file again in another store, as "Open database" does
+		os.RemoveAll(*store + "-opened")
+		b, err := atlas.Open(*store + "-opened")
+		if err != nil {
+			panic(err)
+		}
+		t = time.Now()
+		r, err := b.OpenDatabase(*export, nil, nil)
+		if err != nil {
+			panic(err)
+		}
+		el := time.Since(t).Seconds()
+		n := r["valid_rows"].(int64)
+		fmt.Printf("open SQLite database: %d rows in %.1fs = %.1f million rows/minute\n", n, el, float64(n)/el*60/1e6)
+		b.Close()
 	}
 }

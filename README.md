@@ -6,7 +6,7 @@ tools:
 - **Wardrive Compare**, by **[Champ](https://github.com/TheChampCodes)**. Drop WiGLE CSV logs from any logger and compare drives on the road they
   share: networks per second and per km, how long networks stay visible, speed bands, channels, a
   baseline drive with a bootstrap range and fairness checks, repeat passes, multi-node rigs.
-- **Signal Atlas explorer**, by **[Graphite](https://github.com/GraphiteCA)**. Import whole CSV surveys, filter by SSID, MAC, band,
+- **Signal Atlas explorer**, by **[Graphite](https://github.com/GraphiteCA)**. Import whole CSV surveys or open SQLite databases, filter by SSID, MAC, band,
   date and signal, and fit where each network's access point is. It supports one fit per radio or
   one shared location per SSID, nearby fits as you pan, and pinned date-range comparisons.
 
@@ -32,7 +32,21 @@ The builds are not code-signed, so each system warns the first time:
 
 Files are read where they are on disk. Drop logs on the window, or use **Choose files** and
 **Import CSV**, which open the system's file dialog. Exports and saved databases go through the
-system's Save dialog. The explorer's store, exports and the map tile
+system's Save dialog. Each tool has a **Home** link back to the start page.
+
+**SQLite databases.** In the explorer, **Open database…** (or dropping the file on the window)
+takes two kinds of file:
+
+- **A Signal Atlas database**, the file **Save SQLite database** writes, or one made by Graphite's
+  Python. It replaces what the explorer holds, with its saved estimates and comparisons, after
+  asking first.
+- **A WiGLE Android app database backup.** Its Wi-Fi sightings are added like
+  a CSV import. Bluetooth and cell sightings are left out, and rows recorded before a GPS fix count
+  as invalid.
+
+**The map** opens where you are when the system will say. That means Windows with location
+services on, and macOS after you allow it. Otherwise it opens where you last left it, or on the
+whole world. Nothing is sent anywhere to find you. The explorer's store, exports and the map tile
 cache live in the app's data folder:
 
 | System | Data folder |
@@ -55,6 +69,7 @@ Measured on a 16-core PC with 64 GB of memory.
 |---|---|
 | Explorer CSV import | 53–55 million rows a minute (50 million rows in 56 s) |
 | Wardrive Compare, add and analyse | 76 million rows a minute |
+| Explorer, opening a saved SQLite database | about 42 million rows a minute |
 | Explorer queries | under 0.6 s at 10 million rows, under 3 s at 50 million |
 | AP location fits | about 10,700 radios a minute |
 
