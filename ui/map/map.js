@@ -6,7 +6,7 @@ const pins = new Map();
 let map, overlay, fallbackLayer, isFallback = false, points = null, fits = null;
 let seq = 0, timer = null, controller = null, detailController = null, detailSeq = 0;
 let display = {...MapDisplay.defaults}, prefRevision = 0, prefLoaded = false, prefSaving = false, prefTimer;
-let summaryRevision = '', pointKey = '', pointData = null, initialized = false, retryTimer;
+let summaryRevision = '', observationRevision='', pointKey = '', pointData = null, initialized = false, retryTimer;
 const incoming = new URLSearchParams(location.search);
 let inheritedBands = incoming.getAll('band'), inheritedDates = incoming.getAll('date');
 const textCanvas = document.createElement('canvas'), textContext = textCanvas.getContext('2d'), textWidths = new Map();
@@ -111,7 +111,7 @@ function pointColor(v,colors,i) { const t=Math.max(0,Math.min(1,(v+95)/55));colo
 async function loadPoints(p,signal) {
   if(!$('showObs').checked)return null;
   const pp=new URLSearchParams(p); for(const k of ['zoom','clustering','pin','shared','individual'])pp.delete(k);pp.set('max',$('max').value);
-  const key=pp.toString()+summaryRevision;if(key===pointKey && pointData)return pointData;
+  const key=pp.toString()+observationRevision;if(key===pointKey && pointData)return pointData;
   const r=await fetch('/api/app/map/points?'+pp,{signal,cache:'no-store'});if(!r.ok)throw new Error((await r.json()).error || r.statusText);
   const buf=await r.arrayBuffer(),n=Number(r.headers.get('X-Shown')),xy=new Float32Array(buf,0,2*n),rssi=new Float32Array(buf,8*n,n),colors=new Uint8Array(3*n);
   for(let i=0;i<n;i++)pointColor(rssi[i],colors,3*i);
@@ -234,24 +234,41 @@ function makeFallback() {
 }
 
 async function fitSurvey(){const b=await json('/api/app/map/bounds');if(b.empty)return;if(isFallback)map.fitBounds([[b.south,b.west],[b.north,b.east]],{maxZoom:16,padding:[40,40]});else map.fitBounds([[b.west,b.south],[b.east,b.north]],{maxZoom:16,padding:40,duration:0});}
-async function refreshSummary() {
+async function refreshSummary(live=false) {
   const s=await json('/api/app/map/summary');$('located').textContent=fi(s.located_ssids);$('observed').textContent=fi(s.observed_ssids);$('stored').textContent=fi(s.observations);
   if(summaryRevision && summaryRevision!==s.revision){
-    pointKey='';pointData=null;hideDetails();
+    if(observationRevision!==(s.observation_revision||s.revision)){pointKey='';pointData=null;}hideDetails();
     // Keep pins separate from clustering while retiring fits invalidated by an
     // import or band edit. A background fit must not clear the user's pins.
     for(const id of pins.keys()){
       try{const p=query();p.set('id',id);pins.set(id,await json('/api/app/map/detail?'+p));}
       catch(e){pins.delete(id);}
     }
-    soon();
+    if(live)queueLiveLoad();else soon();
   }
   summaryRevision=s.revision;
+  observationRevision=s.observation_revision||s.revision;
+}
+let liveLoadTimer=null,liveLoadRunning=false,liveLoadDirty=false;
+function queueLiveLoad(){
+  liveLoadDirty=true;if(liveLoadTimer||liveLoadRunning)return;
+  liveLoadTimer=setTimeout(async()=>{liveLoadTimer=null;liveLoadDirty=false;liveLoadRunning=true;try{await load();}finally{liveLoadRunning=false;if(liveLoadDirty)queueLiveLoad();}},40);
 }
 async function pollJob(){
   try { const [j]=await Promise.all([json('/api/job'),refreshSummary()]);const running=j.status==='running';$('fitAll').disabled=running;$('cancelJob').hidden=!running;
     $('job').textContent=running?`${j.kind}: ${fi(j.completed)} / ${fi(j.total)} · ${fi(j.fitted)} fitted`:j.status==='failed'?(j.error || 'Job failed'):'';
   }catch(e){$('job').textContent=e.message;}
+}
+let preparationState=null,preparationRefresh=null;
+async function refreshPreparation(){
+  try{const s=await json('/api/app/preparation/status');preparationState=s;const p=s.progress||{},name=s.namespace?.solver||'';
+    $('preparation').textContent=s.status==='complete'?`Locations ready · ${fi(p.completed)} networks`:s.status==='running'?`Preparing locations · ${fi(p.completed)} / ${fi(p.total)} · ${name}`:s.status==='failed'?`Preparation: ${s.error}`:s.status==='limited'?`Preparation waiting · ${fi(p.blocked)} networks exceed memory budget`:`Background: ${s.status}`;
+    $('pausePreparation').textContent=s.settings?.paused?'Resume background':'Pause background';$('pausePreparation').disabled=!s.settings?.enabled;
+  }catch(e){$('preparation').textContent=e.message;}
+}
+function preparationEvent(){
+  if(preparationRefresh)return;
+  preparationRefresh=setTimeout(async()=>{try{await refreshSummary(true);await refreshPreparation();}catch(e){}finally{preparationRefresh=null;}},20);
 }
 async function start(){
   const summaryTask=refreshSummary().catch(e=>{$('job').textContent=e.message;});
@@ -293,6 +310,8 @@ async function start(){
   document.addEventListener('keydown',e=>{if(e.key==='Escape')hideDetails();});
   $('fitAll').onclick=async()=>{try{await post('/api/app/fit-all?'+query());pollJob();}catch(e){$('job').textContent=e.message;}};
   $('cancelJob').onclick=()=>post('/api/cancel').then(pollJob).catch(e=>$('job').textContent=e.message);
-  initialized=true;await summaryTask;await load();pollJob();setInterval(pollJob,4000);
+  $('pausePreparation').onclick=async()=>{try{await post('/api/app/preparation/settings',{paused:!preparationState?.settings?.paused});await refreshPreparation();}catch(e){$('preparation').textContent=e.message;}};
+  window.SignalAtlasApp?.listenJobs(preparationEvent);
+  initialized=true;await summaryTask;await load();pollJob();refreshPreparation();setInterval(pollJob,4000);setInterval(refreshPreparation,1000);
 }
 start().catch(e=>$('status').textContent='Map unavailable · '+e.message);

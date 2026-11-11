@@ -22,6 +22,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"signal-atlas/internal/atlas"
 	"signal-atlas/internal/db"
@@ -44,14 +45,15 @@ type Host interface {
 
 // Options configure a Server.
 type Options struct {
-	UI       fs.FS // ui/: the home page and the page bridge
-	Compare  fs.FS // web/: compare.html
-	Explorer fs.FS // python/templates/: Graphite's explorer
-	Data     string
-	Version  string
-	Hosts    []string // Host header values allowed besides the listening address
-	Origins  []string // Origin header values allowed besides http://<host> (wails://wails on macOS and Linux)
-	Host     Host
+	DisablePreparation bool  // isolated/manual benchmark and test workloads
+	UI                 fs.FS // ui/: the home page and the page bridge
+	Compare            fs.FS // web/: compare.html
+	Explorer           fs.FS // python/templates/: Graphite's explorer
+	Data               string
+	Version            string
+	Hosts              []string // Host header values allowed besides the listening address
+	Origins            []string // Origin header values allowed besides http://<host> (wails://wails on macOS and Linux)
+	Host               Host
 }
 
 // Server is the engine.
@@ -74,6 +76,8 @@ type Server struct {
 	uploads        map[string]string
 	closed         atomic.Bool
 	startupWarning string
+	preparation    *preparationRunner
+	events         *jobEvents
 	mapPoints      mapPointsCache
 	hostsMu        sync.RWMutex
 	hosts          map[string]bool
@@ -161,6 +165,8 @@ func New(o Options) (*Server, error) {
 	}
 	go s.autoCheck()
 	s.drv = newDrives(s)
+	s.events = newJobEvents()
+	s.preparation = newPreparation(s)
 	opened = true
 	return s, nil
 }
@@ -185,6 +191,8 @@ func (s *Server) Close() {
 	}
 	s.adminGate.Unlock()
 	s.admin.stop()
+	s.preparation.close()
+	s.events.close()
 	s.releaseUploads(nil)
 	s.surveyMu.Lock()
 	defer s.surveyMu.Unlock()
@@ -277,6 +285,20 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		sendJSON(w, map[string]any{"error": "not allowed"}, 403)
 		return
 	}
+	// Foreground writes cancel/join background preparation before taking their
+	// survey lease. The lease then protects the captured runner through dispatch.
+	pagedMap := r.Method == http.MethodGet && r.URL.Path == "/api/app/map/features" && (r.URL.Query().Get("clustering") == "0" || r.URL.Query().Get("cursor") != "")
+	if pagedMap || (r.Method == http.MethodPost && (surveyRequest(r.URL.Path) || r.URL.Path == "/api/app/settings")) {
+		s.surveyMu.RLock()
+		prep := s.preparation
+		prep.foreground.Add(1)
+		s.surveyMu.RUnlock()
+		defer func() { prep.foreground.Add(-1); prep.signal() }()
+		if err := prep.join(r.Context()); err != nil {
+			sendErr(w, err)
+			return
+		}
+	}
 	if surveyRequest(r.URL.Path) {
 		if s.handoff.Load() {
 			sendErr(w, herr(503, "Survey handoff in progress; retry shortly"))
@@ -284,6 +306,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		s.surveyMu.RLock()
 		defer s.surveyMu.RUnlock()
+		if r.Method == http.MethodGet && (r.URL.Path == "/api/app/map/features" || r.URL.Path == "/api/app/map/points" || r.URL.Path == "/api/app/map/detail" || r.URL.Path == "/api/app/map/fits") {
+			prep := s.preparation
+			prep.mapReaders.Add(1)
+			defer func() {
+				prep.mapUntil.Store(time.Now().Add(100 * time.Millisecond).UnixNano())
+				prep.mapReaders.Add(-1)
+				prep.signal()
+			}()
+		}
 		w.Header().Set("X-Survey-ID", s.surveyID)
 		if expected := r.Header.Get("X-Survey-ID"); expected != "" && expected != s.surveyID {
 			sendErr(w, herr(409, "The active survey changed; reload this page"))
@@ -312,6 +343,8 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return s.serveFS(w, s.o.UI, "index.html", false)
 		case p == "/app/bridge.js":
 			return s.serveFS(w, s.o.UI, "bridge.js", false)
+		case p == "/app/native.js":
+			return s.serveFS(w, s.o.UI, "native.js", false)
 		case strings.HasPrefix(p, "/app/map/"):
 			return s.serveFS(w, s.o.UI, "map/"+strings.TrimPrefix(p, "/app/map/"), false)
 		case p == "/app/admin.js" || p == "/app/admin.css":
@@ -666,7 +699,15 @@ func (s *Server) serveFS(w http.ResponseWriter, fsys fs.FS, rel string, inject b
 			// map usable without a CDN connection.
 			data = bytes.ReplaceAll(data, []byte("https://unpkg.com/leaflet@1.9.4/dist/"), []byte("/app/vendor/leaflet/"))
 			if i := bytes.Index(bytes.ToLower(data), []byte("<head>")); i >= 0 {
-				data = append(append(append([]byte{}, data[:i+6]...), bridgeTag...), data[i+6:]...)
+				tags := bridgeTag
+				native := s.o.Host != nil
+				for _, origin := range s.o.Origins {
+					native = native || origin == "wails://wails"
+				}
+				if native {
+					tags = append([]byte(`<script src="/app/native.js"></script>`), bridgeTag...)
+				}
+				data = append(append(append([]byte{}, data[:i+6]...), tags...), data[i+6:]...)
 			}
 		}
 	}

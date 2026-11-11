@@ -1,0 +1,939 @@
+{
+  "schema": 1,
+  "root": "<checkout>/build/benchmarks/phase3-g_ifubvu",
+  "large_active": {
+    "command": [
+      "<checkout>/build/benchmarks/preparationbench-phase3.exe",
+      "-data",
+      "<checkout>/build/benchmarks/phase3-g_ifubvu/active-data",
+      "-requests",
+      "60"
+    ],
+    "exit_code": 0,
+    "process_wall_seconds": 33.39668400003575,
+    "peak_engine_rss_bytes": 4347539456,
+    "rss_sample_interval_ms": 50,
+    "webview_memory": "not measured: headless engine probe",
+    "stopped_reason": null,
+    "memory_ceiling_bytes": 12884901888,
+    "timeout_seconds": 1800,
+    "probe_sha256": "6cdf110bb078414dbedde7ffd2153ebd1d8e51a3f9ee0a6b5257fa33eef225ce",
+    "probe": {
+      "active_map_trace": {
+        "count": 60,
+        "max_ms": 1.2696,
+        "p50_ms": 0.5102,
+        "p95_ms": 0.8734
+      },
+      "after_map_trace": {
+        "completed": 8,
+        "fitted": 8,
+        "unavailable": 0
+      },
+      "after_resume": {
+        "completed": 30,
+        "fitted": 30,
+        "unavailable": 0
+      },
+      "before_map_trace": {
+        "completed": 0,
+        "fitted": 0,
+        "unavailable": 0
+      },
+      "checkpoint_snapshot_seconds": 1.0312522,
+      "cold_map_seconds": 1.4055895,
+      "committed_fit_update_map": {
+        "count": 60,
+        "max_ms": 63.6854,
+        "p50_ms": 44.0932,
+        "p95_ms": 50.3113
+      },
+      "committed_fit_update_summary": {
+        "count": 60,
+        "max_ms": 35.6689,
+        "p50_ms": 27.5478,
+        "p95_ms": 31.2112
+      },
+      "data": "<checkout>/build/benchmarks/phase3-g_ifubvu/active-data",
+      "final_preparation": {
+        "error": "",
+        "job_id": "9169573e25245dd343aadf1e44e2fc48",
+        "namespace": {
+          "fit_mode": "sample",
+          "grouping": "shared",
+          "id": "b6d7013f066d21c04d9e6a1f05c1e440e5e1157c757b1c98e9c6e7bc7b467f83",
+          "scope_key": "{\"date_from\":null,\"date_to\":null,\"dates\":[],\"fit_mode\":\"sample\",\"min_rssi\":-150.0,\"version\":2}",
+          "solver": "reference"
+        },
+        "progress": {
+          "blocked": 0,
+          "completed": 30,
+          "pending": 199970,
+          "total": 200000
+        },
+        "reason": "",
+        "settings": {
+          "enabled": true,
+          "fit_mode": "sample",
+          "grouping": "shared",
+          "memory_mb": 256,
+          "paused": true,
+          "version": 1,
+          "workers": 2
+        },
+        "status": "paused",
+        "survey_id": "189cc70985742ec6215e7014120a6d4b",
+        "transport": {
+          "native_event": "signal-atlas:job",
+          "poll_ms": 400
+        }
+      },
+      "in_process_sink_delivery": {
+        "count": 1,
+        "max_ms": 37,
+        "p50_ms": 37,
+        "p95_ms": 37
+      },
+      "notes": "Eight scheduler slots, default reference/sample/shared preparation and two workers. Map requests every 150 ms; background yields to map work. Filesystem cache uncontrolled. Native delivery measured separately.",
+      "open_seconds": 6.9413519,
+      "partial_reopen_seconds": 5.1008028,
+      "pause_join_ms": 1.5663,
+      "paused_checkpoints": {
+        "completed": 8,
+        "fitted": 8,
+        "unavailable": 0
+      },
+      "schema": 1
+    }
+  },
+  "small_import": {
+    "command": [
+      "<checkout>/build/benchmarks/baseline-phase3.exe",
+      "-csv",
+      "<checkout>/build/benchmarks/phase3-g_ifubvu/small.csv",
+      "-store",
+      "<checkout>/build/benchmarks/phase3-g_ifubvu/small-data",
+      "-expected-rows",
+      "512",
+      "-threads",
+      "8",
+      "-fits",
+      "0",
+      "-requests",
+      "1",
+      "-map-only"
+    ],
+    "exit_code": 0,
+    "process_wall_seconds": 0.7922325999243185,
+    "peak_engine_rss_bytes": 27099136,
+    "rss_sample_interval_ms": 50,
+    "webview_memory": "not measured: headless engine probe",
+    "stopped_reason": null,
+    "memory_ceiling_bytes": 12884901888,
+    "timeout_seconds": 1800,
+    "probe_sha256": "ee8d5721d2060efd05768de37f5abc1aee0346d03697746699853c6173e04fa1",
+    "probe": {
+      "build_info": {
+        "GoVersion": "go1.27.3",
+        "Path": "signal-atlas/cmd/baseline",
+        "Main": {
+          "Path": "signal-atlas",
+          "Version": "v0.0.0-20261111021342-a8f164cad174+dirty"
+        },
+        "Deps": [
+          {
+            "Path": "github.com/dustin/go-humanize",
+            "Version": "v1.0.1",
+            "Sum": "h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY="
+          },
+          {
+            "Path": "github.com/mattn/go-isatty",
+            "Version": "v0.0.22",
+            "Sum": "h1:j8l17JJ9i6VGPUFUYoTUKPSgKe/83EYU2zBC7YNKMw4="
+          },
+          {
+            "Path": "github.com/ncruces/go-strftime",
+            "Version": "v0.1.9",
+            "Sum": "h1:bY0MQC28UADQmHmaF5dgpLmImcShSi2kHU9XLdhx/f4="
+          },
+          {
+            "Path": "github.com/remyoudompheng/bigfft",
+            "Version": "v0.0.0-20230129092748-24d4a6f8daec",
+            "Sum": "h1:W09IVJc94icq4NjY3clb7Lk8O1qJ8BdBEF8z0ibU0rE="
+          },
+          {
+            "Path": "golang.org/x/exp",
+            "Version": "v0.0.0-20250408133849-7e4ce0ab07d0",
+            "Sum": "h1:R84qjqJb5nVJMxqWYb3np9L5ZsaDtB+a39EqjV0JSUM="
+          },
+          {
+            "Path": "golang.org/x/sys",
+            "Version": "v0.50.0",
+            "Sum": "h1:dkKZEFTEKaLr1sjhs0WiKqoi8Jj5nHbS3Njmx1UoMJs="
+          },
+          {
+            "Path": "modernc.org/libc",
+            "Version": "v1.65.7",
+            "Sum": "h1:Ia9Z4yzZtWNtUIuiPuQ7Qf7kxYrxP1/jeHZzG8bFu00="
+          },
+          {
+            "Path": "modernc.org/mathutil",
+            "Version": "v1.7.1",
+            "Sum": "h1:GCZVGXdaN8gTqB1Mf/usp1Y/hSqgI2vAGGP4jZMCxOU="
+          },
+          {
+            "Path": "modernc.org/memory",
+            "Version": "v1.11.0",
+            "Sum": "h1:o4QC8aMQzmcwCK3t3Ux/ZHmwFPzE6hf2Y5LbkRs+hbI="
+          },
+          {
+            "Path": "modernc.org/sqlite",
+            "Version": "v1.37.1",
+            "Sum": "h1:EgHJK/FPoqC+q2YBXg7fUmES37pCHFc97sI7zSayBEs="
+          },
+          {
+            "Path": "zombiezen.com/go/sqlite",
+            "Version": "v1.4.2",
+            "Sum": "h1:KZXLrBuJ7tKNEm+VJcApLMeQbhmAUOKA5VWS93DfFRo="
+          }
+        ],
+        "Settings": [
+          {
+            "Key": "-buildmode",
+            "Value": "exe"
+          },
+          {
+            "Key": "-compiler",
+            "Value": "gc"
+          },
+          {
+            "Key": "-trimpath",
+            "Value": "true"
+          },
+          {
+            "Key": "CGO_ENABLED",
+            "Value": "1"
+          },
+          {
+            "Key": "GOARCH",
+            "Value": "amd64"
+          },
+          {
+            "Key": "GOOS",
+            "Value": "windows"
+          },
+          {
+            "Key": "GOAMD64",
+            "Value": "v1"
+          },
+          {
+            "Key": "vcs",
+            "Value": "git"
+          },
+          {
+            "Key": "vcs.revision",
+            "Value": "5c54f94f695b143a361311e489379babcfa80859"
+          },
+          {
+            "Key": "vcs.time",
+            "Value": "2026-11-11T02:13:42Z"
+          },
+          {
+            "Key": "vcs.modified",
+            "Value": "true"
+          }
+        ]
+      },
+      "duplicate_import": {
+        "result": {
+          "added_rows": 0,
+          "duplicate": true,
+          "invalid_rows": 0,
+          "non_wifi_rows": 0,
+          "valid_rows": 512,
+          "zero_excluded_rows": 0
+        },
+        "wall_seconds": 0.0010838
+      },
+      "engine": "upstream",
+      "go": "go1.27.3",
+      "go_memory": {
+        "heap_alloc": 702712,
+        "heap_inuse": 1761280,
+        "sys": 27298040
+      },
+      "imports": [
+        {
+          "file": "small.csv",
+          "outcome": {
+            "duplicate": false,
+            "empty": false,
+            "invalid_examples": [],
+            "invalid_rows": 0,
+            "non_wifi_rows": 0,
+            "valid_rows": 512,
+            "zero_excluded_rows": 0
+          },
+          "rows_per_minute": 1285866.767125008,
+          "wall_seconds": 0.0238905
+        }
+      ],
+      "logical_cpus": 16,
+      "observation_count": 512,
+      "open_seconds": 0.0594494,
+      "schema": 1,
+      "sqlite": "3.49.2",
+      "store_directory_bytes": 318507,
+      "summary": {
+        "result": {
+          "bands": {
+            "2.4": 512
+          },
+          "count": 512,
+          "east": -123.3998,
+          "first_date": "2026-11-01",
+          "imports": [
+            {
+              "filename": "small.csv",
+              "invalid_rows": 0,
+              "non_wifi_rows": 0,
+              "valid_rows": 512
+            }
+          ],
+          "last_date": "2026-11-01",
+          "networks": 64,
+          "north": 48.4007,
+          "peak": -55,
+          "radios": 64,
+          "south": 48.4,
+          "west": -123.4
+        },
+        "wall_seconds": 0
+      },
+      "threads": 8,
+      "utc": "2026-11-11T03:15:15Z",
+      "viewport_traces": {
+        "/api/app/map/fits?bbox=-123.401%2C48.399%2C-123.390%2C48.410": {
+          "count": 1,
+          "max_ms": 0,
+          "p50_ms": 0,
+          "p95_ms": 0,
+          "response_bytes_max": 107,
+          "runs_ms": [
+            0
+          ]
+        },
+        "/api/area-estimates?zoom=14&bbox=-123.401%2C48.399%2C-123.390%2C48.410": {
+          "count": 1,
+          "max_ms": 0.537,
+          "p50_ms": 0.537,
+          "p95_ms": 0.537,
+          "response_bytes_max": 236,
+          "runs_ms": [
+            0.537
+          ]
+        }
+      }
+    }
+  },
+  "import_10m": {
+    "command": [
+      "<checkout>/build/benchmarks/baseline-phase3.exe",
+      "-csv",
+      "<checkout>/build/benchmarks/fixtures/cardinality-10m.csv",
+      "-store",
+      "<checkout>/build/benchmarks/phase3-g_ifubvu/import-data",
+      "-expected-rows",
+      "9999900",
+      "-threads",
+      "8",
+      "-fits",
+      "0",
+      "-requests",
+      "5",
+      "-map-only"
+    ],
+    "exit_code": 0,
+    "process_wall_seconds": 24.381042400025763,
+    "peak_engine_rss_bytes": 2722951168,
+    "rss_sample_interval_ms": 50,
+    "webview_memory": "not measured: headless engine probe",
+    "stopped_reason": null,
+    "memory_ceiling_bytes": 12884901888,
+    "timeout_seconds": 1800,
+    "probe_sha256": "ee8d5721d2060efd05768de37f5abc1aee0346d03697746699853c6173e04fa1",
+    "probe": {
+      "build_info": {
+        "GoVersion": "go1.27.3",
+        "Path": "signal-atlas/cmd/baseline",
+        "Main": {
+          "Path": "signal-atlas",
+          "Version": "v0.0.0-20261111021342-a8f164cad174+dirty"
+        },
+        "Deps": [
+          {
+            "Path": "github.com/dustin/go-humanize",
+            "Version": "v1.0.1",
+            "Sum": "h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY="
+          },
+          {
+            "Path": "github.com/mattn/go-isatty",
+            "Version": "v0.0.22",
+            "Sum": "h1:j8l17JJ9i6VGPUFUYoTUKPSgKe/83EYU2zBC7YNKMw4="
+          },
+          {
+            "Path": "github.com/ncruces/go-strftime",
+            "Version": "v0.1.9",
+            "Sum": "h1:bY0MQC28UADQmHmaF5dgpLmImcShSi2kHU9XLdhx/f4="
+          },
+          {
+            "Path": "github.com/remyoudompheng/bigfft",
+            "Version": "v0.0.0-20230129092748-24d4a6f8daec",
+            "Sum": "h1:W09IVJc94icq4NjY3clb7Lk8O1qJ8BdBEF8z0ibU0rE="
+          },
+          {
+            "Path": "golang.org/x/exp",
+            "Version": "v0.0.0-20250408133849-7e4ce0ab07d0",
+            "Sum": "h1:R84qjqJb5nVJMxqWYb3np9L5ZsaDtB+a39EqjV0JSUM="
+          },
+          {
+            "Path": "golang.org/x/sys",
+            "Version": "v0.50.0",
+            "Sum": "h1:dkKZEFTEKaLr1sjhs0WiKqoi8Jj5nHbS3Njmx1UoMJs="
+          },
+          {
+            "Path": "modernc.org/libc",
+            "Version": "v1.65.7",
+            "Sum": "h1:Ia9Z4yzZtWNtUIuiPuQ7Qf7kxYrxP1/jeHZzG8bFu00="
+          },
+          {
+            "Path": "modernc.org/mathutil",
+            "Version": "v1.7.1",
+            "Sum": "h1:GCZVGXdaN8gTqB1Mf/usp1Y/hSqgI2vAGGP4jZMCxOU="
+          },
+          {
+            "Path": "modernc.org/memory",
+            "Version": "v1.11.0",
+            "Sum": "h1:o4QC8aMQzmcwCK3t3Ux/ZHmwFPzE6hf2Y5LbkRs+hbI="
+          },
+          {
+            "Path": "modernc.org/sqlite",
+            "Version": "v1.37.1",
+            "Sum": "h1:EgHJK/FPoqC+q2YBXg7fUmES37pCHFc97sI7zSayBEs="
+          },
+          {
+            "Path": "zombiezen.com/go/sqlite",
+            "Version": "v1.4.2",
+            "Sum": "h1:KZXLrBuJ7tKNEm+VJcApLMeQbhmAUOKA5VWS93DfFRo="
+          }
+        ],
+        "Settings": [
+          {
+            "Key": "-buildmode",
+            "Value": "exe"
+          },
+          {
+            "Key": "-compiler",
+            "Value": "gc"
+          },
+          {
+            "Key": "-trimpath",
+            "Value": "true"
+          },
+          {
+            "Key": "CGO_ENABLED",
+            "Value": "1"
+          },
+          {
+            "Key": "GOARCH",
+            "Value": "amd64"
+          },
+          {
+            "Key": "GOOS",
+            "Value": "windows"
+          },
+          {
+            "Key": "GOAMD64",
+            "Value": "v1"
+          },
+          {
+            "Key": "vcs",
+            "Value": "git"
+          },
+          {
+            "Key": "vcs.revision",
+            "Value": "5c54f94f695b143a361311e489379babcfa80859"
+          },
+          {
+            "Key": "vcs.time",
+            "Value": "2026-11-11T02:13:42Z"
+          },
+          {
+            "Key": "vcs.modified",
+            "Value": "true"
+          }
+        ]
+      },
+      "duplicate_import": {
+        "result": {
+          "added_rows": 0,
+          "duplicate": true,
+          "invalid_rows": 0,
+          "non_wifi_rows": 0,
+          "valid_rows": 9999900,
+          "zero_excluded_rows": 100
+        },
+        "wall_seconds": 2.2845902000000002
+      },
+      "engine": "upstream",
+      "go": "go1.27.3",
+      "go_memory": {
+        "heap_alloc": 1241756080,
+        "heap_inuse": 1286438912,
+        "sys": 2758207992
+      },
+      "imports": [
+        {
+          "file": "cardinality-10m.csv",
+          "outcome": {
+            "duplicate": false,
+            "empty": false,
+            "invalid_examples": [],
+            "invalid_rows": 0,
+            "non_wifi_rows": 0,
+            "valid_rows": 9999900,
+            "zero_excluded_rows": 100
+          },
+          "rows_per_minute": 29177449.422501016,
+          "wall_seconds": 20.5636206
+        }
+      ],
+      "logical_cpus": 16,
+      "observation_count": 9999900,
+      "open_seconds": 0.057208,
+      "schema": 1,
+      "sqlite": "3.49.2",
+      "store_directory_bytes": 925934512,
+      "summary": {
+        "result": {
+          "bands": {
+            "2.4": 4999900,
+            "5": 5000000
+          },
+          "count": 9999900,
+          "east": 0,
+          "first_date": "2026-10-01",
+          "imports": [
+            {
+              "filename": "cardinality-10m.csv",
+              "invalid_rows": 0,
+              "non_wifi_rows": 0,
+              "valid_rows": 9999900
+            }
+          ],
+          "last_date": "2026-10-01",
+          "networks": 197938,
+          "north": 48.40049,
+          "peak": -40,
+          "radios": 199998,
+          "south": 0,
+          "west": -123.4
+        },
+        "wall_seconds": 0.1558163
+      },
+      "threads": 8,
+      "utc": "2026-11-11T03:15:17Z",
+      "viewport_traces": {
+        "/api/app/map/fits?bbox=-123.401%2C48.399%2C-123.390%2C48.410": {
+          "count": 5,
+          "max_ms": 1032.407,
+          "p50_ms": 0,
+          "p95_ms": 1032.407,
+          "response_bytes_max": 107,
+          "runs_ms": [
+            1032.407,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "/api/area-estimates?zoom=14&bbox=-123.401%2C48.399%2C-123.390%2C48.410": {
+          "count": 5,
+          "max_ms": 0.975,
+          "p50_ms": 0,
+          "p95_ms": 0.975,
+          "response_bytes_max": 236,
+          "runs_ms": [
+            0.975,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    }
+  },
+  "input_sha256": "66da3e1c4446aede500635fd3ac7bf3fd39a1acb52ecbb6269656e106b13c813",
+  "phase": 3,
+  "recorded_utc": "2026-11-11T03:47:52.712666+00:00",
+  "base_commit": "5c54f94",
+  "upstream_commit": "6d8833659906faa89b1677424caf5f5cd905c56d",
+  "host": "Phase 0 Windows / i7-10700K / RTX 2080 Ti / 32 GB",
+  "threads": 8,
+  "verification": {
+    "go_suite": "Full Go suite passed, including Python/NumPy parity; final Engine adapter/pagination changes rechecked with the complete Engine suite",
+    "race_detector": "Atlas and Engine preparation, lifecycle, events and incremental map tests passed; final Engine changes rechecked",
+    "go_vet": "passed",
+    "javascript_tests": 8,
+    "benchmark_safety_tests": 4,
+    "windows_production_build": "passed",
+    "browser_screenshots": "visually reviewed",
+    "final_engine_checks": "Complete Engine suite, solver reconciliation, manual commit events, unclustered-page preemption and bounded cross-scope coalescing passed; corresponding lifecycle/solver paths passed the race detector."
+  },
+  "native": {
+    "report": {
+      "schema": 1,
+      "native_events": 11,
+      "bridge_events": 11,
+      "delivery_ms": [
+        82,
+        91,
+        79,
+        79,
+        77,
+        100,
+        75,
+        85,
+        78,
+        81,
+        79
+      ],
+      "success": true,
+      "first_visible_ms": 172,
+      "located_ssids": 64
+    },
+    "process": {
+      "command": [
+        "<checkout>/build/benchmarks/nativebench-phase3.exe",
+        "-repo",
+        "<checkout>",
+        "-data",
+        "<checkout>/build/benchmarks/phase3-g_ifubvu/native-data",
+        "-page",
+        "gpu",
+        "-automatic",
+        "-driver",
+        "phase3-native.js",
+        "-output",
+        "<checkout>/build/benchmarks/phase3-g_ifubvu/native-preparation.json"
+      ],
+      "exit_code": 0,
+      "process_wall_seconds": 5.816222199937329,
+      "peak_engine_rss_bytes": 58363904,
+      "rss_sample_interval_ms": 50,
+      "webview_memory": "sampled descendant process working sets; 50 ms interval",
+      "stopped_reason": null,
+      "memory_ceiling_bytes": 6442450944,
+      "timeout_seconds": 60,
+      "probe_sha256": "01adb60638f44116f061b5a4c799fc77dd098621cc2d534420fdd5d2cc2f8fd0",
+      "peak_family_working_set_bytes": 498663424,
+      "peak_webview_children_working_set_bytes": 447639552
+    }
+  },
+  "browser": {
+    "raw": "build\\benchmarks\\phase1-ui-u0ylepuj",
+    "report": {
+      "schema": 1,
+      "checks": [
+        "Polling delivers committed changes and visible APs within 500 ms",
+        "All 64 AP locations load on the GPU without panning",
+        "Pause and survey-specific full/both settings persist across reload"
+      ],
+      "success": true,
+      "first_visible_ms": 177,
+      "delivery_ms_summary": {
+        "count": 64,
+        "raw_series_omitted": true,
+        "raw_series_sha256": "866992941fef2d20edce7257f4ec622b8753d71721d6df73eaa5b11dea642270",
+        "first": 57,
+        "last": 350,
+        "minimum": 2,
+        "median": 148.0,
+        "p95": 399,
+        "maximum": 403
+      }
+    },
+    "screenshots": [
+      "preparation-map.png",
+      "preparation-settings.png"
+    ],
+    "screenshots_reviewed": true
+  },
+  "profile_diagnostic": {
+    "process": {
+      "command": [
+        "<checkout>/build/benchmarks/baseline-phase3.exe",
+        "-csv",
+        "<checkout>/build/benchmarks/fixtures/cardinality-10m.csv",
+        "-store",
+        "<checkout>/build/benchmarks/phase3-g_ifubvu/profile-data",
+        "-expected-rows",
+        "9999900",
+        "-threads",
+        "8",
+        "-fits",
+        "0",
+        "-requests",
+        "1",
+        "-map-only",
+        "-cpuprofile",
+        "<checkout>/build/benchmarks/phase3-g_ifubvu/profile-10m.pprof"
+      ],
+      "exit_code": 0,
+      "process_wall_seconds": 23.667559499968775,
+      "peak_engine_rss_bytes": 2791026688,
+      "rss_sample_interval_ms": 50,
+      "webview_memory": "not measured: headless engine probe",
+      "stopped_reason": null,
+      "memory_ceiling_bytes": 12884901888,
+      "timeout_seconds": 1800,
+      "probe_sha256": "ee8d5721d2060efd05768de37f5abc1aee0346d03697746699853c6173e04fa1",
+      "probe": {
+        "build_info": {
+          "GoVersion": "go1.27.3",
+          "Path": "signal-atlas/cmd/baseline",
+          "Main": {
+            "Path": "signal-atlas",
+            "Version": "v0.0.0-20261111021342-a8f164cad174+dirty"
+          },
+          "Deps": [
+            {
+              "Path": "github.com/dustin/go-humanize",
+              "Version": "v1.0.1",
+              "Sum": "h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY="
+            },
+            {
+              "Path": "github.com/mattn/go-isatty",
+              "Version": "v0.0.22",
+              "Sum": "h1:j8l17JJ9i6VGPUFUYoTUKPSgKe/83EYU2zBC7YNKMw4="
+            },
+            {
+              "Path": "github.com/ncruces/go-strftime",
+              "Version": "v0.1.9",
+              "Sum": "h1:bY0MQC28UADQmHmaF5dgpLmImcShSi2kHU9XLdhx/f4="
+            },
+            {
+              "Path": "github.com/remyoudompheng/bigfft",
+              "Version": "v0.0.0-20230129092748-24d4a6f8daec",
+              "Sum": "h1:W09IVJc94icq4NjY3clb7Lk8O1qJ8BdBEF8z0ibU0rE="
+            },
+            {
+              "Path": "golang.org/x/exp",
+              "Version": "v0.0.0-20250408133849-7e4ce0ab07d0",
+              "Sum": "h1:R84qjqJb5nVJMxqWYb3np9L5ZsaDtB+a39EqjV0JSUM="
+            },
+            {
+              "Path": "golang.org/x/sys",
+              "Version": "v0.50.0",
+              "Sum": "h1:dkKZEFTEKaLr1sjhs0WiKqoi8Jj5nHbS3Njmx1UoMJs="
+            },
+            {
+              "Path": "modernc.org/libc",
+              "Version": "v1.65.7",
+              "Sum": "h1:Ia9Z4yzZtWNtUIuiPuQ7Qf7kxYrxP1/jeHZzG8bFu00="
+            },
+            {
+              "Path": "modernc.org/mathutil",
+              "Version": "v1.7.1",
+              "Sum": "h1:GCZVGXdaN8gTqB1Mf/usp1Y/hSqgI2vAGGP4jZMCxOU="
+            },
+            {
+              "Path": "modernc.org/memory",
+              "Version": "v1.11.0",
+              "Sum": "h1:o4QC8aMQzmcwCK3t3Ux/ZHmwFPzE6hf2Y5LbkRs+hbI="
+            },
+            {
+              "Path": "modernc.org/sqlite",
+              "Version": "v1.37.1",
+              "Sum": "h1:EgHJK/FPoqC+q2YBXg7fUmES37pCHFc97sI7zSayBEs="
+            },
+            {
+              "Path": "zombiezen.com/go/sqlite",
+              "Version": "v1.4.2",
+              "Sum": "h1:KZXLrBuJ7tKNEm+VJcApLMeQbhmAUOKA5VWS93DfFRo="
+            }
+          ],
+          "Settings": [
+            {
+              "Key": "-buildmode",
+              "Value": "exe"
+            },
+            {
+              "Key": "-compiler",
+              "Value": "gc"
+            },
+            {
+              "Key": "-trimpath",
+              "Value": "true"
+            },
+            {
+              "Key": "CGO_ENABLED",
+              "Value": "1"
+            },
+            {
+              "Key": "GOARCH",
+              "Value": "amd64"
+            },
+            {
+              "Key": "GOOS",
+              "Value": "windows"
+            },
+            {
+              "Key": "GOAMD64",
+              "Value": "v1"
+            },
+            {
+              "Key": "vcs",
+              "Value": "git"
+            },
+            {
+              "Key": "vcs.revision",
+              "Value": "5c54f94f695b143a361311e489379babcfa80859"
+            },
+            {
+              "Key": "vcs.time",
+              "Value": "2026-11-11T02:13:42Z"
+            },
+            {
+              "Key": "vcs.modified",
+              "Value": "true"
+            }
+          ]
+        },
+        "duplicate_import": {
+          "result": {
+            "added_rows": 0,
+            "duplicate": true,
+            "invalid_rows": 0,
+            "non_wifi_rows": 0,
+            "valid_rows": 9999900,
+            "zero_excluded_rows": 100
+          },
+          "wall_seconds": 2.2630997
+        },
+        "engine": "upstream",
+        "go": "go1.27.3",
+        "go_memory": {
+          "heap_alloc": 1243394992,
+          "heap_inuse": 1297604608,
+          "sys": 2798893560
+        },
+        "imports": [
+          {
+            "file": "cardinality-10m.csv",
+            "outcome": {
+              "duplicate": false,
+              "empty": false,
+              "invalid_examples": [],
+              "invalid_rows": 0,
+              "non_wifi_rows": 0,
+              "valid_rows": 9999900,
+              "zero_excluded_rows": 100
+            },
+            "rows_per_minute": 30163105.00177451,
+            "wall_seconds": 19.8916524
+          }
+        ],
+        "logical_cpus": 16,
+        "observation_count": 9999900,
+        "open_seconds": 0.053157,
+        "profiled_run": true,
+        "schema": 1,
+        "sqlite": "3.49.2",
+        "store_directory_bytes": 925975594,
+        "summary": {
+          "result": {
+            "bands": {
+              "2.4": 4999900,
+              "5": 5000000
+            },
+            "count": 9999900,
+            "east": 0,
+            "first_date": "2026-10-01",
+            "imports": [
+              {
+                "filename": "cardinality-10m.csv",
+                "invalid_rows": 0,
+                "non_wifi_rows": 0,
+                "valid_rows": 9999900
+              }
+            ],
+            "last_date": "2026-10-01",
+            "networks": 197938,
+            "north": 48.40049,
+            "peak": -40,
+            "radios": 199998,
+            "south": 0,
+            "west": -123.4
+          },
+          "wall_seconds": 0.1488538
+        },
+        "threads": 8,
+        "utc": "2026-11-11T03:25:10Z",
+        "viewport_traces": {
+          "/api/app/map/fits?bbox=-123.401%2C48.399%2C-123.390%2C48.410": {
+            "count": 1,
+            "max_ms": 987.591,
+            "p50_ms": 987.591,
+            "p95_ms": 987.591,
+            "response_bytes_max": 107,
+            "runs_ms": [
+              987.591
+            ]
+          },
+          "/api/area-estimates?zoom=14&bbox=-123.401%2C48.399%2C-123.390%2C48.410": {
+            "count": 1,
+            "max_ms": 1.004,
+            "p50_ms": 1.004,
+            "p95_ms": 1.004,
+            "response_bytes_max": 236,
+            "runs_ms": [
+              1.004
+            ]
+          }
+        }
+      }
+    },
+    "cpu_profile": "build\\benchmarks\\phase3-g_ifubvu\\profile-10m.pprof",
+    "top_report": "build\\benchmarks\\phase3-g_ifubvu\\profile-top.txt",
+    "metadata_report": "build\\benchmarks\\phase3-g_ifubvu\\profile-writers.txt",
+    "selective_metadata_cpu_seconds": 2.42,
+    "notes": "Separate profiled repeat, excluded from headline timings. Metadata figure includes selective invalidation and target bookkeeping."
+  },
+  "comparisons": {
+    "phase2_import_seconds": 18.003657,
+    "per_target_sql_import_seconds": 32.0484198,
+    "bulk_repeat_raw": "build/benchmarks/phase3-1hngmkbe/summary.json",
+    "bulk_repeat_import_seconds": 20.4554329,
+    "native_bootstrap_failure_excluded": "build/benchmarks/phase3-ye0l9yw3/native-preparation.json: missing runtime on extensionless route; fixed and native delivery reverified",
+    "browser_viewport_probe_excluded": "build/benchmarks/phase1-ui-ar8gyeve: estimated points outside the test viewport; wider viewport used for final delivery checks"
+  },
+  "scope_notes": [
+    "Large survey checks cover a partial sweep, not full calculation of all 200,000 targets. Existing cached results may be reused.",
+    "Forced committed-fit updates use a synthetic saved location and restore its original value.",
+    "Native/GPU completion uses a fresh 64-network fixture and blocks polling; large-survey probes measure the engine.",
+    "Oversized targets stay pending with an explicit memory-limit status; scratch limits are estimates separate from loaded survey/WebView memory.",
+    "No compilers/tests ran concurrently with measured probes. Filesystem cache uncontrolled."
+  ],
+  "windows_build": {
+    "path": "build\\SignalAtlas-phase3.exe",
+    "sha256": "5e683ef0b86069ef4550eda4cc805d624ab7f97ec4ed1f881cd5c807685a1b66"
+  },
+  "_publication": {
+    "private_paths_and_input_names": "replaced with portable placeholders",
+    "long_timing_and_progress_series": "summarized explicitly; raw evidence retained locally",
+    "commit_references": "mapped to equivalent published phase commits; artifact/source hashes identify the original measured builds"
+  }
+}

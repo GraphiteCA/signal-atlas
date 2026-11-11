@@ -90,7 +90,7 @@ func (a *Atlas) OpenDatabase(path string, progress func(done int64) error, say f
 		return nil, err
 	}
 	defer src.Close()
-	tables := []string{"imports", "estimates", "comparisons", "band_assignments", "map_assets"}
+	tables := []string{"imports", "estimates", "comparisons", "band_assignments", "map_assets", "preparation_targets", "preparation_namespaces", "preparation_checkpoints", "preparation_pending", "preparation_meta"}
 	meta := map[string][]db.Row{}
 	for _, t := range tables {
 		exists, err := db.Scalar(src, "SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?", t)
@@ -214,6 +214,10 @@ func (a *Atlas) OpenDatabase(path string, progress func(done int64) error, say f
 			}
 		}
 		// Adopt active counts from the surviving rows without losing import history.
+		// Queue insert triggers ran while copying. Restore exact counters once.
+		if _, err := db.Exec(c, "UPDATE preparation_namespaces SET pending=(SELECT count(*) FROM preparation_pending p WHERE p.namespace=preparation_namespaces.namespace)"); err != nil {
+			return err
+		}
 		if _, err := db.Exec(c, "UPDATE imports SET active_rows=valid_rows WHERE active_rows<0"); err != nil {
 			return err
 		}
@@ -226,7 +230,10 @@ func (a *Atlas) OpenDatabase(path string, progress func(done int64) error, say f
 			return err
 		}
 		// the observations go in last: if they can't be saved, nothing above is kept either
-		return a.Obs.Commit(obs.Change{Drop: drop, Add: segs})
+		if err := a.Obs.Commit(obs.Change{Drop: drop, Add: segs}); err != nil {
+			return err
+		}
+		return a.initializePreparationCatalog(c)
 	})
 	if err != nil {
 		return nil, err

@@ -29,6 +29,31 @@
   };
   const picked = new Map();   // name -> path, for files chosen in a native dialog
 
+  // Native push notifies; sequence polling reconciles dropped events/reloads.
+  const jobListeners=new Set();let jobAfter=0,lastNative=0,jobTimer=null,jobPolling=false,jobStopped=false;
+  function jobMessage(event,native=false){
+    if(!event)return;
+    if(event.kind==='survey-changed'&&event.survey_id!==info.survey_id){if(/^\/(map|atlas|admin)(\/|\.html)?$/.test(location.pathname))location.reload();return;}
+    if(event.survey_id!==info.survey_id)return;
+    if(native)lastNative=Date.now();
+    if(event.sequence<=jobAfter&&!event.reconcile)return;
+    jobAfter=Math.max(jobAfter,event.sequence||0);
+    for(const fn of jobListeners){try{fn(event);}catch(e){console.error(e);}}
+  }
+  async function pollJobEvents(){
+    if(jobStopped||jobPolling||!jobListeners.size)return;jobPolling=true;
+    try{await ready;const r=await fetch('/api/app/preparation/events?after='+jobAfter,{cache:'no-store'});if(!r.ok)return;const j=await r.json();
+      if(j.reconcile)jobMessage({survey_id:j.survey_id,sequence:j.sequence,reconcile:true,kind:'reconcile'});
+      else for(const e of j.events||[])jobMessage(e);
+      jobAfter=Math.max(jobAfter,j.sequence||0);
+    }catch(e){}finally{jobPolling=false;}
+  }
+  function listenJobs(fn){jobListeners.add(fn);if(!jobTimer){jobTimer=setInterval(pollJobEvents,400);pollJobEvents();}
+    return()=>{jobListeners.delete(fn);if(!jobListeners.size&&jobTimer){clearInterval(jobTimer);jobTimer=null;}};
+  }
+  ready.then(async()=>{try{await window.SignalAtlasNativeReady;if(window.runtime?.EventsOn)window.runtime.EventsOn('signal-atlas:job',e=>jobMessage(e,true));}catch(e){}});
+  addEventListener('pagehide',()=>{jobStopped=true;if(jobTimer)clearInterval(jobTimer);});
+
   async function pathOf(file) {
     if (!file) return '';
     if (file.path) return file.path;
@@ -101,6 +126,7 @@
     get data() { return info.data; },
     pathOf,
     compare,
+	listenJobs,
     saveFile: (file, name) => post('/api/app/save-export', { file, name }),
     pickFiles: (opts) => post('/api/app/pick-files', opts || {}),
     showData: () => post('/api/app/show-data'),

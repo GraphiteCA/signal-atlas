@@ -609,7 +609,13 @@ func (a *Atlas) AssignBand(c *sqlite.Conn, ssid, mac, band any) (map[string]any,
 		// These are disposable computations. Historical comparison pins remain immutable,
 		// including their original band declarations.
 		if n > 0 {
-			if _, err := db.Exec(c, "DELETE FROM estimates"); err != nil {
+			names, hidden := map[string]bool{}, map[string]bool{}
+			if s != "" {
+				names[s] = true
+			} else {
+				hidden[m] = true
+			}
+			if err := dropChangedFits(c, names, hidden); err != nil {
 				return err
 			}
 			return a.Obs.Commit(obs.Change{Replace: changed})

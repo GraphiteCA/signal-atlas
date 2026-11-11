@@ -207,6 +207,8 @@ func (d *dropRegistry) find(name string, size int64, wait time.Duration) string 
 
 func (s *Server) appGet(w http.ResponseWriter, r *http.Request, p string, params py.Params) error {
 	switch {
+	case strings.HasPrefix(p, "/api/app/preparation/"):
+		return s.preparationGet(w, r, strings.TrimPrefix(p, "/api/app/preparation/"))
 	case strings.HasPrefix(p, "/api/app/admin/"):
 		return s.adminGet(w, r, strings.TrimPrefix(p, "/api/app/admin/"))
 	case p == "/api/app/info":
@@ -243,6 +245,8 @@ func (s *Server) appGet(w http.ResponseWriter, r *http.Request, p string, params
 
 func (s *Server) appPost(w http.ResponseWriter, r *http.Request, p string, params py.Params) error {
 	switch {
+	case p == "/api/app/preparation/settings":
+		return s.preparationPost(w, r)
 	case strings.HasPrefix(p, "/api/app/admin/"):
 		return s.adminPost(w, r, strings.TrimPrefix(p, "/api/app/admin/"))
 	case p == "/api/app/map/display":

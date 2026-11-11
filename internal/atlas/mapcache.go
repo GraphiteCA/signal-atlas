@@ -67,6 +67,9 @@ type mapCache struct {
 	state                         *obs.State
 	epoch                         uint64
 	revision                      int64
+	rawRevision                   int64
+	observedState                 *obs.State
+	observedCount                 int
 	rawKey, targetKey, visibleKey string
 	raw, visible                  *mapIndex
 	targets                       map[string]bool
@@ -90,8 +93,6 @@ func (m *mapCache) observe(st *obs.State, revision int64) {
 	}
 	if revision != m.revision {
 		m.revision = revision
-		m.raw = nil
-		m.visible = nil
 		m.summary = nil
 		m.view = nil
 		m.viewMembers = nil
@@ -146,7 +147,16 @@ func (a *Atlas) buildMapIndex(ctx context.Context, c *sqlite.Conn, p py.Params) 
 		return nil, "", err
 	}
 	individual, shared := mapModel(p)
-	tk := paramsKey(scoped) + fmt.Sprint(individual, shared)
+	eligibility := scoped
+	if scoped.Has("solver") {
+		eligibility = py.Params{}
+		for key, value := range scoped {
+			if key != "solver" {
+				eligibility[key] = value
+			}
+		}
+	}
+	tk := paramsKey(eligibility) + fmt.Sprint(individual, shared)
 	if m.targets == nil || m.targetKey != tk {
 		// Aggregate only once per observation revision/filter/model, never per pan
 		// or saved fit. Hidden networks are grouped by MAC, as in overviewTargets.
@@ -212,13 +222,52 @@ func (a *Atlas) buildMapIndex(ctx context.Context, c *sqlite.Conn, p py.Params) 
 		m.view = nil
 	}
 	rk := sample + exact
-	if m.raw == nil || m.rawKey != rk {
+	var changed map[string]bool
+	if m.raw != nil && m.rawKey == rk && m.rawRevision != revision {
+		delta := revision - m.rawRevision
+		covered, err := db.Scalar(c, "SELECT count(DISTINCT revision) FROM map_changes WHERE revision>? AND revision<=?", m.rawRevision, revision)
+		if err != nil {
+			return nil, "", err
+		}
+		if delta > 0 && delta <= 2048 && db.Int(covered) == delta {
+			changed = map[string]bool{}
+			err := db.Each(c, "SELECT DISTINCT radio_key FROM map_changes WHERE revision>? AND revision<=? AND scope_key IN (?,?)", []any{m.rawRevision, revision, sample, exact}, func(s *sqlite.Stmt) error { changed[s.ColumnText(0)] = true; return nil })
+			if err != nil {
+				return nil, "", err
+			}
+			if len(changed) == 0 {
+				m.rawRevision = revision
+				changed = nil
+			}
+		} else {
+			m.raw = nil
+			m.visible = nil
+		}
+	}
+	if m.raw == nil || m.rawKey != rk || len(changed) > 0 {
 		idx := &mapIndex{byID: map[string]int{}}
+		var patchKeys []any
+		if len(changed) > 0 {
+			for _, r := range m.raw.rows {
+				if !changed[r.ID] {
+					idx.rows = append(idx.rows, r)
+				}
+			}
+			for k := range changed {
+				patchKeys = append(patchKeys, k)
+			}
+		}
 		// A single statement gives a consistent committed snapshot. Full-input fits
 		// replace sampled fits of the same identity within the solver namespace.
-		err := db.Each(c, `SELECT e.radio_key,e.result FROM estimates e WHERE e.scope_key IN (?,?)
+		query := `SELECT e.radio_key,e.result FROM estimates e WHERE e.scope_key IN (?,?)
 		AND json_extract(e.result,'$.status')='fitted' AND (e.scope_key=? OR NOT EXISTS
-		(SELECT 1 FROM estimates x WHERE x.radio_key=e.radio_key AND x.scope_key=? AND json_extract(x.result,'$.status')='fitted'))`, []any{sample, exact, exact, exact}, func(s *sqlite.Stmt) error {
+		(SELECT 1 FROM estimates x WHERE x.radio_key=e.radio_key AND x.scope_key=? AND json_extract(x.result,'$.status')='fitted'))`
+		args := []any{sample, exact, exact, exact}
+		if len(patchKeys) > 0 {
+			query += " AND e.radio_key IN (" + db.Marks(len(patchKeys)) + ")"
+			args = append(args, patchKeys...)
+		}
+		err := db.Each(c, query, args, func(s *sqlite.Stmt) error {
 			var r struct {
 				Latitude, Longitude *float64
 				SSID, MAC, Band     string
@@ -247,6 +296,7 @@ func (a *Atlas) buildMapIndex(ctx context.Context, c *sqlite.Conn, p py.Params) 
 			return a.ID < b.ID
 		})
 		m.raw = idx
+		m.rawRevision = revision
 		m.rawKey = rk
 		m.visible = nil
 		m.view = nil
@@ -568,10 +618,11 @@ func (a *Atlas) MapDetail(ctx context.Context, c *sqlite.Conn, p py.Params) (*Ma
 }
 
 type MapSummary struct {
-	LocatedSSIDs  int    `json:"located_ssids"`
-	ObservedSSIDs int    `json:"observed_ssids"`
-	Observations  int    `json:"observations"`
-	Revision      string `json:"revision"`
+	LocatedSSIDs        int    `json:"located_ssids"`
+	ObservedSSIDs       int    `json:"observed_ssids"`
+	Observations        int    `json:"observations"`
+	Revision            string `json:"revision"`
+	ObservationRevision string `json:"observation_revision"`
 }
 
 // Counts describe the entire survey, independent of map selection and viewport.
@@ -591,20 +642,26 @@ func (a *Atlas) MapSummary(c *sqlite.Conn) (MapSummary, error) {
 	if m.summary != nil && m.state == st && m.summary.Revision == version {
 		return *m.summary, nil
 	}
-	out := MapSummary{Observations: st.N, Revision: version}
-	names := map[string]bool{}
-	for id := range st.Net {
-		if st.Str[id] != "" {
-			names[st.Str[id]] = true
-			out.ObservedSSIDs++
+	out := MapSummary{Observations: st.N, Revision: version, ObservationRevision: fmt.Sprintf("%p", st)}
+	if m.observedState != st {
+		m.observedCount = 0
+		for id := range st.Net {
+			if st.Str[id] != "" {
+				m.observedCount++
+			}
 		}
+		m.observedState = st
 	}
+	out.ObservedSSIDs = m.observedCount
 	err = db.Each(c, `SELECT DISTINCT json_extract(result,'$.ssid') FROM estimates WHERE
 	json_extract(result,'$.status')='fitted' AND json_type(result,'$.latitude') IN ('integer','real')
 	AND json_type(result,'$.longitude') IN ('integer','real') AND json_extract(result,'$.latitude') BETWEEN -85.051129 AND 85.051129
 	AND json_extract(result,'$.longitude') BETWEEN -180 AND 180`, nil, func(s *sqlite.Stmt) error {
-		if names[s.ColumnText(0)] {
-			out.LocatedSSIDs++
+		name := s.ColumnText(0)
+		if name != "" {
+			if id, ok := a.Obs.Dict.Lookup(name); ok && st.Net[id] != nil {
+				out.LocatedSSIDs++
+			}
 		}
 		return nil
 	})

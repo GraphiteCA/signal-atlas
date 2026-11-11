@@ -99,6 +99,7 @@ func main() {
 	output := flag.String("output", "", "new JSON output path")
 	count := flag.Int("seed-fits", 0, "seed synthetic saved locations for rendering only")
 	driver := flag.String("driver", "native.js", "diagnostic script name inside benchmarks/")
+	automatic := flag.Bool("automatic", false, "enable real background preparation for Phase 3 probes")
 	flag.Parse()
 	realData, err := filepath.EvalSymlinks(*data)
 	must(err)
@@ -109,7 +110,7 @@ func main() {
 	if _, err := os.Stat(*output); !os.IsNotExist(err) {
 		panic("output already exists")
 	}
-	s, err := engine.New(engine.Options{Data: *data, Version: "dev", UI: os.DirFS(filepath.Join(*repo, "ui")), Explorer: os.DirFS(filepath.Join(*repo, "python", "templates")), Compare: os.DirFS(filepath.Join(*repo, "web")), Hosts: []string{"wails.localhost", "wails.localhost:80", "wails"}, Origins: []string{"wails://wails"}})
+	s, err := engine.New(engine.Options{DisablePreparation: !*automatic, Data: *data, Version: "dev", UI: os.DirFS(filepath.Join(*repo, "ui")), Explorer: os.DirFS(filepath.Join(*repo, "python", "templates")), Compare: os.DirFS(filepath.Join(*repo, "web")), Hosts: []string{"wails.localhost", "wails.localhost:80", "wails"}, Origins: []string{"wails://wails"}})
 	must(err)
 	defer s.Close()
 	if *count > 0 {
@@ -181,7 +182,10 @@ func main() {
 		}
 		s.ServeHTTP(w, r)
 	})
-	must(wails.Run(&options.App{Title: "Signal Atlas baseline benchmark", StartHidden: *page == "admin", Width: 1400, Height: 950, AssetServer: &assetserver.Options{Handler: h}, OnStartup: func(c context.Context) { ctx = c }, Windows: &windows.Options{Theme: windows.Dark, WebviewUserDataPath: filepath.Join(*data, "webview-benchmark-"+*page)}}))
+	must(wails.Run(&options.App{Title: "Signal Atlas baseline benchmark", StartHidden: *page == "admin", Width: 1400, Height: 950, AssetServer: &assetserver.Options{Handler: h}, OnStartup: func(c context.Context) {
+		ctx = c
+		s.SetJobEventSink(engine.JobEventSinkFunc(func(e engine.JobEvent) { wr.EventsEmit(c, engine.JobEventName, e) }))
+	}, Windows: &windows.Options{Theme: windows.Dark, WebviewUserDataPath: filepath.Join(*data, "webview-benchmark-"+*page)}}))
 }
 
 const donorHTML = `<!doctype html><html><head><title>Donor canvas baseline</title><link rel="stylesheet" href="/__bench/donor/leaflet.css"><style>html,body,#map{height:100%;margin:0;background:#13212a}#bench-status{position:absolute;top:10px;left:60px;z-index:1000;color:white;background:#13212a;padding:8px}</style></head><body><div id="map"></div><div id="bench-status">Benchmarking donor canvas</div><script src="/__bench/donor/leaflet.js"></script><script src="/__bench/donor/nearby_canvas.js"></script><script>let map=L.map('map',{minZoom:2,maxZoom:22}).setView([48.401,-123.399],15);window.__donor=true;</script><script src="/__bench/native.js"></script></body></html>`

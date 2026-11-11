@@ -259,6 +259,7 @@ func (s *Server) settingsPost(w http.ResponseWriter, r *http.Request, p string) 
 	}
 	switch p {
 	case "/api/app/settings":
+		previousFast := s.set.get().FastFits
 		err = s.set.set(func(st *Settings) {
 			if v, ok := body["fast_fits"].(bool); ok {
 				st.FastFits = v
@@ -269,6 +270,16 @@ func (s *Server) settingsPost(w http.ResponseWriter, r *http.Request, p string) 
 		})
 		if err != nil {
 			return err
+		}
+		if fast := s.set.get().FastFits; fast != previousFast && s.events != nil {
+			solver := "reference"
+			if fast {
+				solver = "fast"
+			}
+			s.surveyMu.RLock()
+			sid := s.surveyID
+			s.surveyMu.RUnlock()
+			s.events.publish(JobEvent{Kind: "solver-changed", SurveyID: sid, JobID: "settings:" + newHex(), Solver: solver, Reconcile: true})
 		}
 		if s.set.get().UpdateChecks == "on" {
 			go func() {

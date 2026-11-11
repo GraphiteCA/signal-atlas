@@ -36,7 +36,7 @@ func main() {
 	if _, e := os.Stat(*dir); !os.IsNotExist(e) {
 		panic("directory must be new")
 	}
-	s, e := engine.New(engine.Options{Data: *dir, Version: "dev", Hosts: []string{"benchmark.local"}})
+	s, e := engine.New(engine.Options{DisablePreparation: true, Data: *dir, Version: "dev", Hosts: []string{"benchmark.local"}})
 	must(e)
 	defer s.Close()
 	s.Jobs.Threads = 8

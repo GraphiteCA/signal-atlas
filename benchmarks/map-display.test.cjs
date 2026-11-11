@@ -51,6 +51,15 @@ test('individual pages accumulate all AP identities and expose loading progress'
   c.context.fetch=async()=>({ok:true,json:async()=>pages.shift()});await c.run('load()');
   assert.equal(c.run('fits.loaded'),2);assert.equal(c.run('fits.features.length'),2);assert.match(c.node('status').textContent,/2 of 2 APs/);
 });
+test('new saved fits retain unchanged multi-million-point observation buffers',async()=>{
+  const c=controller();let summary={revision:'fit-new',observation_revision:'observations-same',located_ssids:1,observed_ssids:2,observations:10000000};
+  c.context.fetch=async()=>({ok:true,json:async()=>summary});
+  c.run(`summaryRevision='fit-old';observationRevision='observations-same';pointKey='retained';pointData={n:2000000};hideDetails=()=>{};`);
+  await c.run('refreshSummary(true)');assert.equal(c.run('pointKey'),'retained');assert.equal(c.run('pointData.n'),2000000);
+  summary={...summary,revision:'new-data',observation_revision:'observations-new'};
+  await c.run('refreshSummary(true)');assert.equal(c.run('pointKey'),'');assert.equal(c.run('pointData'),null);
+});
+
 test('camera redraws reuse observation and ring data objects on the GPU',()=>{
   const c=controller();class Layer{constructor(props){Object.assign(this,props);}}
   c.context.deck={ScatterplotLayer:Layer,TextLayer:Layer,COORDINATE_SYSTEM:{LNGLAT_OFFSETS:1}};

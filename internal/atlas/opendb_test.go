@@ -27,13 +27,13 @@ func allRows(a *Atlas) []Row {
 	return out
 }
 
-func table(t *testing.T, a *Atlas, q string) []db.Row {
+func table(t *testing.T, a *Atlas, q string, args ...any) []db.Row {
 	c, put, err := a.Conn(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer put()
-	rows, err := db.All(c, q)
+	rows, err := db.All(c, q, args...)
 	if err != nil {
 		t.Fatal(err)
 	}

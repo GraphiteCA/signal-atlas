@@ -88,6 +88,15 @@ test of 300 noisy networks it landed on exactly the same point 292 times and wit
 times, about 7 times faster per network. Fast and exact fits are cached apart, and the switch is
 off by default; the exact search is Graphite's method, checked against his Python.
 
+**Background AP locations.** Surveys now prepare and save locations automatically, across the whole
+survey, so they are available before you pan. The map shows progress and has a **Pause background**
+button. In **Admin → Survey & backups → Prepare AP locations**, choose sample or all observations,
+shared APs or individual radios, and background resource limits. The reference solver stays the
+default; the app's fast-solver switch also applies to preparation. Completed and unavailable results
+survive pauses, snapshots and restarts. Imports, cleanup and band edits queue only affected networks;
+imports and selected calculations take priority over background work. Turning automatic preparation
+off keeps calculated locations and restores manual fitting. See [Phase 3 preparation](docs/phase3-preparation.md).
+
 **GPU map.** **GPU map** (on the home page and at the top of the explorer) draws every sighting in
 view and every fitted AP with deck.gl over MapLibre, coloured by signal. Past the chosen number of
 points (half a million to eight million) it shows every k-th sighting so the whole view is covered;

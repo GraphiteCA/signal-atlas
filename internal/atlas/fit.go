@@ -10,9 +10,44 @@ import (
 	"zombiezen.com/go/sqlite"
 )
 
+// Keep the reference sort order, with cancellation boundaries inside large
+// sample sorts. Only our private sentinel is recovered.
+func fitSortStable(values any, less func(int, int) bool, cancelled func() bool) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if r == ErrCancelled {
+				err = ErrCancelled
+			} else {
+				panic(r)
+			}
+		}
+	}()
+	n := 0
+	sort.SliceStable(values, func(i, j int) bool {
+		n++
+		if n&4095 == 0 && cancelled != nil && cancelled() {
+			panic(ErrCancelled)
+		}
+		return less(i, j)
+	})
+	if cancelled != nil && cancelled() {
+		return ErrCancelled
+	}
+	return nil
+}
+
 // FitRadio is serve_survey.Jobs.fit_radio(group, params): one radio, or one shared group, fitted
 // from the store. Many run at once, one per core.
 func (a *Atlas) FitRadio(group Group, p py.Params, cancelled func() bool) (map[string]any, error) {
+	check := func() error {
+		if cancelled != nil && cancelled() {
+			return ErrCancelled
+		}
+		return nil
+	}
+	if err := check(); err != nil {
+		return nil, err
+	}
 	scope, _, err := EstimateScope(p)
 	if err != nil {
 		return nil, err
@@ -53,7 +88,12 @@ func (a *Atlas) FitRadio(group Group, p py.Params, cancelled func() bool) (map[s
 	sort.Slice(rows, func(i, j int) bool { return rows[i] < rows[j] })
 	match := rows[:0:0]
 	var dmin, dmax any
-	for _, g := range rows {
+	for n, g := range rows {
+		if n&4095 == 0 {
+			if err := check(); err != nil {
+				return nil, err
+			}
+		}
 		s, i := st.Loc(g)
 		if !f.Match(s, i) {
 			continue
@@ -96,7 +136,12 @@ func (a *Atlas) FitRadio(group Group, p py.Params, cancelled func() bool) (map[s
 		}
 		m := map[gk]*agg{}
 		var order []gk
-		for _, g := range match {
+		for n, g := range match {
+			if n&4095 == 0 {
+				if err := check(); err != nil {
+					return nil, err
+				}
+			}
 			s, i := st.Loc(g)
 			k := gk{s.Radio[i], s.Lat[i], s.Lon[i]}
 			x := m[k]
@@ -126,6 +171,9 @@ func (a *Atlas) FitRadio(group Group, p py.Params, cancelled func() bool) (map[s
 		}
 	default:
 		for _, k := range keys {
+			if err := check(); err != nil {
+				return nil, err
+			}
 			kid, ok := a.Obs.Dict.Lookup(k)
 			if !ok {
 				continue
@@ -138,22 +186,26 @@ func (a *Atlas) FitRadio(group Group, p py.Params, cancelled func() bool) (map[s
 				}
 			}
 			strongest := append([]smp(nil), mine...)
-			sort.SliceStable(strongest, func(a, b int) bool {
+			if err := fitSortStable(strongest, func(a, b int) bool {
 				if strongest[a].rssi != strongest[b].rssi {
 					return strongest[a].rssi > strongest[b].rssi
 				}
 				return strongest[a].id < strongest[b].id
-			})
+			}, cancelled); err != nil {
+				return nil, err
+			}
 			strongest = strongest[:min(32, len(strongest))]
 			spread := append([]smp(nil), mine...)
 			hash := func(id int64) int64 { return (id*1103515245 + 12345) % 2147483647 }
-			sort.SliceStable(spread, func(a, b int) bool {
+			if err := fitSortStable(spread, func(a, b int) bool {
 				ha, hb := hash(spread[a].id), hash(spread[b].id)
 				if ha != hb {
 					return ha < hb
 				}
 				return spread[a].id < spread[b].id
-			})
+			}, cancelled); err != nil {
+				return nil, err
+			}
 			spread = spread[:min(224, len(spread))]
 			seen := map[int64]bool{}
 			for _, x := range append(strongest, spread...) {
@@ -219,6 +271,13 @@ func (a *Atlas) FitRadio(group Group, p py.Params, cancelled func() bool) (map[s
 
 // FitAndStore fits a group and saves the result, as the Python job loop does after each fit.
 func (a *Atlas) FitAndStore(c *sqlite.Conn, group Group, p py.Params, scopeKey string, cancelled func() bool) (string, error) {
+	a.WriteMu.Lock()
+	key := groupTarget(group)
+	version, err := targetVersion(c, key)
+	a.WriteMu.Unlock()
+	if err != nil {
+		return "", err
+	}
 	r, err := a.FitRadio(group, p, cancelled)
 	if err != nil {
 		return "", err
@@ -229,6 +288,16 @@ func (a *Atlas) FitAndStore(c *sqlite.Conn, group Group, p py.Params, scopeKey s
 	}
 	a.WriteMu.Lock()
 	defer a.WriteMu.Unlock()
+	if cancelled != nil && cancelled() {
+		return "", ErrCancelled
+	}
+	current, err := targetVersion(c, key)
+	if err != nil {
+		return "", err
+	}
+	if current != version {
+		return "", ErrStaleInput
+	}
 	if _, err := db.Exec(c, "INSERT OR REPLACE INTO estimates(radio_key,scope_key,result) VALUES(?,?,?)", gs(group, "radio_key"), scopeKey, text); err != nil {
 		return "", err
 	}

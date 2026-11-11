@@ -13,18 +13,20 @@ import (
 	"signal-atlas/internal/atlas"
 	"signal-atlas/internal/drivedb"
 	"signal-atlas/internal/py"
+	"zombiezen.com/go/sqlite"
 )
 
 // Jobs is Signal Atlas's one-background-job-at-a-time runner (serve_survey.Jobs), polled at
 // /api/job and cancellable. An estimate job fits one radio per core at once.
 type Jobs struct {
-	done      chan struct{}
-	retired   bool
-	a         *atlas.Atlas
-	mu        sync.Mutex
-	state     map[string]any
-	cancelled atomic.Bool
-	Threads   int
+	onCommitted func(*sqlite.Conn, atlas.Group, py.Params, string)
+	done        chan struct{}
+	retired     bool
+	a           *atlas.Atlas
+	mu          sync.Mutex
+	state       map[string]any
+	cancelled   atomic.Bool
+	Threads     int
 }
 
 // NewJobs is a job runner for a store (the benchmark uses it; the server makes its own).
@@ -59,6 +61,7 @@ func (j *Jobs) Running() bool {
 	defer j.mu.Unlock()
 	return j.state["status"] == "running"
 }
+func (j *Jobs) Retired() bool { j.mu.Lock(); defer j.mu.Unlock(); return j.retired }
 
 // Cancel asks the running job to stop.
 func (j *Jobs) Cancel() { j.cancelled.Store(true) }
@@ -313,6 +316,9 @@ func (j *Jobs) fitPool(groups []atlas.Group, p py.Params, scopeKey string, done 
 					stop.Store(true)
 					return
 				}
+				if j.onCommitted != nil {
+					j.onCommitted(c, groups[i], p, scopeKey)
+				}
 				done(status)
 			}
 		}()
@@ -396,6 +402,9 @@ func (j *Jobs) Estimate(p py.Params, groups []atlas.Group, kind string) (map[str
 						errMu.Unlock()
 						stop.Store(true)
 						return
+					}
+					if j.onCommitted != nil {
+						j.onCommitted(c, groups[i], p, scopeKey)
 					}
 					if status == "fitted" {
 						fitted.Add(1)

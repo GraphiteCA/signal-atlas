@@ -76,6 +76,10 @@ func (s *Server) handoffLock(ctx context.Context) (func(), error) {
 // Reserve the job runner, join workers and drain requests. The runner is resumed
 // if the operation fails; a committed replacement retires it permanently.
 func (s *Server) freezeSurvey(ctx context.Context, cancelJobs bool) (*atlas.Atlas, *Jobs, error) {
+	// Administration already owns the operation gate, preventing a new prep batch.
+	if err := s.preparation.join(ctx); err != nil {
+		return nil, nil, err
+	}
 	unlock, err := s.handoffLock(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -137,6 +141,9 @@ func (s *Server) installSurvey(ctx context.Context, candidate *atlas.Atlas, lock
 	s.surveyID = newHex()
 	s.surveyLock = lock
 	s.mapPoints = mapPointsCache{}
+	s.preparation.close()
+	s.preparation = newPreparation(s)
+	s.events.publish(JobEvent{Kind: "survey-changed", SurveyID: s.surveyID, JobID: s.preparation.id, Reconcile: true})
 	old.Close()
 	if generation == "" && oldLock != nil {
 		oldLock.Close()

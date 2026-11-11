@@ -113,19 +113,98 @@ func TestMapBandAssignmentInvalidatesLocations(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := py.Params{}
+	tm, err := a.overviewTargets(AreaScope(p), "Editable", "", false, true)
+	if err != nil || len(tm.keys) != 1 {
+		t.Fatal(tm, err)
+	}
+	g := tm.m[tm.keys[0]]
+	g["status"] = "fitted"
+	g["latitude"] = 48.4
+	g["longitude"] = -123.4
+	raw, _ := json.Marshal(g)
+	_, scope, _ := EstimateScope(AreaScope(p))
+	if _, err := db.Exec(c, "INSERT INTO estimates VALUES(?,?,?)", tm.keys[0], scope, string(raw)); err != nil {
+		t.Fatal(err)
+	}
 	before, _, err := a.mapIndex(context.Background(), c, p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(before.rows) != 2 {
+	if len(before.rows) != 3 {
 		t.Fatal("fixture locations")
 	}
 	if _, err := a.AssignBand(c, "Editable", "02:5A:00:00:00:00", "5"); err != nil {
 		t.Fatal(err)
 	}
 	page, err := a.MapFeatures(context.Background(), c, p)
-	if err != nil || page.Total != 0 {
-		t.Fatalf("band edit kept stale cached locations: %+v %v", page, err)
+	if err != nil || page.Total != 2 {
+		t.Fatalf("band edit must retire the changed fit and preserve two unaffected locations: %+v %v", page, err)
+	}
+}
+
+func TestMapJournalPatchesScopeChangesAndRecoversGaps(t *testing.T) {
+	a, c, done := mapFixture(t, 100)
+	defer done()
+	ctx := context.Background()
+	p := py.Params{}
+	first, _, err := a.mapIndex(ctx, c, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := first.rows[0].ID
+	_, sample, _ := EstimateScope(AreaScope(p))
+	oldRaw := a.mapCache.raw
+	_, fastScope, _ := EstimateScope(AreaScope(py.Params{"solver": {"fast"}}))
+	if _, err := db.Exec(c, "INSERT INTO estimates SELECT radio_key,?,result FROM estimates WHERE radio_key=? AND scope_key=?", fastScope, key, sample); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := a.mapIndex(ctx, c, p); err != nil {
+		t.Fatal(err)
+	}
+	if a.mapCache.raw != oldRaw {
+		t.Fatal("other solver forced a raw index rebuild")
+	}
+	if _, err := db.Exec(c, "UPDATE estimates SET result=json_set(result,'$.longitude',-122.5) WHERE radio_key=? AND scope_key=?", key, sample); err != nil {
+		t.Fatal(err)
+	}
+	patched, _, err := a.mapIndex(ctx, c, p)
+	if err != nil || len(patched.rows) != 100 {
+		t.Fatal(len(patched.rows), err)
+	}
+	found := false
+	for _, r := range patched.rows {
+		if r.ID == key {
+			found = r.Lon == -122.5
+		}
+	}
+	if !found || a.mapCache.raw == oldRaw {
+		t.Fatal("committed update missing from patched index")
+	}
+	if _, err := db.Exec(c, "DELETE FROM estimates WHERE radio_key=? AND scope_key=?", key, fastScope); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(c, "UPDATE estimates SET scope_key=? WHERE radio_key=? AND scope_key=?", fastScope, key, sample); err != nil {
+		t.Fatal(err)
+	}
+	patched, _, err = a.mapIndex(ctx, c, p)
+	if err != nil || len(patched.rows) != 99 {
+		t.Fatal(len(patched.rows), err)
+	}
+	// Missing journal history selects a complete, correct rebuild.
+	if _, err := db.Exec(c, "UPDATE estimates SET result=json_set(result,'$.longitude',-122.6) WHERE scope_key=?", sample); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(c, "DELETE FROM map_changes"); err != nil {
+		t.Fatal(err)
+	}
+	patched, _, err = a.mapIndex(ctx, c, p)
+	if err != nil || len(patched.rows) != 99 {
+		t.Fatal(len(patched.rows), err)
+	}
+	for _, r := range patched.rows {
+		if r.Lon != -122.6 {
+			t.Fatal("gap fallback kept stale result", r)
+		}
 	}
 }
 

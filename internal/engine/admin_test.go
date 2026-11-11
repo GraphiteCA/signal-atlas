@@ -20,7 +20,7 @@ import (
 
 func adminServer(t *testing.T) *Server {
 	t.Helper()
-	s, err := New(Options{Data: filepath.Join(t.TempDir(), "data"), Version: "dev", UI: os.DirFS("../../ui"), Explorer: os.DirFS("../../python/templates")})
+	s, err := New(Options{DisablePreparation: true, Data: filepath.Join(t.TempDir(), "data"), Version: "dev", UI: os.DirFS("../../ui"), Explorer: os.DirFS("../../python/templates")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,7 +292,7 @@ func TestAdminCleanupSnapshotRecoveryAndRestart(t *testing.T) {
 	}
 	data := s.o.Data
 	s.Close()
-	restarted, err := New(Options{Data: data, Version: "dev"})
+	restarted, err := New(Options{DisablePreparation: true, Data: data, Version: "dev"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -376,7 +376,7 @@ func TestAdminConflictsLocksAndFailures(t *testing.T) {
 	s := adminServer(t)
 	addAdminRows(t, s)
 	oldRoot, oldID := s.Atlas.Root, s.surveyID
-	if second, err := New(Options{Data: filepath.Join(t.TempDir(), "other"), Version: "dev"}); err == nil {
+	if second, err := New(Options{DisablePreparation: true, Data: filepath.Join(t.TempDir(), "other"), Version: "dev"}); err == nil {
 		second.Close()
 	} // separate app data is allowed
 	if _, err := acquireSurveyLock(oldRoot); err == nil {

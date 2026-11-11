@@ -29,9 +29,12 @@ type Atlas struct {
 	MetaPath  string
 	Obs       *obs.Store
 	pool      *sqlitex.Pool
+	closeOnce sync.Once
+	closeErr  error
 	// WriteMu serialises the writers (imports, band assignments, the bridge); queries never wait.
-	WriteMu  sync.Mutex
-	mapCache mapCache
+	WriteMu                 sync.Mutex
+	mapCache                mapCache
+	beforePreparationCommit func() // optional deterministic commit-boundary diagnostics
 }
 
 const schemaSQL = `
@@ -59,12 +62,20 @@ const schemaSQL = `
   CREATE TABLE IF NOT EXISTS map_assets(name TEXT PRIMARY KEY,payload TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS map_revision(id INTEGER PRIMARY KEY CHECK(id=1),value INTEGER NOT NULL);
   INSERT OR IGNORE INTO map_revision VALUES(1,0);
+  CREATE TABLE IF NOT EXISTS map_changes(revision INTEGER NOT NULL,radio_key TEXT NOT NULL,scope_key TEXT NOT NULL,PRIMARY KEY(revision,radio_key,scope_key));
   CREATE TRIGGER IF NOT EXISTS map_fit_insert AFTER INSERT ON estimates BEGIN
-    UPDATE map_revision SET value=value+1 WHERE id=1; END;
+    UPDATE map_revision SET value=value+1 WHERE id=1;
+    INSERT INTO map_changes SELECT value,new.radio_key,new.scope_key FROM map_revision WHERE id=1;
+    DELETE FROM map_changes WHERE revision<=(SELECT value-2048 FROM map_revision WHERE id=1); END;
   CREATE TRIGGER IF NOT EXISTS map_fit_update AFTER UPDATE ON estimates BEGIN
-    UPDATE map_revision SET value=value+1 WHERE id=1; END;
+    UPDATE map_revision SET value=value+1 WHERE id=1;
+    INSERT OR IGNORE INTO map_changes SELECT value,old.radio_key,old.scope_key FROM map_revision WHERE id=1;
+    INSERT OR IGNORE INTO map_changes SELECT value,new.radio_key,new.scope_key FROM map_revision WHERE id=1;
+    DELETE FROM map_changes WHERE revision<=(SELECT value-2048 FROM map_revision WHERE id=1); END;
   CREATE TRIGGER IF NOT EXISTS map_fit_delete AFTER DELETE ON estimates BEGIN
-    UPDATE map_revision SET value=value+1 WHERE id=1; END;
+    UPDATE map_revision SET value=value+1 WHERE id=1;
+    INSERT OR IGNORE INTO map_changes SELECT value,old.radio_key,old.scope_key FROM map_revision WHERE id=1;
+    DELETE FROM map_changes WHERE revision<=(SELECT value-2048 FROM map_revision WHERE id=1); END;
   CREATE TABLE IF NOT EXISTS comparisons(id TEXT PRIMARY KEY,name TEXT NOT NULL,
     created_utc TEXT NOT NULL,payload TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS band_assignments(ssid TEXT NOT NULL,mac TEXT NOT NULL,
@@ -78,6 +89,10 @@ const schemaSQL = `
   CREATE VIEW IF NOT EXISTS radio_catalog AS SELECT radio_key,ssid,mac,band,count(*) count,
     max(rssi_dbm) peak FROM observations GROUP BY radio_key;
   CREATE INDEX IF NOT EXISTS estimate_scope_lookup ON estimates(scope_key);
+  CREATE INDEX IF NOT EXISTS estimate_located_ssid ON estimates(json_extract(result,'$.ssid')) WHERE
+    json_extract(result,'$.status')='fitted' AND json_type(result,'$.latitude') IN ('integer','real')
+    AND json_type(result,'$.longitude') IN ('integer','real') AND json_extract(result,'$.latitude') BETWEEN -85.051129 AND 85.051129
+    AND json_extract(result,'$.longitude') BETWEEN -180 AND 180;
   CREATE INDEX IF NOT EXISTS estimate_viewport ON estimates(
     scope_key,json_extract(result,'$.longitude'),json_extract(result,'$.latitude'))
     WHERE json_extract(result,'$.status')='fitted';
@@ -180,6 +195,9 @@ func openGenerationWith(root, dir string, columns *obs.Store) (*Atlas, error) {
 			return nil, py.Errorf("Workspace is incomplete: import %d has committed rows but its observation segments are missing", id)
 		}
 	}
+	if err := a.initializePreparationCatalog(c); err != nil {
+		return nil, err
+	}
 	a.pool, err = sqlitex.NewPool(a.MetaPath, sqlitex.PoolOptions{PoolSize: 16, PrepareConn: prepareConn})
 	if err != nil {
 		return nil, err
@@ -188,7 +206,10 @@ func openGenerationWith(root, dir string, columns *obs.Store) (*Atlas, error) {
 }
 
 // Close closes the store.
-func (a *Atlas) Close() error { return a.pool.Close() }
+func (a *Atlas) Close() error {
+	a.closeOnce.Do(func() { a.closeErr = a.pool.Close() })
+	return a.closeErr
+}
 
 // Conn takes a metadata connection; call the returned function to give it back.
 func (a *Atlas) Conn(ctx context.Context) (*sqlite.Conn, func(), error) {
@@ -225,7 +246,12 @@ func initialize(c *sqlite.Conn, path string) error {
 	if _, err := db.Exec(c, "PRAGMA journal_mode=WAL"); err != nil {
 		return err
 	}
-	if err := db.Script(c, schemaSQL); err != nil {
+	if !tables["map_changes"] {
+		if err := db.Script(c, "DROP TRIGGER IF EXISTS map_fit_insert;DROP TRIGGER IF EXISTS map_fit_update;DROP TRIGGER IF EXISTS map_fit_delete;"); err != nil {
+			return err
+		}
+	}
+	if err := db.Script(c, schemaSQL+preparationSchema); err != nil {
 		return err
 	}
 	cols, err := db.All(c, "PRAGMA table_info(imports)")
@@ -552,6 +578,9 @@ func dropChangedFits(c *sqlite.Conn, ssids, macs map[string]bool) error {
 		if _, err := db.Exec(c, "INSERT OR IGNORE INTO stale_mac VALUES(?)", id); err != nil {
 			return err
 		}
+	}
+	if err := dirtyPreparationTargets(c); err != nil {
+		return err
 	}
 	_, err := db.Exec(c, `DELETE FROM estimates WHERE
 		(coalesce(json_extract(result,'$.ssid'),'') <> '' AND json_extract(result,'$.ssid') IN (SELECT v FROM stale_ssid))

@@ -41,7 +41,7 @@ func main() {
 		panic("mapbench requires an owned benchmark fixture")
 	}
 	runtime.GOMAXPROCS(8)
-	s, err := engine.New(engine.Options{Data: path, Version: "dev"})
+	s, err := engine.New(engine.Options{DisablePreparation: true, Data: path, Version: "dev"})
 	must(err)
 	defer s.Close()
 	s.AllowHost("bench.local")

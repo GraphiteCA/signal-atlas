@@ -222,7 +222,7 @@ func main() {
 		return
 	}
 	t := time.Now()
-	s, err := engine.New(engine.Options{Data: *store, Version: "dev", Hosts: []string{"benchmark.local"}})
+	s, err := engine.New(engine.Options{DisablePreparation: true, Data: *store, Version: "dev", Hosts: []string{"benchmark.local"}})
 	must(err)
 	defer s.Close()
 	report["open_seconds"] = time.Since(t).Seconds()

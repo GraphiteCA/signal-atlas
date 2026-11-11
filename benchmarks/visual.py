@@ -31,7 +31,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--data', required=True)
     parser.add_argument('--app', default='build/SignalAtlas-phase1.exe')
-    parser.add_argument('--driver', choices=['map-smoke.cjs','admin-smoke.cjs'], default='map-smoke.cjs')
+    parser.add_argument('--driver', choices=['map-smoke.cjs','admin-smoke.cjs','preparation-smoke.cjs'], default='map-smoke.cjs')
     parser.add_argument('--chrome', default=r'C:\Program Files\Google\Chrome\Application\chrome.exe')
     args = parser.parse_args()
     data = Path(args.data).resolve(strict=True)

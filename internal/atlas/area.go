@@ -1,6 +1,7 @@
 package atlas
 
 import (
+	"context"
 	"encoding/json"
 	"math"
 	"sort"
@@ -34,6 +35,9 @@ func (t *targetMap) set(k string, g Group) {
 
 // overviewTargets is overview_targets(db, scoped, ssid, hidden_mac, individual, shared).
 func (a *Atlas) overviewTargets(scoped py.Params, ssid, hiddenMAC string, individual, shared bool) (*targetMap, error) {
+	return a.overviewTargetsContext(context.Background(), scoped, ssid, hiddenMAC, individual, shared)
+}
+func (a *Atlas) overviewTargetsContext(ctx context.Context, scoped py.Params, ssid, hiddenMAC string, individual, shared bool) (*targetMap, error) {
 	f, st, err := a.compile(scoped, false)
 	if err != nil {
 		return nil, err
@@ -50,7 +54,14 @@ func (a *Atlas) overviewTargets(scoped py.Params, ssid, hiddenMAC string, indivi
 	}
 	type key struct{ mac, band uint32 }
 	agg := map[key]*radioAgg{}
-	for _, g := range st.BySSID[sid] {
+	rows := st.BySSID[sid]
+	if ssid == "" {
+		rows = st.ByTrans[obs.Pair{sid, mid}]
+	}
+	for n, g := range rows {
+		if n&4095 == 0 && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		s, i := st.Loc(g)
 		if ssid == "" && s.MAC[i] != mid {
 			continue

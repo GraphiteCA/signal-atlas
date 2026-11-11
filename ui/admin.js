@@ -2,6 +2,16 @@
   'use strict';
   const $=id=>document.getElementById(id),fi=n=>Number(n||0).toLocaleString(),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   let active=null,operation=null,preview=null,historyOffset=0,historyTotal=0,native=false,pending='',refreshing=false;
+  let prepSettings=null;
+  async function refreshPreparationAdmin(force=false){
+    const r=await fetch('/api/app/preparation/status',{cache:'no-store'});if(!r.ok)return;const s=await r.json(),p=s.progress||{};
+    $('adminPrepStatus').textContent=s.status==='complete'?`Locations ready · ${fi(p.completed)} networks prepared.`:s.status==='running'?`Preparing ${fi(p.completed)} of ${fi(p.total)} networks · ${s.namespace?.solver||''} solver.`:s.status==='limited'?`${fi(p.blocked)} networks remain above the background memory allowance.`:s.status==='failed'?s.error:`Background preparation: ${s.status}.`;
+    if(!prepSettings||force){const d=s.settings;$('adminPrepEnabled').checked=d.enabled;$('adminPrepMode').value=d.fit_mode;$('adminPrepGrouping').value=d.grouping;$('adminPrepWorkers').value=d.workers;$('adminPrepMemory').value=d.memory_mb;}
+    prepSettings=s.settings;$('adminPrepPause').textContent=s.settings.paused?'Resume background':'Pause background';
+  }
+  async function savePreparationAdmin(body){
+    try{error('');const r=await fetch('/api/app/preparation/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),j=await r.json();if(!r.ok)throw new Error(j.error||r.statusText);await refreshPreparationAdmin(true);}catch(e){error(e.message);}
+  }
   const titles={new:'Creating a new survey',open:'Opening survey',convert:'Converting saved survey',import:'Importing scans',cleanup:'Removing 0,0 rows',restore:'Restoring previous revision',snapshot:'Saving snapshot',maintenance:'Survey maintenance'};
   function error(message){$('adminError').textContent=message;$('adminError').hidden=!message;}
   async function request(action,body){
@@ -50,6 +60,7 @@
       $('adminSnapshotPathField').hidden=native;$('adminConvertFields').hidden=native;$('adminPaths').open=!native;
       if(s.warning){$('adminNotice').textContent=s.warning;$('adminNotice').hidden=false;}
       renderOperation(s.operation);
+      await refreshPreparationAdmin();
     }catch(e){error(e.message);}finally{refreshing=false;}
   }
   async function run(action,body={}){
@@ -71,6 +82,8 @@
     const info=await SignalAtlasApp.ready;native=info.window;
     for(const button of document.querySelectorAll('[data-tab]'))button.onclick=()=>tab(button.dataset.tab);
     $('adminRefresh').onclick=refresh;
+    $('adminPrepSave').onclick=()=>savePreparationAdmin({enabled:$('adminPrepEnabled').checked,fit_mode:$('adminPrepMode').value,grouping:$('adminPrepGrouping').value,workers:Number($('adminPrepWorkers').value),memory_mb:Number($('adminPrepMemory').value)});
+    $('adminPrepPause').onclick=()=>savePreparationAdmin({paused:!prepSettings?.paused});
     $('adminNew').onclick=()=>native?run('new'):($('adminPaths').open=true,$('adminWorkspacePath').focus());
     $('adminOpen').onclick=()=>native?run('open'):($('adminPaths').open=true,$('adminWorkspacePath').focus());
     $('adminNewPath').onclick=()=>run('new',{path:$('adminWorkspacePath').value.trim()});$('adminOpenPath').onclick=()=>run('open',{path:$('adminWorkspacePath').value.trim()});

@@ -79,7 +79,7 @@ func main() {
 	runtime.GOMAXPROCS(8)
 	report := row{"schema": 1, "data": root, "threads": 8, "notes": "Filesystem cache uncontrolled. Cleanup/native snapshot share immutable columns; includes candidate validation. Fingerprints and reopen checks are outside operation timings."}
 	start := time.Now()
-	s, err := engine.New(engine.Options{Data: root, Version: "dev"})
+	s, err := engine.New(engine.Options{DisablePreparation: true, Data: root, Version: "dev"})
 	must(err)
 	defer func() {
 		if s != nil {
@@ -138,7 +138,7 @@ func main() {
 	s.Close()
 	s = nil
 	t = time.Now()
-	s, err = engine.New(engine.Options{Data: root, Version: "dev"})
+	s, err = engine.New(engine.Options{DisablePreparation: true, Data: root, Version: "dev"})
 	must(err)
 	report["reopen_seconds"] = time.Since(t).Seconds()
 	if fingerprint(s.Atlas, false) != wanted {

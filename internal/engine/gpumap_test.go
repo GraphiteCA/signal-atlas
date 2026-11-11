@@ -14,7 +14,7 @@ import (
 
 func TestMapAPIRoutingPreferencesAndPointCache(t *testing.T) {
 	dir := t.TempDir()
-	s, err := New(Options{Data: filepath.Join(dir, "data"), Version: "dev", UI: os.DirFS("../../ui"), Explorer: os.DirFS("../../python/templates")})
+	s, err := New(Options{DisablePreparation: true, Data: filepath.Join(dir, "data"), Version: "dev", UI: os.DirFS("../../ui"), Explorer: os.DirFS("../../python/templates")})
 	if err != nil {
 		t.Fatal(err)
 	}

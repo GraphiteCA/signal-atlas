@@ -62,7 +62,8 @@ func (s *Server) mapGet(w http.ResponseWriter, r *http.Request, p string, params
 		case "/api/app/map/summary":
 			var summary atlas.MapSummary
 			summary, err = s.Atlas.MapSummary(c)
-			summary.Revision = s.surveyID + ":" + summary.Revision
+			summary.Revision = s.surveyID + ":" + summary.Revision + ":" + params.First("solver", "reference")
+			summary.ObservationRevision = s.surveyID + ":" + summary.ObservationRevision
 			v = summary
 		case "/api/app/map/features":
 			v, err = s.Atlas.MapFeatures(r.Context(), c, params.With("_survey", []string{s.surveyID}))
