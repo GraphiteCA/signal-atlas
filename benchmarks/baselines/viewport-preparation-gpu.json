@@ -1,0 +1,274 @@
+{
+  "schema": 1,
+  "date": "2026-11-11",
+  "base_commit": "80fcc3d01ad83d9183cea90dee20c3e211eb4382",
+  "hardware": {
+    "cpu": "Intel Core i7-10700K (8 cores / 16 threads)",
+    "ram_gib": 32,
+    "gpu": "NVIDIA RTX 2080 Ti (11 GiB)",
+    "driver": "621.01",
+    "go": "1.27.3"
+  },
+  "conditions": "Sequential alternating GPU/viewport pairs, 3 trials. Other user desktop activity not controlled; no competing agent benchmarks. Whole-cohort timings are one trial each, current then baseline. No guaranteed GPU-utilization percentage.",
+  "gpu": [
+    {
+      "observations_per_call": 8,
+      "candidates_per_call": 10201,
+      "calls_per_trial": 300,
+      "calls_per_second": {
+        "before": [
+          1819.700440913417,
+          1682.2753783857893,
+          1775.6869392898554
+        ],
+        "final": [
+          2190.7116745946087,
+          2219.844522089673,
+          2150.8722145308625
+        ]
+      },
+      "median_speedup": 1.233726298325274,
+      "all_score_bits_identical": true,
+      "score_sha256": "86832c4b60ca6df84166bd868d60f8223565d65d1495bfda0e4cfd1e107e516f",
+      "fallbacks": 0
+    },
+    {
+      "observations_per_call": 50,
+      "candidates_per_call": 10201,
+      "calls_per_trial": 300,
+      "calls_per_second": {
+        "before": [
+          1283.4252051876047,
+          1299.8559759578638,
+          1305.159294691917
+        ],
+        "final": [
+          1535.4174748933654,
+          1500.1522654549435,
+          1520.6381002972341
+        ]
+      },
+      "median_speedup": 1.169851220768267,
+      "all_score_bits_identical": true,
+      "score_sha256": "c83925d5e934f62737be5c19c5031c193637c038f469f337c60067535bb5e965",
+      "fallbacks": 0
+    },
+    {
+      "observations_per_call": 256,
+      "candidates_per_call": 10201,
+      "calls_per_trial": 300,
+      "calls_per_second": {
+        "before": [
+          263.409543275071,
+          260.54069489329817,
+          263.22402400041557
+        ],
+        "final": [
+          563.3052801044894,
+          564.0710436198018,
+          555.8966084192024
+        ]
+      },
+      "median_speedup": 2.140022295622986,
+      "all_score_bits_identical": true,
+      "score_sha256": "08d883f9caecdc8fa70901db3f7b44171b00366bfe5e929aef486e108a23767b",
+      "fallbacks": 0
+    },
+    {
+      "observations_per_call": 2048,
+      "candidates_per_call": 10201,
+      "calls_per_trial": 60,
+      "calls_per_second": {
+        "before": [
+          4.684568814055575,
+          4.662666021509112,
+          5.196170640477135
+        ],
+        "final": [
+          20.630894117506287,
+          20.505268965562493,
+          22.90143991276689
+        ]
+      },
+      "median_speedup": 4.404011326635949,
+      "all_score_bits_identical": true,
+      "score_sha256": "46bdebf56de733435fc8253d09ae9cc0cd5f6b57069c30380b27b4c9a6858d11",
+      "fallbacks": 0
+    }
+  ],
+  "viewport": [
+    {
+      "trial": 0,
+      "before": {
+        "all_64_local_seconds": 5.4661025,
+        "completed_at_pan": 260,
+        "completed_when_local_ready": 10064,
+        "first_local_seconds": 5.4661025,
+        "local_map_aps": 64,
+        "progress_after_pan": 9804
+      },
+      "after": {
+        "all_64_local_seconds": 0.193572,
+        "completed_at_pan": 452,
+        "completed_when_local_ready": 879,
+        "first_local_seconds": 0.193572,
+        "local_map_aps": 64,
+        "progress_after_pan": 427
+      }
+    },
+    {
+      "trial": 1,
+      "after": {
+        "all_64_local_seconds": 0.2033438,
+        "completed_at_pan": 422,
+        "completed_when_local_ready": 898,
+        "first_local_seconds": 0.0264858,
+        "local_map_aps": 64,
+        "progress_after_pan": 476
+      },
+      "before": {
+        "all_64_local_seconds": 5.4778781,
+        "completed_at_pan": 306,
+        "completed_when_local_ready": 10064,
+        "first_local_seconds": 5.4778781,
+        "local_map_aps": 64,
+        "progress_after_pan": 9758
+      }
+    },
+    {
+      "trial": 2,
+      "before": {
+        "all_64_local_seconds": 5.6934935,
+        "completed_at_pan": 336,
+        "completed_when_local_ready": 10064,
+        "first_local_seconds": 5.6934935,
+        "local_map_aps": 64,
+        "progress_after_pan": 9728
+      },
+      "after": {
+        "all_64_local_seconds": 0.1936713,
+        "completed_at_pan": 458,
+        "completed_when_local_ready": 873,
+        "first_local_seconds": 0.1936713,
+        "local_map_aps": 64,
+        "progress_after_pan": 415
+      }
+    }
+  ],
+  "viewport_fixture": {
+    "scans": 80512,
+    "far_targets": 10000,
+    "local_targets": 64,
+    "workers": 8,
+    "solver": "GPU fast",
+    "scenario": "Pan after at least 100 saved global targets. Poll checkpoints and request the actual map after all local saves. New camera reorders work, not fitting inputs."
+  },
+  "cohort": {
+    "before": {
+      "seconds": 22.8581997,
+      "rows": 5753026,
+      "saved": 22584,
+      "estimates_sha256": "0acf515409e7747b9263da653cc47ef01a8101ac0e38909a306c5dfef303af2f",
+      "stats": {
+        "completed": 97370,
+        "fitted": 11299,
+        "unavailable": 86071
+      },
+      "acceleration": {
+        "available": true,
+        "calls": 11299,
+        "checked": true,
+        "device": "NVIDIA GeForce RTX 2080 Ti",
+        "fallbacks": 0,
+        "precision": "float64",
+        "reason": "",
+        "scratch_limit_mb": 64
+      },
+      "peak_engine_working_set_bytes": 2832736256
+    },
+    "after": {
+      "seconds": 21.7402707,
+      "rows": 5753026,
+      "saved": 22584,
+      "estimates_sha256": "0acf515409e7747b9263da653cc47ef01a8101ac0e38909a306c5dfef303af2f",
+      "stats": {
+        "completed": 97370,
+        "fitted": 11299,
+        "unavailable": 86071
+      },
+      "acceleration": {
+        "available": true,
+        "calls": 11299,
+        "checked": true,
+        "device": "NVIDIA GeForce RTX 2080 Ti",
+        "fallbacks": 0,
+        "precision": "float64",
+        "reason": "",
+        "scratch_limit_mb": 64
+      },
+      "peak_engine_working_set_bytes": 2836934656
+    }
+  },
+  "desktop": {
+    "success": true,
+    "observations": 479407,
+    "sightings_in_populated_view": 317,
+    "native_events": 145,
+    "viewport_targets_dispatched": 13,
+    "visible_ap_total": 1,
+    "fake_nearby_legend_removed": true,
+    "empty_ap_frames": 0,
+    "loading_frames": 0,
+    "frame_gaps": {
+      "count": 900,
+      "p50_ms": 16.69999999999891,
+      "p95_ms": 16.80000000000291,
+      "max_ms": 17.100000000002183
+    },
+    "pause_join_ms": 6.5,
+    "acceleration": {
+      "available": true,
+      "calls": 11344,
+      "checked": true,
+      "device": "NVIDIA GeForce RTX 2080 Ti",
+      "fallbacks": 0,
+      "precision": "float64",
+      "reason": "",
+      "scratch_limit_mb": 64
+    },
+    "errors": [],
+    "scene": "Real accepted AP at zoom 15, 317 local sightings / one AP, 900 jittered pan frames. Initial world view loaded 479407 sightings. Not a dense marker or high-row AP frame-time stress test.",
+    "peak_family_working_set_bytes": 3657306112
+  },
+  "artifacts": {
+    "gpu-before.exe": "b8d4a8d61f63e626bf5fefb301f7514dc4933e47fb7fa902c5b48f8ff3931ad8",
+    "gpu-final.exe": "f5463a03fcefb8f2590ba345caebc8bad98f185745266f9ea42d0eaa30964507",
+    "viewport-before.exe": "5c866cf86290d9894852fd3bf884a57c6e42bc62bc61f76e4f63ffb1be1b108c",
+    "viewport-after.exe": "0b81510b1e37e5a7d875dd1d73c32b48c06ffd62cd01ba5a8609ae43c1981f8b",
+    "prep-before.exe": "785ae841969e724404d8626b80ac0888c64ecd09e3eac2cf9044608a55522741",
+    "prep-after.exe": "0ae3d5d2bb2d53b75947947105a459e5a36007b706eaf8857ef00ec589143791",
+    "native-after.exe": "5bb352871f79d86f39a91c71a47ab93d8334616a38f1c37a91ab95636ecc1b42"
+  },
+  "desktop_executable": {
+    "path": "build/SignalAtlas-viewport.exe",
+    "sha256": "aba38e08bae16dc5c1968c442442a09a12670afe4ea4c9b60bfc96b638c03898"
+  },
+  "validation": {
+    "full_go_suite": "passed; Python numerical parity executed (97.270s)",
+    "race": "atlas / engine preparation, map, viewport and GPU queue/grid tests passed",
+    "hardware": "float64 scores and final fast/reference fits passed; 8/50/256/2048 observations",
+    "javascript_controller_tests": 13,
+    "python_fixture_safety_tests": 7,
+    "vet": "passed",
+    "cross_builds": [
+      "Linux amd64 engine/GPU CPU fallback",
+      "macOS arm64 engine/GPU CPU fallback"
+    ],
+    "viewport_small_pages": "passed; visible targets precede halo with limit=1"
+  },
+  "_publication": {
+    "private_paths_and_input_names": "replaced with portable placeholders",
+    "long_timing_and_progress_series": "summarized explicitly; raw evidence retained locally",
+    "commit_references": "mapped to equivalent published phase commits; artifact/source hashes identify the original measured builds"
+  }
+}

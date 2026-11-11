@@ -23,10 +23,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/maphash"
 	"io"
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -58,6 +60,30 @@ type Segment struct {
 	RecKind                                               []uint8
 	RecVal                                                []int64
 	file                                                  string
+	// OriginalIDs is only for bounded read-only fitting views; never persisted.
+	OriginalIDs []int64
+}
+
+// ID preserves source identity in bounded views whose rows are not contiguous.
+func (s *Segment) ID(i int) int64 {
+	if s.OriginalIDs != nil {
+		return s.OriginalIDs[i]
+	}
+	return s.Base + int64(i)
+}
+
+// NewDictionary builds a dictionary for a bounded external read view.
+func NewDictionary() *Dict { return newDict() }
+
+// NewReadView creates an immutable fitting snapshot without opening or copying
+// a persistent observation store. Rows must be ordered by original ID.
+// Commits are forbidden on this view.
+func NewReadView(segments []*Segment, dict *Dict) *Store {
+	s := &Store{Dict: dict, readOnly: true}
+	st := &State{Segs: segments, Str: dict.Snapshot()}
+	st.index()
+	s.state.Store(st)
+	return s
 }
 
 // NewSegment makes an empty segment to append to.
@@ -111,37 +137,90 @@ func (s *Segment) Clone() *Segment {
 	return &c
 }
 
+// Range keeps consecutive original IDs without copying immutable column data.
+// The new segment is written under a new filename at the next commit.
+func (s *Segment) Range(lo, hi int) *Segment {
+	result := &Segment{ImportID: s.ImportID, Base: s.Base + int64(lo), N: hi - lo,
+		SSID: s.SSID[lo:hi], MAC: s.MAC[lo:hi], Band: s.Band[lo:hi], BandSrc: s.BandSrc[lo:hi], Radio: s.Radio[lo:hi], Date: s.Date[lo:hi], Channel: s.Channel[lo:hi], First: s.First[lo:hi],
+		Lat: s.Lat[lo:hi], Lon: s.Lon[lo:hi], RSSI: s.RSSI[lo:hi], Acc: s.Acc[lo:hi], Freq: s.Freq[lo:hi], Line: s.Line[lo:hi], RecKind: s.RecKind[lo:hi], RecVal: s.RecVal[lo:hi]}
+	if s.OriginalIDs != nil {
+		result.OriginalIDs = s.OriginalIDs[lo:hi]
+	}
+	return result
+}
+
 // ---------------------------------------------------------------------------
 // the string dictionary
 
 // Dict interns strings to ids. Ids are never reused or changed; readers take a snapshot slice.
 type Dict struct {
-	mu   sync.Mutex
-	ids  map[string]uint32
-	list []string
+	mu    sync.Mutex
+	slots []uint32 // id+1; zero is an empty slot
+	seed  maphash.Seed
+	list  []string
 }
 
-func newDict() *Dict { return &Dict{ids: map[string]uint32{}} }
+func newDict() *Dict { return &Dict{seed: maphash.MakeSeed()} }
 
-// ID interns s.
+// find uses IDs into the immutable string list instead of storing another
+// string header in every hash bucket. Equality still checks the whole string.
+func (d *Dict) find(s string) (int, bool) {
+	if len(d.slots) == 0 {
+		return 0, false
+	}
+	mask := uint64(len(d.slots) - 1)
+	for pos := maphash.String(d.seed, s) & mask; ; pos = (pos + 1) & mask {
+		id := d.slots[pos]
+		if id == 0 {
+			return int(pos), false
+		}
+		if d.list[id-1] == s {
+			return int(id - 1), true
+		}
+	}
+}
+func (d *Dict) reserve(n int) {
+	size := 8
+	for n > size*7/10 {
+		size *= 2
+	}
+	if size <= len(d.slots) {
+		return
+	}
+	d.slots = make([]uint32, size)
+	for id, s := range d.list {
+		pos, _ := d.find(s)
+		d.slots[pos] = uint32(id) + 1
+	}
+}
+
+// ID interns s. The lock also protects table growth and existing snapshots.
 func (d *Dict) ID(s string) uint32 {
 	d.mu.Lock()
-	id, ok := d.ids[s]
-	if !ok {
-		id = uint32(len(d.list))
-		d.list = append(d.list, s)
-		d.ids[s] = id
+	defer d.mu.Unlock()
+	if id, ok := d.find(s); ok {
+		return uint32(id)
 	}
-	d.mu.Unlock()
+	if len(d.list) >= math.MaxUint32 {
+		panic("observation string dictionary is full")
+	}
+	d.reserve(len(d.list) + 1)
+	pos, _ := d.find(s)
+	id := uint32(len(d.list))
+	d.list = append(d.list, s)
+	d.slots[pos] = id + 1
 	return id
 }
 
 // Lookup finds s without adding it.
 func (d *Dict) Lookup(s string) (uint32, bool) {
 	d.mu.Lock()
-	id, ok := d.ids[s]
-	d.mu.Unlock()
-	return id, ok
+	defer d.mu.Unlock()
+	id, ok := d.find(s)
+	if !ok {
+		return 0, false
+	}
+	return uint32(id), true
 }
 
 // Snapshot is the strings so far (safe to read while others append).
@@ -220,7 +299,7 @@ func (st *State) Loc(g uint32) (*Segment, int) {
 }
 
 // ID is the observation id of global row g.
-func (st *State) ID(g uint32) int64 { s, i := st.Loc(g); return s.Base + int64(i) }
+func (st *State) ID(g uint32) int64 { s, i := st.Loc(g); return s.ID(i) }
 
 // S is the string with id.
 func (st *State) S(id uint32) string { return st.Str[id] }
@@ -235,17 +314,22 @@ func Editable(bandSource string) bool {
 	return bandSource == "frequency/band unavailable" || bandSource == "manual assignment"
 }
 
-func (st *State) index() {
+func (st *State) shape() {
 	st.start = make([]int, len(st.Segs))
+	st.MaxID = 0
 	n := 0
 	for i, s := range st.Segs {
 		st.start[i] = n
 		n += s.N
-		if s.N > 0 && s.Base+int64(s.N)-1 > st.MaxID {
-			st.MaxID = s.Base + int64(s.N) - 1
+		if s.N > 0 && s.ID(s.N-1) > st.MaxID {
+			st.MaxID = s.ID(s.N - 1)
 		}
 	}
 	st.N = n
+}
+
+func (st *State) index() {
+	st.shape()
 	var wg sync.WaitGroup
 	each := func(fn func(g uint32, s *Segment, i int)) {
 		g := uint32(0)
@@ -258,55 +342,49 @@ func (st *State) index() {
 	}
 	run := func(f func()) { wg.Add(1); go func() { defer wg.Done(); f() }() }
 	run(func() {
-		m := map[uint32][]uint32{}
-		each(func(g uint32, s *Segment, i int) { m[s.Radio[i]] = append(m[s.Radio[i]], g) })
+		m := postings(st, func(s *Segment, i int) uint32 { return s.Radio[i] })
 		st.ByRadio = m
 	})
 	run(func() {
-		m := map[uint32][]uint32{}
-		each(func(g uint32, s *Segment, i int) { m[s.SSID[i]] = append(m[s.SSID[i]], g) })
+		m := postings(st, func(s *Segment, i int) uint32 { return s.SSID[i] })
 		st.BySSID = m
 	})
 	run(func() {
-		m := map[int64][]uint32{}
-		each(func(g uint32, s *Segment, i int) { k := CellOf(s.Lat[i], s.Lon[i]); m[k] = append(m[k], g) })
+		m := postings(st, func(s *Segment, i int) int64 { return CellOf(s.Lat[i], s.Lon[i]) })
 		st.Grid = m
 	})
 	run(func() {
-		m := map[Pair][]uint32{}
+		m := postings(st, func(s *Segment, i int) Pair { return Pair{s.SSID[i], s.MAC[i]} })
 		ts := map[Pair]*TransStat{}
-		bandSets := map[Pair]map[uint32]bool{}
 		each(func(g uint32, s *Segment, i int) {
 			k := Pair{s.SSID[i], s.MAC[i]}
-			m[k] = append(m[k], g)
 			t := ts[k]
 			if t == nil {
 				t = &TransStat{Peak: math.Inf(-1)}
 				ts[k] = t
-				bandSets[k] = map[uint32]bool{}
 			}
 			t.Count++
 			if s.RSSI[i] > t.Peak {
 				t.Peak = s.RSSI[i]
 			}
-			bandSets[k][s.Band[i]] = true
+			if !slices.Contains(t.Bands, s.Band[i]) {
+				t.Bands = append(t.Bands, s.Band[i])
+			}
 			if Editable(st.Str[s.BandSrc[i]]) {
 				t.Editable++
 			}
 		})
-		for k, t := range ts {
-			t.Bands = sortedIDs(bandSets[k], st.Str)
+		for _, t := range ts {
+			sort.Slice(t.Bands, func(i, j int) bool { return st.Str[t.Bands[i]] < st.Str[t.Bands[j]] })
 		}
 		st.ByTrans, st.Trans = m, ts
 		// the network catalogue from the transmitter one
 		net := map[uint32]*NetStat{}
-		nb := map[uint32]map[uint32]bool{}
 		for k, t := range ts {
 			ns := net[k[0]]
 			if ns == nil {
 				ns = &NetStat{Peak: math.Inf(-1)}
 				net[k[0]] = ns
-				nb[k[0]] = map[uint32]bool{}
 			}
 			ns.Count += t.Count
 			ns.Macs++
@@ -315,23 +393,44 @@ func (st *State) index() {
 				ns.Peak = t.Peak
 			}
 			for _, b := range t.Bands {
-				nb[k[0]][b] = true
+				if !slices.Contains(ns.Bands, b) {
+					ns.Bands = append(ns.Bands, b)
+				}
 			}
 		}
-		for k, ns := range net {
-			ns.Bands = sortedIDs(nb[k], st.Str)
+		for _, ns := range net {
+			sort.Slice(ns.Bands, func(i, j int) bool { return st.Str[ns.Bands[i]] < st.Str[ns.Bands[j]] })
 		}
 		st.Net = net
 	})
 	wg.Wait()
 }
 
-func sortedIDs(set map[uint32]bool, str []string) []uint32 {
-	out := make([]uint32, 0, len(set))
-	for id := range set {
-		out = append(out, id)
+// postings builds exact-size, contiguous posting lists. Two linear passes avoid
+// per-key slice growth, spare capacity and the old generations of backing arrays
+// that otherwise coexist during every import/reopen. Lists remain row-ordered.
+func postings[K comparable](st *State, key func(*Segment, int) K) map[K][]uint32 {
+	counts := make(map[K]int)
+	for _, s := range st.Segs {
+		for i := 0; i < s.N; i++ {
+			counts[key(s, i)]++
+		}
 	}
-	sort.Slice(out, func(a, b int) bool { return str[out[a]] < str[out[b]] })
+	rows := make([]uint32, st.N)
+	out := make(map[K][]uint32, len(counts))
+	offset := 0
+	for k, n := range counts {
+		out[k] = rows[offset : offset : offset+n]
+		offset += n
+	}
+	var g uint32
+	for _, s := range st.Segs {
+		for i := 0; i < s.N; i++ {
+			k := key(s, i)
+			out[k] = append(out[k], g)
+			g++
+		}
+	}
 	return out
 }
 
@@ -340,12 +439,13 @@ func sortedIDs(set map[uint32]bool, str []string) []uint32 {
 
 // Store is a folder of segments plus the published State.
 type Store struct {
-	dir   string
-	Dict  *Dict
-	state atomic.Pointer[State]
-	mu    sync.Mutex // one writer at a time
-	saved int        // strings persisted
-	gen   int64
+	dir      string
+	Dict     *Dict
+	state    atomic.Pointer[State]
+	mu       sync.Mutex // one writer at a time
+	saved    int        // strings persisted
+	gen      int64
+	readOnly bool
 }
 
 type manifest struct {
@@ -362,9 +462,10 @@ type segEntry struct {
 	N        int    `json:"n"`
 }
 
-// Open opens (or creates) the store in dir. keep says which import ids are committed in the
-// metadata database; segments of other imports (an interrupted commit) are dropped.
-func Open(dir string, keep func(importID int64) bool) (*Store, error) {
+// Open checks committed import row counts before publishing or sweeping files.
+// Segments of uncommitted imports (an interrupted commit) are dropped.
+func Open(dir string, committed map[int64]int64) (*Store, error) {
+	keep := func(id int64) bool { _, ok := committed[id]; return committed == nil || ok }
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
@@ -377,6 +478,39 @@ func Open(dir string, keep func(importID int64) bool) (*Store, error) {
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
+	} else {
+		// A lost manifest must not make committed segment files look like garbage.
+		// Uncommitted first-import files may still be discarded using metadata IDs.
+		entries, e := os.ReadDir(dir)
+		if e != nil {
+			return nil, e
+		}
+		for _, entry := range entries {
+			if strings.HasPrefix(entry.Name(), "seg-") && strings.HasSuffix(entry.Name(), ".bin") {
+				f, e := os.Open(filepath.Join(dir, entry.Name()))
+				if e != nil {
+					return nil, e
+				}
+				header := make([]byte, 16)
+				_, e = io.ReadFull(f, header)
+				if e != nil || string(header[:8]) != segMagic {
+					f.Close()
+					return nil, errors.New("observation manifest missing; preserved segment files")
+				}
+				n := binary.LittleEndian.Uint32(header[8:])
+				if n > 4096 {
+					f.Close()
+					return nil, errors.New("invalid observation segment header")
+				}
+				b := make([]byte, n)
+				_, e = io.ReadFull(f, b)
+				f.Close()
+				var h segHeader
+				if e != nil || json.Unmarshal(b, &h) != nil || keep(h.ImportID) {
+					return nil, errors.New("observation manifest missing; preserved committed segment files")
+				}
+			}
+		}
 	}
 	if err := s.loadStrings(m.Strings); err != nil {
 		return nil, err
@@ -403,11 +537,20 @@ func Open(dir string, keep func(importID int64) bool) (*Store, error) {
 		if errs[i] != nil {
 			return nil, fmt.Errorf("observation segment %s: %w", m.Segments[i].File, errs[i])
 		}
-		if keep != nil && !keep(sg.ImportID) {
+		if !keep(sg.ImportID) {
 			dropped = true
 			continue
 		}
 		kept = append(kept, sg)
+	}
+	counts := map[int64]int64{}
+	for _, sg := range kept {
+		counts[sg.ImportID] += int64(sg.N)
+	}
+	for id, n := range committed {
+		if counts[id] != n {
+			return nil, fmt.Errorf("observation store incomplete: import %d expects %d rows, found %d; preserved segment files", id, n, counts[id])
+		}
 	}
 	st := &State{Segs: kept, Str: s.Dict.Snapshot()}
 	st.index()
@@ -424,6 +567,27 @@ func Open(dir string, keep func(importID int64) bool) (*Store, error) {
 // State is the current published view.
 func (s *Store) State() *State { return s.state.Load() }
 
+// ForkTo is for a quiescent staged workspace copy. Columns/indexes are immutable
+// and can be shared until candidate publication; future writes use dir only.
+// The source must stay quiescent until the fork is closed or replaces it.
+func (s *Store) ForkTo(dir string) *Store {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	fork := &Store{dir: dir, Dict: s.Dict, saved: s.saved, gen: s.gen, readOnly: s.readOnly}
+	fork.state.Store(s.State())
+	return fork
+}
+
+// Reindex publishes fresh derived indexes without changing observation files.
+func (s *Store) Reindex() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	old := s.State()
+	st := &State{Segs: old.Segs, Str: old.Str}
+	st.index()
+	s.state.Store(st)
+}
+
 func (s *Store) loadStrings(n int) error {
 	f, err := os.Open(filepath.Join(s.dir, "strings.bin"))
 	if errors.Is(err, os.ErrNotExist) {
@@ -436,20 +600,43 @@ func (s *Store) loadStrings(n int) error {
 		return err
 	}
 	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	if n < 0 || int64(n) > info.Size() || uint64(n) > math.MaxUint32 {
+		return errors.New("observation store: invalid dictionary count")
+	}
 	r := bufio.NewReaderSize(f, 1<<20)
 	s.Dict.list = make([]string, 0, n)
+	s.Dict.reserve(n)
+	// Immutable arenas avoid millions of separately allocated byte/string
+	// objects. Each string retains its arena; neither is modified after use.
+	var arena []byte
 	for i := 0; i < n; i++ {
 		l, err := binary.ReadUvarint(r)
 		if err != nil {
 			return fmt.Errorf("observation store strings: %w", err)
 		}
-		b := make([]byte, l)
+		if l > uint64(info.Size()) {
+			return errors.New("observation store: invalid string length")
+		}
+		if uint64(cap(arena)-len(arena)) < l {
+			arena = make([]byte, 0, max(1<<20, int(l)))
+		}
+		off := len(arena)
+		arena = arena[:off+int(l)]
+		b := arena[off:]
 		if _, err := io.ReadFull(r, b); err != nil {
 			return fmt.Errorf("observation store strings: %w", err)
 		}
-		str := string(b)
-		s.Dict.ids[str] = uint32(len(s.Dict.list))
+		str := unsafe.String(unsafe.SliceData(b), len(b))
+		pos, exists := s.Dict.find(str)
+		if exists {
+			return errors.New("observation store: duplicate dictionary string")
+		}
 		s.Dict.list = append(s.Dict.list, str)
+		s.Dict.slots[pos] = uint32(i) + 1
 	}
 	return nil
 }
@@ -532,13 +719,17 @@ func (s *Store) sweep(segs []*Segment) {
 
 // Change is one commit: segments to add, import ids to drop, segments to replace.
 type Change struct {
-	Add     []*Segment
-	Drop    map[int64]bool // import ids whose segments go
-	Replace map[*Segment]*Segment
+	Segments []*Segment // non-nil replaces the full segment set (staged maintenance)
+	Add      []*Segment
+	Drop     map[int64]bool // import ids whose segments go
+	Replace  map[*Segment]*Segment
 }
 
 // Commit writes a change and publishes the new State. It is all or nothing on disk.
 func (s *Store) Commit(ch Change) error {
+	if s.readOnly {
+		return errors.New("read-only fitting view cannot be committed")
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	old := s.State()
@@ -551,6 +742,9 @@ func (s *Store) Commit(ch Change) error {
 			sg = r
 		}
 		segs = append(segs, sg)
+	}
+	if ch.Segments != nil {
+		segs = ch.Segments
 	}
 	s.gen++
 	for _, sg := range segs {
@@ -581,7 +775,9 @@ func (s *Store) Commit(ch Change) error {
 		return err
 	}
 	st := &State{Segs: segs, Str: s.Dict.Snapshot()}
-	st.index()
+	if ch.Segments != nil || len(ch.Drop) > 0 || len(ch.Replace) > 0 || !st.appendIndex(old) {
+		st.index()
+	}
 	s.state.Store(st)
 	s.sweep(segs)
 	return nil
@@ -636,6 +832,9 @@ func (sg *Segment) columns() [][]byte {
 }
 
 func writeSegment(path string, sg *Segment) error {
+	if sg.OriginalIDs != nil {
+		return errors.New("source-ID views cannot be persisted as segments")
+	}
 	tmp := path + ".tmp"
 	f, err := os.Create(tmp)
 	if err != nil {
@@ -674,31 +873,55 @@ func writeSegment(path string, sg *Segment) error {
 }
 
 func readSegment(path string) (*Segment, error) {
-	raw, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	if len(raw) < 16 || string(raw[:8]) != segMagic {
-		return nil, errors.New("not a segment file")
-	}
-	hl := int(binary.LittleEndian.Uint32(raw[8:]))
-	var h segHeader
-	if err := json.Unmarshal(raw[16:16+hl], &h); err != nil {
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
 		return nil, err
 	}
-	// copy into an 8-aligned buffer (ReadFile's slice is aligned in practice, but do not rely on it)
-	buf := make([]uint64, (len(raw)+7)/8)
-	b := unsafe.Slice((*byte)(unsafe.Pointer(&buf[0])), len(raw))
-	copy(b, raw)
+	if info.Size() < 16 || info.Size() > int64(int(^uint(0)>>1))-7 {
+		return nil, errors.New("invalid segment length")
+	}
+	// Read directly into the final aligned backing allocation. Never keep a
+	// second file-sized ReadFile copy alive while rebuilding observation indexes.
+	buf := make([]uint64, (int(info.Size())+7)/8)
+	b := unsafe.Slice((*byte)(unsafe.Pointer(&buf[0])), int(info.Size()))
+	if _, err = io.ReadFull(f, b); err != nil {
+		return nil, err
+	}
+	if string(b[:8]) != segMagic {
+		return nil, errors.New("not a segment file")
+	}
+	hl := int(binary.LittleEndian.Uint32(b[8:]))
+	if hl < 1 || hl > 4096 || hl > len(b)-16 {
+		return nil, errors.New("invalid segment header")
+	}
+	var h segHeader
+	if err := json.Unmarshal(b[16:16+hl], &h); err != nil {
+		return nil, err
+	}
+	if h.N < 0 || h.N > (len(b)-16-hl)/89 || h.Base < 1 || int64(h.N) > math.MaxInt64-h.Base {
+		return nil, errors.New("invalid segment row count or IDs")
+	}
 	pos := 16 + hl
 	al := func() { pos = (pos + 7) &^ 7 }
 	al()
 	n := h.N
+	expected := pos
+	for _, width := range []int{4, 4, 4, 4, 4, 4, 4, 4, 8, 8, 8, 8, 8, 8, 1, 8} {
+		expected = (expected + width*n + 7) &^ 7
+	}
+	if expected != len(b) {
+		return nil, errors.New("segment file is truncated or has trailing data")
+	}
 	sg := &Segment{ImportID: h.ImportID, Base: h.Base, N: n}
 	take := func(size int) []byte {
 		if pos+size > len(b) {
 			err = errors.New("segment file is truncated")
-			return make([]byte, size)
+			return nil
 		}
 		x := b[pos : pos+size]
 		pos += size

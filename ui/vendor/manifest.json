@@ -1,0 +1,31 @@
+{
+  "libraries": {
+    "maplibre-gl": {
+      "version": "4.7.1",
+      "source": "https://unpkg.com/maplibre-gl@4.7.1/dist/"
+    },
+    "deck.gl": {
+      "version": "9.4.1",
+      "source": "https://unpkg.com/deck.gl@9.4.1/dist.min.js"
+    },
+    "leaflet": {
+      "version": "1.9.4",
+      "source": "https://unpkg.com/leaflet@1.9.4/dist/"
+    }
+  },
+  "sha256": {
+    "deck/deck.gl.js": "08857e84bc2e5478a62ce1dc59b9b5fae9ae0a21104c78503dece316d69a1ca6",
+    "deck/LICENSE": "e499a2c2ba3b9faabe91fdfddf43e329439263264b7148e5548d0ec605cce9f2",
+    "leaflet/images/layers-2x.png": "066daca850d8ffbef007af00b06eac0015728dee279c51f3cb6c716df7c42edf",
+    "leaflet/images/layers.png": "1dbbe9d028e292f36fcba8f8b3a28d5e8932754fc2215b9ac69e4cdecf5107c6",
+    "leaflet/images/marker-icon-2x.png": "00179c4c1ee830d3a108412ae0d294f55776cfeb085c60129a39aa6fc4ae2528",
+    "leaflet/images/marker-icon.png": "574c3a5cca85f4114085b6841596d62f00d7c892c7b03f28cbfa301deb1dc437",
+    "leaflet/images/marker-shadow.png": "264f5c640339f042dd729062cfc04c17f8ea0f29882b538e3848ed8f10edb4da",
+    "leaflet/leaflet.css": "a7837102824184820dfa198d1ebcd109ff6d0ff9a2672a074b9a1b4d147d04c6",
+    "leaflet/leaflet.js": "db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a",
+    "leaflet/LICENSE.txt": "53e8dc25862014e4324741ca18fbe3611e11d42ef69f59f86ea8c5389647d4cb",
+    "maplibre/LICENSE.txt": "ee5fc05a0677eaf69601d2c7db0d9ecd6cc27c3abc1d0733bc9ed34707cf8ef2",
+    "maplibre/maplibre-gl.css": "576b085fdd9487a65a19215328c1e086c07ce5bf6da09b666b3806d3d008dae9",
+    "maplibre/maplibre-gl.js": "be9633c4d870e26fb37f1cfe5c5a77181667114003ea16207ac7850d8da8add1"
+  }
+}

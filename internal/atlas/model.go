@@ -4,6 +4,7 @@ import (
 	"errors"
 	"math"
 	"sort"
+	"sync"
 
 	"signal-atlas/internal/py"
 )
@@ -87,14 +88,16 @@ type ObsCols struct {
 
 // LocationModel is estimate_ap.LocationModel.
 type LocationModel struct {
-	n          int
-	cols       ObsCols
-	weights    []float64
-	within     []float64
-	Frame      LocalFrame
-	x, y, rssi []float64
-	floor      float64
-	cancelled  func() bool
+	n                      int
+	cols                   ObsCols
+	weights                []float64
+	within                 []float64
+	Frame                  LocalFrame
+	x, y, rssi             []float64
+	floor                  float64
+	cancelled              func() bool
+	accelerated            bool
+	gpuCalls, gpuFallbacks int
 }
 
 func wavg(v, w []float64) float64 {
@@ -206,6 +209,9 @@ func (m *LocationModel) sse(px, py_ []float64, s *subset, exponent float64, out 
 	if out == nil {
 		out = make([]float64, len(px))
 	}
+	if s.k == 1 {
+		return m.sseSingle(px, py_, s, exponent, out)
+	}
 	c := 10 * exponent
 	floor := m.floor
 	x, y, r, w, g, imp, gs, sw := s.x, s.y, s.r, s.w, s.g, s.imp, s.gs, s.sw
@@ -240,6 +246,144 @@ func (m *LocationModel) sse(px, py_ []float64, s *subset, exponent float64, out 
 	return out, nil
 }
 
+// The same two-pass arithmetic and observation order, without indirect group
+// indexing when every observation shares one power intercept.
+func (m *LocationModel) sseSingle(px, py_ []float64, s *subset, exponent float64, out []float64) ([]float64, error) {
+	c, floor := 10*exponent, m.floor
+	x, y, r, w, imp := s.x, s.y, s.r, s.w, s.imp
+	for p := range px {
+		if p&2047 == 0 && m.cancelled != nil && m.cancelled() {
+			return nil, ErrCancelled
+		}
+		var sum float64
+		for j := range x {
+			dx, dy := px[p]-x[j], py_[p]-y[j]
+			d := math.Sqrt(dx*dx + dy*dy)
+			if d < floor {
+				d = floor
+			}
+			v := r[j] + c*math.Log10(d)
+			imp[j] = v
+			sum += v * w[j]
+		}
+		mean := sum / s.sw[0]
+		var total float64
+		for j := range x {
+			e := imp[j] - mean
+			total += e * e * w[j]
+		}
+		out[p] = total + s.within
+	}
+	return out, nil
+}
+
+var surveyCoarseGrid = sync.OnceValues(func() ([]float64, []float64) { return makeCoarseGrid(500, 10) })
+var coarseOrders = sync.Pool{New: func() any { return make([]int, 10201) }}
+
+func makeCoarseGrid(extent, step float64) ([]float64, []float64) {
+	axis := Linspace(-extent, extent, int(math.Ceil(2*extent/step))+1)
+	a := len(axis)
+	x, y := make([]float64, a*a), make([]float64, a*a)
+	for r := range a {
+		for c := range a {
+			x[r*a+c], y[r*a+c] = axis[c], axis[r]
+		}
+	}
+	return x, y
+}
+func coarseGrid(extent, step float64) ([]float64, []float64) {
+	if extent == 500 && step == 10 {
+		return surveyCoarseGrid()
+	}
+	return makeCoarseGrid(extent, step)
+}
+func fitBuffer(v []float64, n int) []float64 {
+	if cap(v) < n {
+		return make([]float64, n)
+	}
+	return v[:n]
+}
+
+// coarseStarts visits candidates in exactly the stable score/index ordering
+// used by the reference sort, but builds a linear-time heap and only removes
+// candidates needed for eight separated starts. It does not change the grid,
+// scores, tie breaking or accuracy of either solver.
+func coarseStarts(x, y, scores []float64, separation float64, cancelled func() bool) ([][2]float64, error) {
+	var order []int
+	if len(scores) == 10201 {
+		order = coarseOrders.Get().([]int)
+		defer coarseOrders.Put(order)
+	} else {
+		order = make([]int, len(scores))
+	}
+	fallback := false
+	for i := range order {
+		order[i] = i
+		if math.IsNaN(scores[i]) {
+			fallback = true
+		}
+	}
+	less := func(a, b int) bool {
+		if scores[a] != scores[b] {
+			return scores[a] < scores[b]
+		}
+		return a < b
+	}
+	sift := func(root, n int) {
+		for {
+			child := 2*root + 1
+			if child >= n {
+				return
+			}
+			if child+1 < n && less(order[child+1], order[child]) {
+				child++
+			}
+			if !less(order[child], order[root]) {
+				return
+			}
+			order[root], order[child] = order[child], order[root]
+			root = child
+		}
+	}
+	if fallback {
+		sort.SliceStable(order, func(i, j int) bool { return scores[order[i]] < scores[order[j]] })
+	} else {
+		for i := len(order)/2 - 1; i >= 0; i-- {
+			sift(i, len(order))
+		}
+	}
+	starts := make([][2]float64, 0, 8)
+	visited := 0
+	for len(order) > 0 && len(starts) < 8 {
+		if visited%1024 == 0 && cancelled != nil && cancelled() {
+			return nil, ErrCancelled
+		}
+		visited++
+		j := order[0]
+		if fallback {
+			order = order[1:]
+		} else {
+			order[0] = order[len(order)-1]
+			order = order[:len(order)-1]
+			if len(order) > 0 {
+				sift(0, len(order))
+			}
+		}
+		ok := true
+		for _, st := range starts {
+			dx, dy := x[j]-st[0], y[j]-st[1]
+			if !(math.Sqrt(dx*dx+dy*dy) > separation) {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			starts = append(starts, [2]float64{x[j], y[j]})
+		}
+	}
+	return starts, nil
+}
+
 // Fit is one fit's result.
 type Fit struct {
 	Latitude, Longitude, EastM, NorthM, Exponent, SSE, RMS float64
@@ -271,55 +415,31 @@ func (m *LocationModel) Fit(idx []int, exponent, extentM, stepM float64, predict
 		return nil, py.Errorf("Need at least three within-radio contrasts (observations minus radios)")
 	}
 	s := m.subset(idx)
-	axis := Linspace(-extentM, extentM, int(math.Ceil(2*extentM/stepM))+1)
-	A := len(axis)
-	px, pyy := make([]float64, A*A), make([]float64, A*A)
-	for r := 0; r < A; r++ {
-		for c := 0; c < A; c++ {
-			px[r*A+c], pyy[r*A+c] = axis[c], axis[r]
-		}
-	}
-	errs, err := m.sse(px, pyy, s, exponent, nil)
+	px, pyy := coarseGrid(extentM, stepM)
+	errs, err := m.scoreGrid(px, pyy, s, exponent, nil, true, 3*stepM)
 	if err != nil {
 		return nil, err
 	}
-	order := make([]int, len(errs))
-	for i := range order {
-		order[i] = i
+	starts, err := coarseStarts(px, pyy, errs, 3*stepM, m.cancelled)
+	if err != nil {
+		return nil, err
 	}
-	sort.SliceStable(order, func(a, b int) bool { return errs[order[a]] < errs[order[b]] })
-	var starts [][2]float64
-	sep := 3 * stepM
-	for _, j := range order {
-		if len(starts) == 8 {
-			break
-		}
-		ok := true
-		for _, st := range starts {
-			dx, dy := px[j]-st[0], pyy[j]-st[1]
-			if !(math.Sqrt(dx*dx+dy*dy) > sep) {
-				ok = false
-				break
-			}
-		}
-		if ok {
-			starts = append(starts, [2]float64{px[j], pyy[j]})
-		}
-	}
+
 	refine := math.Min(.25, stepM/4)
 	best, bx, by := math.Inf(1), 0.0, 0.0
 	first := true
+	var fx, fy, scores []float64
 	for _, st := range starts {
 		ax := Arange(math.Max(-extentM, st[0]-1.2*stepM), math.Min(extentM, st[0]+1.2*stepM)+refine/2, refine)
 		ay := Arange(math.Max(-extentM, st[1]-1.2*stepM), math.Min(extentM, st[1]+1.2*stepM)+refine/2, refine)
-		fx, fy := make([]float64, len(ax)*len(ay)), make([]float64, len(ax)*len(ay))
+		fx, fy, scores = fitBuffer(fx, len(ax)*len(ay)), fitBuffer(fy, len(ax)*len(ay)), fitBuffer(scores, len(ax)*len(ay))
 		for r := range ay {
 			for c := range ax {
 				fx[r*len(ax)+c] = math.Min(extentM, math.Max(-extentM, ax[c]))
 				fy[r*len(ax)+c] = math.Min(extentM, math.Max(-extentM, ay[r]))
 			}
 		}
-		scores, err := m.sse(fx, fy, s, exponent, nil)
+		scores, err = m.scoreGrid(fx, fy, s, exponent, scores, false, 0)
 		if err != nil {
 			return nil, err
 		}

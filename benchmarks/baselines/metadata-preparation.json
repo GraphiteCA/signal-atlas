@@ -1,0 +1,475 @@
+{
+  "schema": 1,
+  "date": "2026-11-11",
+  "base_commit": "e60214a11ec672db61a6565f20898cdb850f0864",
+  "machine": {
+    "cpu": "i7-10700K",
+    "physical_cores": 8,
+    "logical_cores": 16,
+    "ram_gib": 32,
+    "gpu": "RTX 2080 Ti",
+    "driver": "621.01",
+    "go": "1.27.3"
+  },
+  "input": {
+    "rows": 5753026,
+    "targets": 1460561,
+    "manifest_sha256": "49bb27b35507b937944883b585ceef4e1ba3a88697b77198cf35c452c3565777"
+  },
+  "measurement": "Sequential profiled full sweeps on independent unfitted owned copies. Same 8 workers / 8 Go threads, GPU fast, sample/shared settings. No competing agent tests or benchmarks. Other desktop activity and filesystem cache uncontrolled. One baseline, one intermediate, two final runs, not a statistical latency distribution. Source production surveys untouched.",
+  "runs": {
+    "baseline-full": {
+      "process_wall_seconds": 341.07838360000096,
+      "peak_engine_working_set_bytes": 3313385472,
+      "seconds": 336.0039989,
+      "verification_only": false,
+      "rows": 5753026,
+      "saved": 338826,
+      "stats": {
+        "completed": 1460561,
+        "fitted": 170765,
+        "unavailable": 1289796
+      },
+      "estimates_sha256": "ebe35e7920bce842a4119d49032416f26e07c289ffad6170ba2924413b7aa914",
+      "acceleration": {
+        "available": true,
+        "calls": 170765,
+        "checked": true,
+        "device": "NVIDIA GeForce RTX 2080 Ti",
+        "fallbacks": 0,
+        "precision": "float64",
+        "reason": "",
+        "scratch_limit_mb": 64
+      },
+      "metrics": {
+        "commit_batches": 4163,
+        "commit_seconds": 215.75393970000005,
+        "compute_seconds": 596.1065829999964,
+        "targets_committed": 1460561,
+        "progress": {
+          "blocked": 0,
+          "completed": 1460561,
+          "pending": 0,
+          "total": 1460561
+        }
+      }
+    },
+    "pipeline-full": {
+      "process_wall_seconds": 183.08774200000335,
+      "peak_engine_working_set_bytes": 3380072448,
+      "seconds": 179.5035842,
+      "verification_only": false,
+      "rows": 5753026,
+      "saved": 338826,
+      "stats": {
+        "completed": 1460561,
+        "fitted": 170765,
+        "unavailable": 1289796
+      },
+      "estimates_sha256": "ebe35e7920bce842a4119d49032416f26e07c289ffad6170ba2924413b7aa914",
+      "acceleration": {
+        "available": true,
+        "calls": 170765,
+        "checked": true,
+        "device": "NVIDIA GeForce RTX 2080 Ti",
+        "fallbacks": 0,
+        "precision": "float64",
+        "reason": "",
+        "scratch_limit_mb": 64
+      },
+      "metrics": {
+        "commit_batches": 2831,
+        "commit_seconds": 142.57506380000004,
+        "compute_seconds": 420.16740560000557,
+        "targets_committed": 1460561,
+        "progress": {
+          "blocked": 0,
+          "completed": 1460561,
+          "pending": 0,
+          "total": 1460561
+        }
+      }
+    },
+    "wal-full": {
+      "process_wall_seconds": 154.95031030000246,
+      "peak_engine_working_set_bytes": 3372879872,
+      "seconds": 151.1312204,
+      "verification_only": false,
+      "rows": 5753026,
+      "saved": 338826,
+      "stats": {
+        "completed": 1460561,
+        "fitted": 170765,
+        "unavailable": 1289796
+      },
+      "estimates_sha256": "ebe35e7920bce842a4119d49032416f26e07c289ffad6170ba2924413b7aa914",
+      "acceleration": {
+        "available": true,
+        "calls": 170765,
+        "checked": true,
+        "device": "NVIDIA GeForce RTX 2080 Ti",
+        "fallbacks": 0,
+        "precision": "float64",
+        "reason": "",
+        "scratch_limit_mb": 64
+      },
+      "metrics": {
+        "commit_batches": 2837,
+        "commit_seconds": 110.19349310000011,
+        "compute_seconds": 419.7477112999713,
+        "targets_committed": 1460561,
+        "progress": {
+          "blocked": 0,
+          "completed": 1460561,
+          "pending": 0,
+          "total": 1460561
+        }
+      }
+    },
+    "final-full": {
+      "process_wall_seconds": 152.90867729999445,
+      "peak_engine_working_set_bytes": 3375570944,
+      "seconds": 148.8116063,
+      "verification_only": false,
+      "rows": 5753026,
+      "saved": 338826,
+      "stats": {
+        "completed": 1460561,
+        "fitted": 170765,
+        "unavailable": 1289796
+      },
+      "estimates_sha256": "ebe35e7920bce842a4119d49032416f26e07c289ffad6170ba2924413b7aa914",
+      "acceleration": {
+        "available": true,
+        "calls": 170765,
+        "checked": true,
+        "device": "NVIDIA GeForce RTX 2080 Ti",
+        "fallbacks": 0,
+        "precision": "float64",
+        "reason": "",
+        "scratch_limit_mb": 64
+      },
+      "metrics": {
+        "commit_batches": 2836,
+        "commit_seconds": 110.76336400000002,
+        "compute_seconds": 413.00929469998994,
+        "targets_committed": 1460561,
+        "progress": {
+          "blocked": 0,
+          "completed": 1460561,
+          "pending": 0,
+          "total": 1460561
+        }
+      }
+    },
+    "reopen-full": {
+      "process_wall_seconds": 10.711067000003823,
+      "peak_engine_working_set_bytes": 2423726080,
+      "seconds": 6.472408,
+      "verification_only": true,
+      "rows": 5753026,
+      "saved": 338826,
+      "stats": {
+        "completed": 1460561,
+        "fitted": 170765,
+        "unavailable": 1289796
+      },
+      "estimates_sha256": "ebe35e7920bce842a4119d49032416f26e07c289ffad6170ba2924413b7aa914",
+      "acceleration": {
+        "available": true,
+        "calls": 0,
+        "checked": true,
+        "device": "NVIDIA GeForce RTX 2080 Ti",
+        "fallbacks": 0,
+        "precision": "float64",
+        "reason": "",
+        "scratch_limit_mb": 64
+      },
+      "metrics": {
+        "commit_batches": null,
+        "commit_seconds": null,
+        "compute_seconds": null,
+        "targets_committed": null,
+        "progress": {
+          "blocked": 0,
+          "completed": 1460561,
+          "pending": 0,
+          "total": 1460561
+        }
+      }
+    },
+    "migrate-complete": {
+      "process_wall_seconds": 40.08501309999701,
+      "peak_engine_working_set_bytes": 2532835328,
+      "seconds": 35.1710406,
+      "verification_only": true,
+      "rows": 5753026,
+      "saved": 338826,
+      "stats": {
+        "completed": 1460561,
+        "fitted": 170765,
+        "unavailable": 1289796
+      },
+      "estimates_sha256": "ebe35e7920bce842a4119d49032416f26e07c289ffad6170ba2924413b7aa914",
+      "acceleration": {
+        "available": true,
+        "calls": 0,
+        "checked": true,
+        "device": "NVIDIA GeForce RTX 2080 Ti",
+        "fallbacks": 0,
+        "precision": "float64",
+        "reason": "",
+        "scratch_limit_mb": 64
+      },
+      "metrics": {
+        "commit_batches": null,
+        "commit_seconds": null,
+        "compute_seconds": null,
+        "targets_committed": null,
+        "progress": {
+          "blocked": 0,
+          "completed": 1460561,
+          "pending": 0,
+          "total": 1460561
+        }
+      }
+    }
+  },
+  "speedup_vs_baseline": [
+    2.223260012131815,
+    2.257915274582988
+  ],
+  "validation": {
+    "full_go_suite": "passed including active Python numerical parity (95.121 s); final engine checks rerun after diagnostic commit seam",
+    "race": "atlas and GPU checks passed; final engine race checks passed after fixing partial-timer-batch assumption in the new test",
+    "vet": "passed",
+    "hardware_scoring_and_solvers": "passed; actual float64 GPU, score and final fit parity",
+    "javascript_tests": 13,
+    "python_safety_tests": 7,
+    "cross_builds": [
+      "Linux amd64 core with CPU fallback",
+      "macOS arm64 core with CPU fallback"
+    ],
+    "quality_candidates": "336 policy cases passed; repeated known-truth assertions and identical numerical outputs"
+  },
+  "durable_verification": {
+    "before": {
+      "checkpoints": {
+        "rows": 1460561,
+        "sha256": "a603e47b1b5e149e3be5d044b56b5d47c1705faa3a8067fbdc93eb65a92e9b4b"
+      },
+      "map_locations": {
+        "rows": 170765,
+        "sha256": "f6390885e07e5f7f99195bc4db101d3b1d5912822af0c72d407aca4591b5ae2e"
+      },
+      "located_networks": {
+        "rows": 59576,
+        "sha256": "9770cd6179d510022c89ac27422ff3eb4f8ad14065618c61da9f4d4ecacbe130"
+      },
+      "quick_check": [
+        [
+          "ok"
+        ]
+      ],
+      "pending_rows": 0,
+      "namespaces": [
+        [
+          1460561,
+          0
+        ]
+      ],
+      "stale_checkpoints": 0,
+      "metadata_file_bytes": 1244033024,
+      "used_page_bytes": 1243942912
+    },
+    "pipeline": {
+      "checkpoints": {
+        "rows": 1460561,
+        "sha256": "a603e47b1b5e149e3be5d044b56b5d47c1705faa3a8067fbdc93eb65a92e9b4b"
+      },
+      "map_locations": {
+        "rows": 170765,
+        "sha256": "f6390885e07e5f7f99195bc4db101d3b1d5912822af0c72d407aca4591b5ae2e"
+      },
+      "located_networks": {
+        "rows": 59576,
+        "sha256": "9770cd6179d510022c89ac27422ff3eb4f8ad14065618c61da9f4d4ecacbe130"
+      },
+      "quick_check": [
+        [
+          "ok"
+        ]
+      ],
+      "pending_rows": 0,
+      "namespaces": [
+        [
+          1460561,
+          0
+        ]
+      ],
+      "stale_checkpoints": 0,
+      "metadata_file_bytes": 1077948416,
+      "used_page_bytes": 1077927936,
+      "guard": 0
+    },
+    "after": {
+      "checkpoints": {
+        "rows": 1460561,
+        "sha256": "a603e47b1b5e149e3be5d044b56b5d47c1705faa3a8067fbdc93eb65a92e9b4b"
+      },
+      "map_locations": {
+        "rows": 170765,
+        "sha256": "f6390885e07e5f7f99195bc4db101d3b1d5912822af0c72d407aca4591b5ae2e"
+      },
+      "located_networks": {
+        "rows": 59576,
+        "sha256": "9770cd6179d510022c89ac27422ff3eb4f8ad14065618c61da9f4d4ecacbe130"
+      },
+      "quick_check": [
+        [
+          "ok"
+        ]
+      ],
+      "pending_rows": 0,
+      "namespaces": [
+        [
+          1460561,
+          0
+        ]
+      ],
+      "stale_checkpoints": 0,
+      "metadata_file_bytes": 1077829632,
+      "used_page_bytes": 1077796864,
+      "guard": 0
+    },
+    "final": {
+      "checkpoints": {
+        "rows": 1460561,
+        "sha256": "a603e47b1b5e149e3be5d044b56b5d47c1705faa3a8067fbdc93eb65a92e9b4b"
+      },
+      "map_locations": {
+        "rows": 170765,
+        "sha256": "f6390885e07e5f7f99195bc4db101d3b1d5912822af0c72d407aca4591b5ae2e"
+      },
+      "located_networks": {
+        "rows": 59576,
+        "sha256": "9770cd6179d510022c89ac27422ff3eb4f8ad14065618c61da9f4d4ecacbe130"
+      },
+      "quick_check": [
+        [
+          "ok"
+        ]
+      ],
+      "pending_rows": 0,
+      "stale_checkpoints": 0,
+      "guard": 0,
+      "metadata_file_bytes": 1078177792,
+      "used_page_bytes": 1078149120
+    },
+    "legacy_complete_migration": {
+      "checkpoints": {
+        "rows": 1460561,
+        "sha256": "a603e47b1b5e149e3be5d044b56b5d47c1705faa3a8067fbdc93eb65a92e9b4b"
+      },
+      "map_locations": {
+        "rows": 170765,
+        "sha256": "f6390885e07e5f7f99195bc4db101d3b1d5912822af0c72d407aca4591b5ae2e"
+      },
+      "located_networks": {
+        "rows": 59576,
+        "sha256": "9770cd6179d510022c89ac27422ff3eb4f8ad14065618c61da9f4d4ecacbe130"
+      },
+      "quick_check": [
+        [
+          "ok"
+        ]
+      ],
+      "pending_rows": 0,
+      "stale_checkpoints": 0,
+      "guard": 0,
+      "metadata_file_bytes": 1410138112,
+      "used_page_bytes": 1059528704
+    }
+  },
+  "desktop": {
+    "native": {
+      "success": true,
+      "observations": 479407,
+      "sightings_in_populated_view": 61233,
+      "native_events": 63,
+      "viewport_targets_dispatched": 89,
+      "visible_ap_total": 97,
+      "empty_ap_frames": 0,
+      "loading_frames": 0,
+      "frame_gaps": {
+        "count": 900,
+        "p50_ms": 16.699999999999818,
+        "p95_ms": 16.899999999999636,
+        "max_ms": 17.200000000000728
+      },
+      "pause_join_ms": 128.20000000298023,
+      "acceleration": {
+        "available": true,
+        "calls": 11348,
+        "checked": true,
+        "device": "NVIDIA GeForce RTX 2080 Ti",
+        "fallbacks": 0,
+        "precision": "float64",
+        "reason": "",
+        "scratch_limit_mb": 64
+      },
+      "errors": [],
+      "peak_family_working_set_bytes": 3710181376
+    },
+    "native-release": {
+      "success": true,
+      "observations": 479407,
+      "sightings_in_populated_view": 61233,
+      "native_events": 59,
+      "viewport_targets_dispatched": 118,
+      "visible_ap_total": 105,
+      "empty_ap_frames": 0,
+      "loading_frames": 0,
+      "frame_gaps": {
+        "count": 900,
+        "p50_ms": 16.699999999999818,
+        "p95_ms": 16.899999999999636,
+        "max_ms": 17.399999999999636
+      },
+      "pause_join_ms": 133.5,
+      "acceleration": {
+        "available": true,
+        "calls": 11414,
+        "checked": true,
+        "device": "NVIDIA GeForce RTX 2080 Ti",
+        "fallbacks": 0,
+        "precision": "float64",
+        "reason": "",
+        "scratch_limit_mb": 64
+      },
+      "errors": [],
+      "peak_family_working_set_bytes": 3680350208
+    }
+  },
+  "artifacts": {
+    "prep-before.exe": "a048945a8db43d30f5074db8eb4ef71e70a59eaad8fb7734f13784903044d93f",
+    "prep-pipeline.exe": "26681bb4594d0983295ca63dbeee98981cb6d5f51f96c5f5d893a07edae8b46c",
+    "prep-wal.exe": "ab17a6099387253951f1577d4cdcc9e16eeb948f62f84692682cc3233305a231",
+    "prep-final.exe": "226b62c9b8ab7486d8a59e9caeb98d2635766d34541dbd268b08b561e4df8b3a",
+    "native-release.exe": "870e98e167c0558840896e71c103a117dbe42be3f526963740f13c60327c0a14"
+  },
+  "desktop_executable": {
+    "path": "build/SignalAtlas-metadata.exe",
+    "sha256": "6275715a4ca49833017e92a546c8a25cfcaea76d1d7b1d292b055d9047a1d2ea"
+  },
+  "source_manifest": {
+    "base_commit": "e60214a11ec672db61a6565f20898cdb850f0864",
+    "sha256": "d147eb2cc4c20941d7491521a845bd12da71d4c08fe930f56991e8d0e8ae2a2c",
+    "includes_untracked": true
+  },
+  "_publication": {
+    "private_paths_and_input_names": "replaced with portable placeholders",
+    "long_timing_and_progress_series": "summarized explicitly; raw evidence retained locally",
+    "commit_references": "mapped to equivalent published phase commits; artifact/source hashes identify the original measured builds"
+  }
+}

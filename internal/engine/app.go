@@ -11,9 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"signal-atlas/internal/atlas"
 	"signal-atlas/internal/compare"
-	"signal-atlas/internal/drivedb"
+	"signal-atlas/internal/gpu"
 	"signal-atlas/internal/py"
 )
 
@@ -209,8 +208,19 @@ func (d *dropRegistry) find(name string, size int64, wait time.Duration) string 
 
 func (s *Server) appGet(w http.ResponseWriter, r *http.Request, p string, params py.Params) error {
 	switch {
+	case p == "/api/app/sql/schema":
+		result, err := s.Atlas.SQLSchema(r.Context())
+		if err != nil {
+			return err
+		}
+		sendJSON(w, result, 200)
+		return nil
+	case strings.HasPrefix(p, "/api/app/preparation/"):
+		return s.preparationGet(w, r, strings.TrimPrefix(p, "/api/app/preparation/"))
+	case strings.HasPrefix(p, "/api/app/admin/"):
+		return s.adminGet(w, r, strings.TrimPrefix(p, "/api/app/admin/"))
 	case p == "/api/app/info":
-		sendJSON(w, map[string]any{"version": s.o.Version, "data": s.o.Data, "window": s.o.Host != nil}, 200)
+		sendJSON(w, map[string]any{"version": s.o.Version, "data": s.o.Data, "window": s.o.Host != nil, "survey_id": s.surveyID, "survey_path": s.Atlas.Root}, 200)
 		return nil
 	case p == "/api/app/path":
 		var size int64
@@ -223,7 +233,7 @@ func (s *Server) appGet(w http.ResponseWriter, r *http.Request, p string, params
 		}
 		return herr(404, "Not found")
 	case p == "/api/app/settings":
-		sendJSON(w, map[string]any{"settings": s.set.get(), "update": s.updateState(), "window": s.o.Host != nil}, 200)
+		sendJSON(w, map[string]any{"settings": s.set.get(), "update": s.updateState(), "window": s.o.Host != nil, "acceleration": gpu.Status()}, 200)
 		return nil
 	case p == "/api/app/drives/status":
 		sendJSON(w, s.drv.status(), 200)
@@ -243,6 +253,18 @@ func (s *Server) appGet(w http.ResponseWriter, r *http.Request, p string, params
 
 func (s *Server) appPost(w http.ResponseWriter, r *http.Request, p string, params py.Params) error {
 	switch {
+	case p == "/api/app/sql/query":
+		return s.sqlQuery(w, r)
+	case p == "/api/app/sql/cancel":
+		s.sql.stop(params.First("id", ""))
+		sendJSON(w, map[string]any{"cancelled": true}, 200)
+		return nil
+	case p == "/api/app/preparation/settings":
+		return s.preparationPost(w, r)
+	case strings.HasPrefix(p, "/api/app/admin/"):
+		return s.adminPost(w, r, strings.TrimPrefix(p, "/api/app/admin/"))
+	case p == "/api/app/map/display":
+		return s.mapDisplayPost(w, r)
 	case p == "/api/app/compare/new":
 		sendJSON(w, map[string]any{"id": s.cmp.create().id}, 200)
 		return nil
@@ -361,49 +383,7 @@ func (s *Server) appPost(w http.ResponseWriter, r *http.Request, p string, param
 		sendJSON(w, job, 202)
 		return nil
 	case p == "/api/app/database-kind" || p == "/api/app/open-database":
-		// an SQLite file on this computer (picked in the file dialog, or dropped on the window)
-		body, err := readJSON(r, 1<<16)
-		if err != nil {
-			return err
-		}
-		path, _ := body["path"].(string)
-		if path == "" {
-			return py.Errorf("No database file was given")
-		}
-		kind, err := atlas.DatabaseKind(path)
-		if err != nil {
-			// a logger's database (WarHog's day files, a Drive database): its rows are imported
-			// as the WiGLE CSV log they convert to, added to what the explorer holds
-			if k, derr := drivedb.Detect(path); derr == nil && (k == drivedb.KindTables || k == drivedb.KindDrive) {
-				kind, err = KindLogger, nil
-			} else {
-				return err
-			}
-		}
-		if p == "/api/app/database-kind" {
-			var have int64
-			for _, sg := range s.Atlas.Obs.State().Segs {
-				have += int64(sg.N)
-			}
-			n := int64(0)
-			if kind != KindLogger {
-				n = atlas.Count(path, kind)
-			}
-			sendJSON(w, map[string]any{"kind": kind, "name": filepath.Base(path), "observations": n, "store_observations": have}, 200)
-			return nil
-		}
-		skip, _ := body["skip_invalid"].(bool)
-		var job map[string]any
-		if kind == KindLogger {
-			job, err = s.Jobs.ImportLoggerDB(path, filepath.Join(s.o.Data, "uploads"), skip)
-		} else {
-			job, err = s.Jobs.OpenDatabase(path, kind, skip)
-		}
-		if err != nil {
-			return err
-		}
-		sendJSON(w, map[string]any{"job": job, "kind": kind}, 202)
-		return nil
+		return s.legacyDatabase(w, r, p)
 	case p == "/api/app/save-bytes" && r.Method == http.MethodPost:
 		// a file a page made itself (the explorer's GeoJSON export), saved where the user picks:
 		// the webviews on macOS and Linux don't download files on their own
@@ -436,28 +416,7 @@ func (s *Server) appPost(w http.ResponseWriter, r *http.Request, p string, param
 		sendJSON(w, map[string]any{"saved": true, "path": dest}, 200)
 		return nil
 	case p == "/api/app/save-atlas":
-		if s.o.Host == nil {
-			return py.Errorf("There is no file dialog here.")
-		}
-		dest, ok, err := s.o.Host.SavePath("Save the Signal Atlas database", "signal-atlas.sqlite3", "sqlite3")
-		if err != nil {
-			return err
-		}
-		if !ok {
-			sendJSON(w, map[string]any{"saved": false}, 200)
-			return nil
-		}
-		tmp := dest + ".part"
-		os.Remove(tmp)
-		if err := s.Atlas.ExportSQLite(tmp, nil); err != nil {
-			return err
-		}
-		os.Remove(dest)
-		if err := os.Rename(tmp, dest); err != nil {
-			return err
-		}
-		sendJSON(w, map[string]any{"saved": true, "path": dest}, 200)
-		return nil
+		return s.adminPost(w, r, "snapshot")
 	case p == "/api/app/open-url":
 		body, err := readJSON(r, 1<<16)
 		if err != nil {

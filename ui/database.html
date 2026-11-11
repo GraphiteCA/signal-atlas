@@ -82,8 +82,8 @@ async function call(what, body) {
 }
 
 function resultsTable(list) {
-  return '<table><tr><th>File</th><th>What it is</th><th class="n">Rows read</th><th class="n">Added</th><th class="n">Already in</th><th class="n">Skipped</th><th></th></tr>' +
-    list.map((r) => `<tr><td>${esc(r.name)}</td><td>${esc(r.kind)}</td><td class="n">${fi(r.rows_read)}</td><td class="n">${fi(r.rows_added)}</td><td class="n">${fi(r.duplicates)}</td><td class="n">${fi(r.skipped)}</td>` +
+  return '<table><tr><th>File</th><th>What it is</th><th class="n">Rows read</th><th class="n">Added</th><th class="n">Already in</th><th class="n">Skipped</th><th class="n">Zero pairs excluded</th><th></th></tr>' +
+    list.map((r) => `<tr><td>${esc(r.name)}</td><td>${esc(r.kind)}</td><td class="n">${fi(r.rows_read)}</td><td class="n">${fi(r.rows_added)}</td><td class="n">${fi(r.duplicates)}</td><td class="n">${fi(r.skipped)}</td><td class="n">${fi(r.zero_excluded_rows)}</td>` +
       `<td class="${r.error ? 'err' : 'mut'}">${r.error ? esc(r.error) : r.already_added ? 'this file was added before; skipped' : ''}</td></tr>`).join('') + '</table>';
 }
 
@@ -101,9 +101,9 @@ function show(s) {
         .map(([l, v]) => `<div class="stat"><span class="sm mut">${l}</span><b>${v}</b></div>`).join('');
       const src = d.sources || [];
       $('sourcesCard').hidden = !src.length;
-      $('sources').innerHTML = '<table><tr><th>File</th><th>What it is</th><th>Added</th><th class="n">Sightings added</th><th class="n">Already in</th><th class="n">Skipped</th><th>From</th><th>To</th></tr>' +
+      $('sources').innerHTML = '<table><tr><th>File</th><th>What it is</th><th>Added</th><th class="n">Sightings added</th><th class="n">Already in</th><th class="n">Skipped</th><th class="n">Zero pairs excluded</th><th>From</th><th>To</th></tr>' +
         src.map((r) => `<tr><td title="${esc(r.path)}">${esc(r.name)}</td><td>${esc(r.kind)}</td><td class="mut">${esc((r.added_utc || '').replace('T', ' ').replace('Z', ' UTC'))}</td>` +
-          `<td class="n">${fi(r.rows_added)}</td><td class="n">${fi(r.duplicates)}</td><td class="n">${fi(r.skipped)}</td><td class="mut">${esc(r.first_seen || '')}</td><td class="mut">${esc(r.last_seen || '')}</td></tr>`).join('') + '</table>';
+          `<td class="n">${fi(r.rows_added)}</td><td class="n">${fi(r.duplicates)}</td><td class="n">${fi(r.skipped)}</td><td class="n">${fi(r.zero_excluded_rows)}</td><td class="mut">${esc(r.first_seen || '')}</td><td class="mut">${esc(r.last_seen || '')}</td></tr>`).join('') + '</table>';
     }
   } else { $('sourcesCard').hidden = true; }
   // the job

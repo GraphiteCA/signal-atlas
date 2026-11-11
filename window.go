@@ -114,6 +114,7 @@ func runWindow(opts engine.Options) error {
 		AssetServer:      &assetserver.Options{Handler: s},
 		OnStartup: func(ctx context.Context) {
 			h.ctx = ctx
+			s.SetJobEventSink(engine.JobEventSinkFunc(func(e engine.JobEvent) { wr.EventsEmit(ctx, engine.JobEventName, e) }))
 			wr.OnFileDrop(ctx, func(x, y int, paths []string) { s.RecordDrop(paths) })
 		},
 		DragAndDrop: &options.DragAndDrop{EnableFileDrop: true, DisableWebViewDrop: false},

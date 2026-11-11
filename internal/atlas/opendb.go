@@ -1,11 +1,13 @@
 package atlas
 
 import (
+	"math"
 	"path/filepath"
 	"strconv"
 	"time"
 
 	"signal-atlas/internal/db"
+	"signal-atlas/internal/geo"
 	"signal-atlas/internal/obs"
 	"signal-atlas/internal/py"
 
@@ -88,7 +90,7 @@ func (a *Atlas) OpenDatabase(path string, progress func(done int64) error, say f
 		return nil, err
 	}
 	defer src.Close()
-	tables := []string{"imports", "estimates", "comparisons", "band_assignments", "map_assets"}
+	tables := []string{"imports", "estimates", "comparisons", "band_assignments", "map_assets", "preparation_targets", "preparation_namespaces", "preparation_checkpoints", "preparation_pending", "preparation_meta"}
 	meta := map[string][]db.Row{}
 	for _, t := range tables {
 		exists, err := db.Scalar(src, "SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?", t)
@@ -109,8 +111,44 @@ func (a *Atlas) OpenDatabase(path string, progress func(done int64) error, say f
 	var cur *obs.Segment
 	in := a.Obs.Dict.NewInterner()
 	var n, prev int64 = 0, -1
+	var zero int64
+	zeroByImport := map[int64]int64{}
+	changedNames, changedMACs := map[string]bool{}, map[string]bool{}
 	err = db.Each(src, "SELECT id,import_id,line,record_id,ssid,mac,band,band_source,radio_key,latitude,longitude,rssi_dbm,accuracy_m,first_seen,date,channel,frequency_mhz FROM observations ORDER BY id", nil, func(st *sqlite.Stmt) error {
 		id, imp, line := st.ColumnInt64(0), st.ColumnInt64(1), st.ColumnInt64(2)
+		coords := [2]float64{}
+		for k, column := range []int{9, 10} {
+			switch st.ColumnType(column) {
+			case sqlite.TypeInteger, sqlite.TypeFloat:
+				coords[k] = st.ColumnFloat(column)
+			case sqlite.TypeText:
+				var e error
+				coords[k], e = strconv.ParseFloat(st.ColumnText(column), 64)
+				if e != nil {
+					return py.Errorf("Invalid coordinate at observation %d", id)
+				}
+			default:
+				return py.Errorf("Missing coordinate at observation %d", id)
+			}
+		}
+		if math.IsNaN(coords[0]) || math.IsNaN(coords[1]) || math.IsInf(coords[0], 0) || math.IsInf(coords[1], 0) || math.Abs(coords[0]) > 90 || math.Abs(coords[1]) > 180 {
+			return py.Errorf("Invalid coordinate at observation %d", id)
+		}
+		if geo.ZeroPair(coords[0], coords[1]) {
+			zero++
+			zeroByImport[imp]++
+			ssid, mac := colText(st, 4), colText(st, 5)
+			if ssid == "" {
+				changedMACs[mac] = true
+			} else {
+				changedNames[ssid] = true
+			}
+			if (zero+n)%20000 == 0 && progress != nil {
+				return progress(n + zero)
+			}
+			return nil
+		}
+
 		// a segment's ids are consecutive: a gap or a new import starts another
 		if cur == nil || imp != cur.ImportID || id != prev+1 {
 			cur = obs.NewSegment(imp, id, 1024)
@@ -124,13 +162,13 @@ func (a *Atlas) OpenDatabase(path string, progress func(done int64) error, say f
 		r := obs.Row{SSID: in.ID(0, colText(st, 4)), MAC: in.ID(1, colText(st, 5)), Band: in.ID(2, colText(st, 6)),
 			BandSrc: in.ID(3, colText(st, 7)), Radio: in.ID(4, colText(st, 8)), Date: in.ID(5, colText(st, 14)),
 			Channel: in.ID(6, colText(st, 15)), First: in.ID(7, colText(st, 13)),
-			Lat: st.ColumnFloat(9), Lon: st.ColumnFloat(10), RSSI: st.ColumnFloat(11), Acc: colNullable(st, 12),
+			Lat: coords[0], Lon: coords[1], RSSI: st.ColumnFloat(11), Acc: colNullable(st, 12),
 			Freq: colNullable(st, 16), Line: line}
 		r.RecKind, r.RecVal = recordKind(a.Obs.Dict, rec, line)
 		cur.Append(&r)
 		n++
 		if n%20000 == 0 && progress != nil {
-			return progress(n)
+			return progress(n + zero)
 		}
 		return nil
 	})
@@ -156,7 +194,7 @@ func (a *Atlas) OpenDatabase(path string, progress func(done int64) error, say f
 	for _, s := range a.Obs.State().Segs {
 		drop[s.ImportID] = true
 	}
-	err = db.Tx(c, func() error {
+	err = db.WriteTx(c, func() error {
 		for _, t := range tables {
 			if _, err := db.Exec(c, "DELETE FROM "+t); err != nil {
 				return err
@@ -175,14 +213,33 @@ func (a *Atlas) OpenDatabase(path string, progress func(done int64) error, say f
 				}
 			}
 		}
+		// Adopt active counts from the surviving rows without losing import history.
+		// Queue insert triggers ran while copying. Restore exact counters once.
+		if _, err := db.Exec(c, "UPDATE preparation_namespaces SET pending=(SELECT count(*) FROM preparation_pending p WHERE p.namespace=preparation_namespaces.namespace)"); err != nil {
+			return err
+		}
+		if _, err := db.Exec(c, "UPDATE imports SET active_rows=valid_rows WHERE active_rows<0"); err != nil {
+			return err
+		}
+		for id, z := range zeroByImport {
+			if _, err := db.Exec(c, "UPDATE imports SET active_rows=active_rows-?,zero_excluded_rows=zero_excluded_rows+? WHERE id=?", z, z, id); err != nil {
+				return err
+			}
+		}
+		if err := dropChangedFits(c, changedNames, changedMACs); err != nil {
+			return err
+		}
 		// the observations go in last: if they can't be saved, nothing above is kept either
-		return a.Obs.Commit(obs.Change{Drop: drop, Add: segs})
+		if err := a.Obs.Commit(obs.Change{Drop: drop, Add: segs}); err != nil {
+			return err
+		}
+		return a.initializePreparationCatalog(c)
 	})
 	if err != nil {
 		return nil, err
 	}
 	return map[string]any{"opened": filepath.Base(path), "valid_rows": n, "invalid_rows": 0,
-		"imports": len(meta["imports"]), "estimates": len(meta["estimates"])}, nil
+		"zero_excluded_rows": zero, "empty": n == 0, "imports": len(meta["imports"]), "estimates": len(meta["estimates"])}, nil
 }
 
 func join(s []string) string {
@@ -229,7 +286,7 @@ func (a *Atlas) ImportWiGLE(path string, skipInvalid bool, progress func(valid, 
 	if existing, err := db.One(c, "SELECT * FROM imports WHERE sha256=?", sum); err != nil {
 		return nil, err
 	} else if existing != nil {
-		return map[string]any{"duplicate": true, "valid_rows": existing["valid_rows"], "invalid_rows": existing["invalid_rows"], "non_wifi_rows": existing["non_wifi_rows"]}, nil
+		return map[string]any{"duplicate": true, "valid_rows": existing["valid_rows"], "invalid_rows": existing["invalid_rows"], "non_wifi_rows": existing["non_wifi_rows"], "zero_excluded_rows": existing["zero_excluded_rows"], "added_rows": int64(0)}, nil
 	}
 	src, err := db.OpenReadOnly(path)
 	if err != nil {
@@ -249,15 +306,27 @@ func (a *Atlas) ImportWiGLE(path string, skipInvalid bool, progress func(valid, 
 	}
 	seg := obs.NewSegment(importID, a.Obs.NextBase(nil), 1<<16)
 	in := a.Obs.Dict.NewInterner()
-	var valid, invalid, nonWifi, line int64
+	var valid, invalid, nonWifi, zero, line int64
 	examples := []string{}
 	s := func(v string) *string { return &v }
 	err = db.Each(src, `SELECT l._id, l.bssid, n.ssid, n.capabilities, n.frequency, n.type, l.level, l.lat, l.lon,
 		l.altitude, l.accuracy, l.time FROM location l LEFT JOIN network n ON n.bssid = l.bssid ORDER BY l._id`, nil, func(st *sqlite.Stmt) error {
 		line++
+		if line%20000 == 0 && progress != nil {
+			if err := progress(valid, invalid); err != nil {
+				return err
+			}
+		}
 		typ := colText(st, 5)
 		if typ != "" && typ != "W" {
 			nonWifi++
+			return nil
+		}
+		if geo.ZeroPairText(colText(st, 7), colText(st, 8)) {
+			zero++
+			if line%20000 == 0 && progress != nil {
+				return progress(valid, invalid)
+			}
 			return nil
 		}
 		mhz := st.ColumnInt64(4)
@@ -274,9 +343,6 @@ func (a *Atlas) ImportWiGLE(path string, skipInvalid bool, progress func(valid, 
 			"CurrentLongitude": s(colText(st, 8)), "AltitudeMeters": s(colText(st, 9)), "AccuracyMeters": s(colText(st, 10)),
 			"FirstSeen": s(first), "Type": s("WIFI")}
 		o, err := ParseObservation(f, line)
-		if err == nil && o.Latitude == 0 && o.Longitude == 0 {
-			err = py.Errorf("No GPS position on row %d", line) // WiGLE records 0,0 before a fix
-		}
 		if err != nil {
 			if !skipInvalid {
 				return py.Errorf("%s (WiGLE location row %s). Choose Skip invalid rows to leave such rows out.", err.Error(), colText(st, 0))
@@ -306,18 +372,20 @@ func (a *Atlas) ImportWiGLE(path string, skipInvalid bool, progress func(valid, 
 			return nil, err
 		}
 	}
-	if valid == 0 {
+	if valid == 0 && zero == 0 {
 		return nil, py.Errorf("The WiGLE database has no Wi-Fi observations with a GPS position")
 	}
 	if say != nil {
 		say("Saving and indexing")
 	}
-	if err := a.Obs.Commit(obs.Change{Add: []*obs.Segment{seg}}); err != nil {
-		return nil, err
+	if valid > 0 {
+		if err := a.Obs.Commit(obs.Change{Add: []*obs.Segment{seg}}); err != nil {
+			return nil, err
+		}
 	}
-	err = db.Tx(c, func() error {
-		if _, err := db.Exec(c, "INSERT INTO imports(id,filename,sha256,imported_utc,valid_rows,invalid_rows,non_wifi_rows) VALUES(?,?,?,?,?,?,?)",
-			importID, filepath.Base(path), sum, py.UTCNowISO(), valid, invalid, nonWifi); err != nil {
+	err = db.WriteTx(c, func() error {
+		if _, err := db.Exec(c, "INSERT INTO imports(id,filename,sha256,imported_utc,valid_rows,invalid_rows,non_wifi_rows,zero_excluded_rows,active_rows) VALUES(?,?,?,?,?,?,?,?,?)",
+			importID, filepath.Base(path), sum, py.UTCNowISO(), valid, invalid, nonWifi, zero, valid); err != nil {
 			return err
 		}
 		return DropStaleEstimates(c, a.Obs.State(), seg) // only networks with new sightings refit
@@ -326,5 +394,5 @@ func (a *Atlas) ImportWiGLE(path string, skipInvalid bool, progress func(valid, 
 		a.Obs.Commit(obs.Change{Drop: map[int64]bool{importID: true}})
 		return nil, err
 	}
-	return map[string]any{"duplicate": false, "valid_rows": valid, "invalid_rows": invalid, "non_wifi_rows": nonWifi, "invalid_examples": examples}, nil
+	return map[string]any{"duplicate": false, "valid_rows": valid, "invalid_rows": invalid, "non_wifi_rows": nonWifi, "zero_excluded_rows": zero, "empty": valid == 0, "invalid_examples": examples}, nil
 }

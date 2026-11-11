@@ -2,6 +2,7 @@ package atlas
 
 import (
 	"sort"
+	"strings"
 
 	"signal-atlas/internal/db"
 	"signal-atlas/internal/obs"
@@ -10,9 +11,44 @@ import (
 	"zombiezen.com/go/sqlite"
 )
 
+// Keep the reference sort order, with cancellation boundaries inside large
+// sample sorts. Only our private sentinel is recovered.
+func fitSortStable(values any, less func(int, int) bool, cancelled func() bool) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if r == ErrCancelled {
+				err = ErrCancelled
+			} else {
+				panic(r)
+			}
+		}
+	}()
+	n := 0
+	sort.SliceStable(values, func(i, j int) bool {
+		n++
+		if n&4095 == 0 && cancelled != nil && cancelled() {
+			panic(ErrCancelled)
+		}
+		return less(i, j)
+	})
+	if cancelled != nil && cancelled() {
+		return ErrCancelled
+	}
+	return nil
+}
+
 // FitRadio is serve_survey.Jobs.fit_radio(group, params): one radio, or one shared group, fitted
 // from the store. Many run at once, one per core.
 func (a *Atlas) FitRadio(group Group, p py.Params, cancelled func() bool) (map[string]any, error) {
+	check := func() error {
+		if cancelled != nil && cancelled() {
+			return ErrCancelled
+		}
+		return nil
+	}
+	if err := check(); err != nil {
+		return nil, err
+	}
 	scope, _, err := EstimateScope(p)
 	if err != nil {
 		return nil, err
@@ -24,6 +60,13 @@ func (a *Atlas) FitRadio(group Group, p py.Params, cancelled func() bool) (map[s
 	mem := members(group)
 	if mem == nil {
 		mem = []Group{group}
+	}
+	if gs(group, "ssid") == "" && len(mem) > 1 {
+		for _, member := range mem[1:] {
+			if !strings.EqualFold(gs(mem[0], "mac"), gs(member, "mac")) {
+				return nil, py.Errorf("Hidden SSIDs must be fitted separately by BSSID/MAC address")
+			}
+		}
 	}
 	keys := make([]string, len(mem))
 	for i, m := range mem {
@@ -43,31 +86,45 @@ func (a *Atlas) FitRadio(group Group, p py.Params, cancelled func() bool) (map[s
 		sampleLimit = int64(256 * len(keys))
 	}
 	result["status"], result["co_location_assumed"], result["sample_limit"], result["fit_mode"], result["observation_scope"] = "insufficient", shared, sampleLimit, mode, scope
-	// the matching rows of these radios, in id order
-	var rows []uint32
-	for _, k := range keys {
-		if id, ok := a.Obs.Dict.Lookup(k); ok {
-			rows = append(rows, st.ByRadio[id]...)
-		}
-	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i] < rows[j] })
-	match := rows[:0:0]
+	var match []uint32
+	var count int64
 	var dmin, dmax any
-	for _, g := range rows {
-		s, i := st.Loc(g)
-		if !f.Match(s, i) {
-			continue
+	if mode == "sample" {
+		match, count, dmin, dmax, err = selectSampleRows(st, a.Obs.Dict, f, keys, cancelled)
+		if err != nil {
+			return nil, err
 		}
-		match = append(match, g)
-		d := st.Str[s.Date[i]]
-		if dmin == nil || d < dmin.(string) {
-			dmin = d
+	} else {
+		// the matching rows of these radios, in id order
+		var rows []uint32
+		for _, k := range keys {
+			if id, ok := a.Obs.Dict.Lookup(k); ok {
+				rows = append(rows, st.ByRadio[id]...)
+			}
 		}
-		if dmax == nil || d > dmax.(string) {
-			dmax = d
+		sort.Slice(rows, func(i, j int) bool { return rows[i] < rows[j] })
+		match = rows[:0:0]
+		for n, g := range rows {
+			if n&4095 == 0 {
+				if err := check(); err != nil {
+					return nil, err
+				}
+			}
+			s, i := st.Loc(g)
+			if !f.Match(s, i) {
+				continue
+			}
+			match = append(match, g)
+			d := st.Str[s.Date[i]]
+			if dmin == nil || d < dmin.(string) {
+				dmin = d
+			}
+			if dmax == nil || d > dmax.(string) {
+				dmax = d
+			}
 		}
+		count = int64(len(match))
 	}
-	count := int64(len(match))
 	result["count"], result["first_date"], result["last_date"] = count, dmin, dmax
 	if count < 4 {
 		result["reason"] = "Fewer than four observations within the selected dates and filters"
@@ -96,12 +153,17 @@ func (a *Atlas) FitRadio(group Group, p py.Params, cancelled func() bool) (map[s
 		}
 		m := map[gk]*agg{}
 		var order []gk
-		for _, g := range match {
+		for n, g := range match {
+			if n&4095 == 0 {
+				if err := check(); err != nil {
+					return nil, err
+				}
+			}
 			s, i := st.Loc(g)
 			k := gk{s.Radio[i], s.Lat[i], s.Lon[i]}
 			x := m[k]
 			if x == nil {
-				x = &agg{minID: s.Base + int64(i), mac: s.MAC[i]}
+				x = &agg{minID: s.ID(i), mac: s.MAC[i]}
 				m[k] = x
 				order = append(order, k)
 			}
@@ -119,49 +181,10 @@ func (a *Atlas) FitRadio(group Group, p py.Params, cancelled func() bool) (map[s
 			sample = append(sample, smp{id: x.minID, radio: k.radio, mac: x.mac, lat: k.lat, lon: k.lon, rssi: t / float64(x.n), weight: float64(x.n), within: w})
 			weights, within = append(weights, float64(x.n)), append(within, w)
 		}
-	case count <= 256:
+	default:
 		for _, g := range match {
 			s, i := st.Loc(g)
-			sample = append(sample, smp{id: s.Base + int64(i), radio: s.Radio[i], mac: s.MAC[i], lat: s.Lat[i], lon: s.Lon[i], rssi: s.RSSI[i]})
-		}
-	default:
-		for _, k := range keys {
-			kid, ok := a.Obs.Dict.Lookup(k)
-			if !ok {
-				continue
-			}
-			var mine []smp
-			for _, g := range match {
-				s, i := st.Loc(g)
-				if s.Radio[i] == kid {
-					mine = append(mine, smp{id: s.Base + int64(i), radio: s.Radio[i], mac: s.MAC[i], lat: s.Lat[i], lon: s.Lon[i], rssi: s.RSSI[i]})
-				}
-			}
-			strongest := append([]smp(nil), mine...)
-			sort.SliceStable(strongest, func(a, b int) bool {
-				if strongest[a].rssi != strongest[b].rssi {
-					return strongest[a].rssi > strongest[b].rssi
-				}
-				return strongest[a].id < strongest[b].id
-			})
-			strongest = strongest[:min(32, len(strongest))]
-			spread := append([]smp(nil), mine...)
-			hash := func(id int64) int64 { return (id*1103515245 + 12345) % 2147483647 }
-			sort.SliceStable(spread, func(a, b int) bool {
-				ha, hb := hash(spread[a].id), hash(spread[b].id)
-				if ha != hb {
-					return ha < hb
-				}
-				return spread[a].id < spread[b].id
-			})
-			spread = spread[:min(224, len(spread))]
-			seen := map[int64]bool{}
-			for _, x := range append(strongest, spread...) {
-				if !seen[x.id] {
-					seen[x.id] = true
-					sample = append(sample, x)
-				}
-			}
+			sample = append(sample, smp{id: s.ID(i), radio: s.Radio[i], mac: s.MAC[i], lat: s.Lat[i], lon: s.Lon[i], rssi: s.RSSI[i]})
 		}
 	}
 	var aliases map[string]string
@@ -189,13 +212,15 @@ func (a *Atlas) FitRadio(group Group, p py.Params, cancelled func() bool) (map[s
 	result["sampled_observations"], result["used_observations"], result["coordinate_groups"] = used, used, int64(len(sample))
 	model, err := NewLocationModel(cols, 3, weights, within, cancelled)
 	if err == nil {
+		solver := p.First("solver", "reference")
+		model.accelerated = solver == GPUReference || solver == GPUFast
 		idx := make([]int, len(sample))
 		for i := range idx {
 			idx[i] = i
 		}
 		var fit *Fit
 		fitter := model.Fit
-		if p.Is("solver", fitSolverFast) {
+		if solver == fitSolverFast || solver == GPUFast {
 			fitter = model.FitFast
 		}
 		if fit, err = fitter(idx, 3.0, 500, 10, false); err == nil {
@@ -206,6 +231,13 @@ func (a *Atlas) FitRadio(group Group, p py.Params, cancelled func() bool) (map[s
 			result["status"], result["latitude"], result["longitude"] = "fitted", fit.Latitude, fit.Longitude
 			result["residual_rms_db"], result["boundary_limited"], result["path_loss_exponent"] = fit.RMS, fit.BoundaryLimited, 3.0
 			result["note"] = note + "Fixed-power, stationary-radio model. Planning radius is not a confidence interval."
+			if model.accelerated {
+				backend := "opencl64-v1"
+				if model.gpuCalls == 0 {
+					backend = "cpu-fallback"
+				}
+				result["acceleration"] = map[string]any{"backend": backend, "gpu_grids": model.gpuCalls, "cpu_fallback_grids": model.gpuFallbacks, "solver": solver}
+			}
 		}
 	}
 	if err != nil {
@@ -219,6 +251,13 @@ func (a *Atlas) FitRadio(group Group, p py.Params, cancelled func() bool) (map[s
 
 // FitAndStore fits a group and saves the result, as the Python job loop does after each fit.
 func (a *Atlas) FitAndStore(c *sqlite.Conn, group Group, p py.Params, scopeKey string, cancelled func() bool) (string, error) {
+	a.WriteMu.Lock()
+	key := groupTarget(group)
+	version, err := targetVersion(c, key)
+	a.WriteMu.Unlock()
+	if err != nil {
+		return "", err
+	}
 	r, err := a.FitRadio(group, p, cancelled)
 	if err != nil {
 		return "", err
@@ -226,6 +265,18 @@ func (a *Atlas) FitAndStore(c *sqlite.Conn, group Group, p py.Params, scopeKey s
 	text, err := py.Dumps(r, py.DumpOpts{})
 	if err != nil {
 		return "", err
+	}
+	a.WriteMu.Lock()
+	defer a.WriteMu.Unlock()
+	if cancelled != nil && cancelled() {
+		return "", ErrCancelled
+	}
+	current, err := targetVersion(c, key)
+	if err != nil {
+		return "", err
+	}
+	if current != version {
+		return "", ErrStaleInput
 	}
 	if _, err := db.Exec(c, "INSERT OR REPLACE INTO estimates(radio_key,scope_key,result) VALUES(?,?,?)", gs(group, "radio_key"), scopeKey, text); err != nil {
 		return "", err

@@ -29,14 +29,20 @@ def unknown_band_aliases(groups):
     return aliases
 
 
+def estimation_identity(group):
+    # Blank/hidden names are display labels, not evidence of co-location.
+    return (group['ssid'], '' if group['ssid'] else group['mac'].upper())
+
+
 def joint_groups(groups, params):
     if params.get('shared') != ['1']:
         return []
     by_ssid = defaultdict(list)
     for group in groups:
-        by_ssid[group['ssid']].append(group)
+        by_ssid[estimation_identity(group)].append(group)
     result = []
-    for ssid, members in by_ssid.items():
+    for members in by_ssid.values():
+        ssid = members[0]['ssid']
         if len(members) < 2:
             continue
         if len(members) > 20:
@@ -86,8 +92,8 @@ def estimation_groups(groups, params):
     if shared_only:
         counts = defaultdict(int)
         for group in groups:
-            counts[group['ssid']] += 1
-        independent = [g for g in groups if counts[g['ssid']]==1 and g['count']>=4]
+            counts[estimation_identity(group)] += 1
+        independent = [g for g in groups if counts[estimation_identity(g)]==1 and g['count']>=4]
     else:
         independent = [g for g in independent_groups(groups) if g['count']>=4]
     return independent + shared

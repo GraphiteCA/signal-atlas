@@ -1,0 +1,58 @@
+{
+  "schema": 1,
+  "date": "2026-11-11",
+  "measured_published_commit": "b4dd409",
+  "scope": "One fresh synthetic import; process-cold, filesystem cache uncontrolled. No competing agent benchmarks or test suite. Not a repeated import distribution or an AP rendering benchmark.",
+  "fixture": {
+    "schema": 1,
+    "generator": 2,
+    "seed": 20261110,
+    "rows": 10000000,
+    "radios": 200000,
+    "repeated_positions": false,
+    "sha256": "66da3e1c4446aede500635fd3ac7bf3fd39a1acb52ecbb6269656e106b13c813",
+    "bytes": 1028470309,
+    "zero_coordinate_rows": 100,
+    "baseline_expected_rows": 10000000,
+    "filtered_expected_rows": 9999900
+  },
+  "imports": [
+    {
+      "file": "cardinality-10m.csv",
+      "outcome": {
+        "duplicate": false,
+        "empty": false,
+        "invalid_examples": [],
+        "invalid_rows": 0,
+        "non_wifi_rows": 0,
+        "valid_rows": 9999900,
+        "zero_excluded_rows": 100
+      },
+      "rows_per_minute": 34434222.30739293,
+      "wall_seconds": 17.4243517
+    }
+  ],
+  "observation_count": 9999900,
+  "peak_engine_working_set_bytes": 2274353152,
+  "threads": 8,
+  "exit_code": 0,
+  "validation": {
+    "local_check_command": "python scripts/check.py --race --gpu --cross",
+    "go_suite": "passed; active Python parity (93.539 s) and Node parity",
+    "python_reference_tests": 62,
+    "javascript_controller_tests": 13,
+    "benchmark_safety_and_publication_tests": 10,
+    "race": "obs/atlas/engine/GPU targeted suite passed",
+    "physical_gpu": "float64 scoring/final fits and 40-case known-truth matrix passed",
+    "go_vet": "passed",
+    "vendor_hashes": "all match pinned manifest",
+    "cross_builds": [
+      "Linux amd64 core CPU fallback",
+      "macOS arm64 core CPU fallback"
+    ],
+    "publication": "11 sanitized phase commits scanned for original paths/private input filenames; production code and assets identical to original ad1e342; raw evidence retained locally",
+    "windows_desktop": "production-tagged, trimpath build passed",
+    "duckdb_benchmark_module": "go test ./... passed (packages compile; no test files)",
+    "windows_desktop_sha256": "9f86bf19eb460c0ca03f40ea0e1e1168a080d3b3dedf9f17144bdfa520ee5056"
+  }
+}

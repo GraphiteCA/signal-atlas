@@ -27,13 +27,13 @@ func allRows(a *Atlas) []Row {
 	return out
 }
 
-func table(t *testing.T, a *Atlas, q string) []db.Row {
+func table(t *testing.T, a *Atlas, q string, args ...any) []db.Row {
 	c, put, err := a.Conn(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer put()
-	rows, err := db.All(c, q)
+	rows, err := db.All(c, q, args...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,14 +155,11 @@ INSERT INTO location(bssid,level,lat,lon,altitude,accuracy,time) VALUES
 		t.Fatal(err)
 	}
 	defer a.Close()
-	if _, err := a.ImportWiGLE(path, false, nil, nil); err == nil {
-		t.Fatal("a row with no GPS fix should stop the import unless invalid rows are skipped")
-	}
-	r, err := a.ImportWiGLE(path, true, nil, nil)
+	r, err := a.ImportWiGLE(path, false, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r["valid_rows"] != int64(2) || r["invalid_rows"] != int64(1) || r["non_wifi_rows"] != int64(1) {
+	if r["valid_rows"] != int64(2) || r["invalid_rows"] != int64(0) || r["non_wifi_rows"] != int64(1) || r["zero_excluded_rows"] != int64(1) {
 		t.Fatalf("result %v", r)
 	}
 	rows := allRows(a)

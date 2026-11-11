@@ -22,9 +22,9 @@ implementation, its tests and the explorer pages the app shows. `internal/atlas`
 | [zombiezen.com/go/sqlite](https://github.com/zombiezen/go-sqlite) | SQLite access | ISC |
 | [modernc.org/sqlite](https://gitlab.com/cznic/sqlite) | SQLite in pure Go | BSD-3-Clause |
 | [SQLite](https://sqlite.org) | the explorer's metadata store | public domain |
-| [Leaflet](https://leafletjs.com) | maps (loaded from unpkg.com) | BSD-2-Clause |
-| [MapLibre GL JS](https://maplibre.org) | the GPU map's base map (loaded from unpkg.com) | BSD-3-Clause |
-| [deck.gl](https://deck.gl) | the GPU map's points (loaded from unpkg.com) | MIT |
+| [Leaflet](https://leafletjs.com) | maps (GPU-map copy bundled under `ui/vendor/leaflet`) | BSD-2-Clause |
+| [MapLibre GL JS](https://maplibre.org) | the GPU map's base map (bundled under `ui/vendor/maplibre`) | BSD-3-Clause |
+| [deck.gl](https://deck.gl) | the GPU map's points (bundled under `ui/vendor/deck`) | MIT |
 | [NSIS](https://nsis.sourceforge.io) | the Windows installer | zlib/libpng |
 
 The full dependency list is in `go.mod`; each module carries its own license.

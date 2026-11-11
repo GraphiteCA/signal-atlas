@@ -1,6 +1,7 @@
 package atlas
 
 import (
+	"context"
 	"encoding/json"
 	"math"
 	"sort"
@@ -34,6 +35,9 @@ func (t *targetMap) set(k string, g Group) {
 
 // overviewTargets is overview_targets(db, scoped, ssid, hidden_mac, individual, shared).
 func (a *Atlas) overviewTargets(scoped py.Params, ssid, hiddenMAC string, individual, shared bool) (*targetMap, error) {
+	return a.overviewTargetsContext(context.Background(), scoped, ssid, hiddenMAC, individual, shared)
+}
+func (a *Atlas) overviewTargetsContext(ctx context.Context, scoped py.Params, ssid, hiddenMAC string, individual, shared bool) (*targetMap, error) {
 	f, st, err := a.compile(scoped, false)
 	if err != nil {
 		return nil, err
@@ -50,7 +54,14 @@ func (a *Atlas) overviewTargets(scoped py.Params, ssid, hiddenMAC string, indivi
 	}
 	type key struct{ mac, band uint32 }
 	agg := map[key]*radioAgg{}
-	for _, g := range st.BySSID[sid] {
+	rows := st.BySSID[sid]
+	if ssid == "" {
+		rows = st.ByTrans[obs.Pair{sid, mid}]
+	}
+	for n, g := range rows {
+		if n&4095 == 0 && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		s, i := st.Loc(g)
 		if ssid == "" && s.MAC[i] != mid {
 			continue
@@ -61,6 +72,11 @@ func (a *Atlas) overviewTargets(scoped py.Params, ssid, hiddenMAC string, indivi
 		k := key{s.MAC[i], s.Band[i]}
 		r := agg[k]
 		if r == nil {
+			// Shared grouping accepts at most 20 distinct radios. Once the
+			// filtered scan has found 21, further rows cannot change that.
+			if shared && !individual && len(agg) == 20 {
+				return t, nil
+			}
 			r = &radioAgg{radio: s.Radio[i], ssid: s.SSID[i], mac: s.MAC[i], band: s.Band[i]}
 			agg[k] = r
 		}
@@ -213,13 +229,11 @@ func (a *Atlas) AreaPlan(c *sqlite.Conn, p py.Params, display, discover bool) (m
 const MaxDisplayFits = 1500
 
 func visibleFits(c *sqlite.Conn, exact, sample string, b [4]float64, targetsFor func(string, string) (*targetMap, error)) ([]any, error) {
-	where := `FROM estimates e
-        WHERE e.scope_key IN (?, ?) AND json_extract(e.result,'$.status')='fitted'
-        AND json_extract(e.result,'$.longitude') BETWEEN ? AND ?
-        AND json_extract(e.result,'$.latitude') BETWEEN ? AND ?
-        AND (e.scope_key=? OR NOT EXISTS (SELECT 1 FROM estimates x
-            WHERE x.radio_key=e.radio_key AND x.scope_key=?
-            AND json_extract(x.result,'$.status')='fitted'))`
+	where := `FROM map_locations l JOIN estimates e USING(radio_key,scope_key)
+        WHERE l.scope_key IN (?, ?)
+        AND l.longitude BETWEEN ? AND ? AND l.latitude BETWEEN ? AND ?
+        AND (l.scope_key=? OR NOT EXISTS (SELECT 1 FROM map_locations x
+            WHERE x.radio_key=l.radio_key AND x.scope_key=?))`
 	args := []any{exact, sample, b[0], b[2], b[1], b[3], exact, exact}
 	n, err := db.Scalar(c, "SELECT count(*) "+where, args...)
 	if err != nil {

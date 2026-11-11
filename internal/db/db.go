@@ -14,8 +14,8 @@ import (
 // Row is one result row, as Python's dict(sqlite3.Row).
 type Row = map[string]any
 
-// Open opens a database read-write (creating it), with Python's 30 s busy timeout and, when fk,
-// foreign keys on (Signal Atlas's connect()).
+// Open opens a database read-write (creating it), with cancellable lock waits
+// and, when fk, foreign keys on (Signal Atlas's connect()).
 func Open(path string, fk bool) (*sqlite.Conn, error) {
 	c, err := sqlite.OpenConn(path, sqlite.OpenReadWrite|sqlite.OpenCreate|sqlite.OpenURI|sqlite.OpenNoMutex)
 	if err != nil {
@@ -42,9 +42,10 @@ func OpenReadOnly(path string) (*sqlite.Conn, error) {
 }
 
 func setup(c *sqlite.Conn, fk bool) error {
-	if err := sqlitex.ExecuteTransient(c, "PRAGMA busy_timeout=30000", nil); err != nil {
-		return err
-	}
+	// SQLite's sleeping busy_timeout handler does not promptly observe
+	// SetInterrupt while waiting for a writer. The driver's handler selects on
+	// the active context/connection cancellation channel instead.
+	c.SetBlockOnBusy()
 	if fk {
 		return sqlitex.ExecuteTransient(c, "PRAGMA foreign_keys=ON", nil)
 	}
@@ -205,27 +206,64 @@ func Exec(c *sqlite.Conn, sql string, args ...any) (int64, error) {
 	return int64(c.Changes()), nil
 }
 
+// CachedEach reuses a fixed internal statement on its exclusively leased
+// connection. Keep arbitrary SQL browser text on the transient path.
+func CachedEach(c *sqlite.Conn, query string, args []any, fn func(*sqlite.Stmt) error) error {
+	return sqlitex.Execute(c, query, &sqlitex.ExecOptions{Args: args, ResultFunc: fn})
+}
+func CachedExec(c *sqlite.Conn, query string, args ...any) (int64, error) {
+	e := CachedEach(c, query, args, nil)
+	return int64(c.Changes()), e
+}
+func CachedScalar(c *sqlite.Conn, query string, args ...any) (any, error) {
+	var value any
+	e := CachedEach(c, query, args, func(s *sqlite.Stmt) error {
+		if value == nil {
+			value = Value(s, 0)
+		}
+		return nil
+	})
+	return value, e
+}
+
 // Script runs several statements (executescript).
 func Script(c *sqlite.Conn, sql string) error { return sqlitex.ExecuteScript(c, sql, nil) }
 
 // Tx runs fn in a transaction (BEGIN … COMMIT, ROLLBACK on an error), as Python's `with conn:`.
 // Inside an open transaction it just runs fn.
-func Tx(c *sqlite.Conn, fn func() error) (err error) {
+func Tx(c *sqlite.Conn, fn func() error) error { return transaction(c, "BEGIN", fn) }
+
+// WriteTx reserves the writer before any version/checkpoint reads. This avoids
+// a deferred read snapshot racing a concurrent commit and failing to upgrade.
+// Read-only map snapshots deliberately continue to use Tx (deferred BEGIN).
+func WriteTx(c *sqlite.Conn, fn func() error) error { return transaction(c, "BEGIN IMMEDIATE", fn) }
+func transaction(c *sqlite.Conn, begin string, fn func() error) (err error) {
 	if !c.AutocommitEnabled() {
 		return fn()
 	}
-	if _, err := Exec(c, "BEGIN"); err != nil {
-		return err
+	if _, err = Exec(c, begin); err != nil {
+		return fmt.Errorf("%s: %w", begin, err)
+	}
+	rollback := func() {
+		if !c.AutocommitEnabled() {
+			previous := c.SetInterrupt(nil)
+			_, cleanup := Exec(c, "ROLLBACK")
+			c.SetInterrupt(previous)
+			if cleanup != nil {
+				err = fmt.Errorf("%w; rollback: %v", err, cleanup)
+			}
+		}
 	}
 	defer func() {
 		if p := recover(); p != nil {
-			Exec(c, "ROLLBACK")
+			rollback()
 			panic(p)
 		}
+		if err == nil {
+			_, err = Exec(c, "COMMIT")
+		}
 		if err != nil {
-			Exec(c, "ROLLBACK")
-		} else if _, e := Exec(c, "COMMIT"); e != nil {
-			err = e
+			rollback()
 		}
 	}()
 	return fn()

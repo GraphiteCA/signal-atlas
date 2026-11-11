@@ -388,8 +388,12 @@ func EstimateScope(p py.Params) (map[string]any, string, error) {
 	scope["version"] = int64(2)
 	scope["fit_mode"] = mode
 	scope["min_rssi"] = m
-	if p.Is("solver", fitSolverFast) {
-		scope["solver"] = fitSolverFast // fast fits are cached apart from exact ones
+	solver, err := solverFromParams(p)
+	if err != nil {
+		return nil, "", err
+	}
+	if solver != "reference" {
+		scope["solver"] = solver // Never interchange CPU/GPU/algorithm versions.
 	}
 	return scope, py.MustDumps(scope, py.DumpOpts{Compact: true}), nil
 }
@@ -455,10 +459,11 @@ func (h *csvHeader) fields(rec []string) Fields {
 }
 
 type parsedRow struct {
-	obs     *Observation
-	line    int64
-	nonWifi bool
-	err     error
+	zeroPair bool
+	obs      *Observation
+	line     int64
+	nonWifi  bool
+	err      error
 }
 
 // parallelRows runs produce (one goroutine, emitting records in order), parses them on every core
@@ -472,9 +477,9 @@ func parallelRows(produce func(emit func([]string, int64) error) error, parse fu
 		out   []parsedRow
 		done  chan struct{}
 	}
-	workers := max(1, runtime.NumCPU()-1)
-	jobs := make(chan *job, workers*4)
-	ordered := make(chan *job, workers*4)
+	workers := max(1, min(runtime.NumCPU(), runtime.GOMAXPROCS(0))-1)
+	jobs := make(chan *job, workers*2)
+	ordered := make(chan *job, workers*2)
 	stop := make(chan struct{})
 	var stopOnce sync.Once
 	halt := func() { stopOnce.Do(func() { close(stop) }) }
@@ -488,6 +493,11 @@ func parallelRows(produce func(emit func([]string, int64) error) error, parse fu
 				for k := range j.recs {
 					j.out[k] = parse(j.recs[k], j.lines[k])
 				}
+				// Parsed observations retain their own field strings; the CSV
+				// record slices and line buffer are no longer needed while
+				// this batch waits for earlier batches to commit in order.
+				j.recs = nil
+				j.lines = nil
 				close(j.done)
 			}
 		}()

@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"os"
@@ -12,16 +13,20 @@ import (
 	"signal-atlas/internal/atlas"
 	"signal-atlas/internal/drivedb"
 	"signal-atlas/internal/py"
+	"zombiezen.com/go/sqlite"
 )
 
 // Jobs is Signal Atlas's one-background-job-at-a-time runner (serve_survey.Jobs), polled at
 // /api/job and cancellable. An estimate job fits one radio per core at once.
 type Jobs struct {
-	a         *atlas.Atlas
-	mu        sync.Mutex
-	state     map[string]any
-	cancelled atomic.Bool
-	Threads   int
+	onCommitted func(*sqlite.Conn, atlas.Group, py.Params, string)
+	done        chan struct{}
+	retired     bool
+	a           *atlas.Atlas
+	mu          sync.Mutex
+	state       map[string]any
+	cancelled   atomic.Bool
+	Threads     int
 }
 
 // NewJobs is a job runner for a store (the benchmark uses it; the server makes its own).
@@ -56,9 +61,36 @@ func (j *Jobs) Running() bool {
 	defer j.mu.Unlock()
 	return j.state["status"] == "running"
 }
+func (j *Jobs) Retired() bool { j.mu.Lock(); defer j.mu.Unlock(); return j.retired }
 
 // Cancel asks the running job to stop.
 func (j *Jobs) Cancel() { j.cancelled.Store(true) }
+
+func (j *Jobs) Retire() { j.mu.Lock(); j.retired = true; j.cancelled.Store(true); j.mu.Unlock() }
+func (j *Jobs) Resume() { j.mu.Lock(); j.retired = false; j.mu.Unlock() }
+func (j *Jobs) suspendIdle() bool {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.retired || j.state["status"] == "running" {
+		return false
+	}
+	j.retired = true
+	return true
+}
+func (j *Jobs) Wait(ctx context.Context) error {
+	j.mu.Lock()
+	done := j.done
+	j.mu.Unlock()
+	if done == nil {
+		return nil
+	}
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
 
 func (j *Jobs) isCancelled() bool { return j.cancelled.Load() }
 
@@ -66,15 +98,18 @@ func newHex() string { var b [16]byte; rand.Read(b[:]); return hex.EncodeToStrin
 
 func (j *Jobs) start(kind string, work func() (any, error)) (map[string]any, error) {
 	j.mu.Lock()
-	if j.state["status"] == "running" {
+	if j.retired || j.state["status"] == "running" {
 		j.mu.Unlock()
 		return nil, py.Errorf("Another background job is running; wait or cancel it first")
 	}
 	j.cancelled.Store(false)
 	id := newHex()
 	j.state = map[string]any{"id": id, "status": "running", "kind": kind, "completed": 0, "total": 0}
+	done := make(chan struct{})
+	j.done = done
 	j.mu.Unlock()
 	go func() {
+		defer close(done)
 		r, err := work()
 		j.mu.Lock()
 		defer j.mu.Unlock()
@@ -150,7 +185,7 @@ func (j *Jobs) ImportLoggerDB(path, tmpDir string, skip bool) (map[string]any, e
 		tmp := filepath.Join(tmpDir, "db-"+newHex()+".csv")
 		defer os.Remove(tmp)
 		j.update(map[string]any{"stage": "Reading the database", "completed": 0, "invalid": 0, "bytes_read": 0, "bytes_total": 1})
-		_, _, noPosition, err := drivedb.ToCSV(path, tmp, "signal-atlas", true, func(rows, done, total int64) {
+		_, _, _, err := drivedb.ToCSV(path, tmp, "signal-atlas", false, func(rows, done, total int64) {
 			j.update(map[string]any{"bytes_read": done, "bytes_total": max(total, 1)})
 		})
 		if err != nil {
@@ -167,7 +202,7 @@ func (j *Jobs) ImportLoggerDB(path, tmpDir string, skip bool) (map[string]any, e
 			return nil
 		}, filepath.Base(path), func(stage string) { j.update(map[string]any{"stage": stage}) })
 		if r != nil {
-			r["no_position_rows"] = noPosition
+			r["no_position_rows"] = r["zero_excluded_rows"]
 		}
 		return r, err
 	})
@@ -281,6 +316,9 @@ func (j *Jobs) fitPool(groups []atlas.Group, p py.Params, scopeKey string, done 
 					stop.Store(true)
 					return
 				}
+				if j.onCommitted != nil {
+					j.onCommitted(c, groups[i], p, scopeKey)
+				}
 				done(status)
 			}
 		}()
@@ -364,6 +402,9 @@ func (j *Jobs) Estimate(p py.Params, groups []atlas.Group, kind string) (map[str
 						errMu.Unlock()
 						stop.Store(true)
 						return
+					}
+					if j.onCommitted != nil {
+						j.onCommitted(c, groups[i], p, scopeKey)
 					}
 					if status == "fitted" {
 						fitted.Add(1)

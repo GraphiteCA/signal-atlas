@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "upstream_commit": "6d8833659906faa89b1677424caf5f5cd905c56d",
+  "generator": 2,
+  "seed": 20261110,
+  "profiles": {
+    "controlled": {"gomaxprocs": 8, "fit_workers": 8, "donor_duckdb_threads": 8, "donor_working_memory": "2GB"},
+    "upstream_defaults": {"gomaxprocs": 16, "fit_workers": 14}
+  },
+  "limits": {"headless_peak_working_set_gib": 12, "process_wall_seconds": 1800, "native_family_working_set_gib": 6},
+  "cache_policy": "Filesystem cache uncontrolled. Report process-cold reopen separately from warm requests; no cold-disk claims.",
+  "trace_policy": "Run 200 requests per representative trace once per fixture. Additional import trials and process-cold reopen use one request per trace. Capacity tests may use reduced query counts after representative latency is established.",
+  "diagnostic_override": {"engine":"donor-duckdb","fixture":"cardinality-10m","requests_per_trace":5,"reason":"The full trace was interrupted after about thirteen minutes. Its partial run is retained as an excluded diagnostic. Replacement latency samples are explicitly limited and do not constitute a 200-request p95."},
+  "workloads": [
+    {"id": "smoke-1m", "rows": 1000000, "radios": 1000, "trials": 1, "requests_per_trace": 200, "fits_per_mode": 8, "export_sqlite": true},
+    {"id": "repeated-10m", "rows": 10000000, "radios": 1000, "trials": 3, "requests_per_trace": 200, "fits_per_mode": 8},
+    {"id": "cardinality-10m", "rows": 10000000, "radios": 200000, "trials": 3, "requests_per_trace": 200, "fits_per_mode": 8},
+    {"id": "capacity-50m", "rows": 50000000, "radios": 1000, "trials": 1, "requests_per_trace": 200, "fits_per_mode": 0},
+    {"id": "real-inputs", "oracle": "python/survey_data.py", "trials": 1, "requests_per_trace": 200, "fits_per_mode": 64},
+    {"id": "archive-1m", "rows": 1000000, "trials": 1, "roundtrip": ["CSV", "per-day CSV", "overlap dedup"]},
+    {"id": "native-render", "synthetic_saved_locations": 50000, "pan_frames_per_scenario": 120, "gpu_observation_limits": [500000,2000000,8000000]},
+    {"id": "incremental", "checks": ["small imports", "untouched fit retention", "concurrent viewport", "cancel", "resume/cache reuse"]}
+  ],
+  "provisional_targets": {"new_eligible_rows_per_minute": 10000000, "cached_viewport_p95_ms": 250, "overview_draw_ms": 16, "committed_fit_visibility_ms": 500, "cancellation_ack_ms": 1000}
+}

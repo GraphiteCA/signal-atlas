@@ -3,3 +3,10 @@
 Dockerfile  text eol=lf
 *.desktop   text eol=lf
 *.plist     text eol=lf
+
+# Keep pinned vendor downloads byte-identical to their SHA-256 manifest.
+ui/vendor/** -text -whitespace
+
+# Collapse third-party assets and generated evidence in the PR review by default.
+ui/vendor/** linguist-vendored=true
+benchmarks/baselines/*.json linguist-generated=true

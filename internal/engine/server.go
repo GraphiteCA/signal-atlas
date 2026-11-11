@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"signal-atlas/internal/atlas"
 	"signal-atlas/internal/db"
@@ -43,28 +44,44 @@ type Host interface {
 
 // Options configure a Server.
 type Options struct {
-	UI       fs.FS // ui/: the home page and the page bridge
-	Compare  fs.FS // web/: compare.html
-	Explorer fs.FS // python/templates/: Graphite's explorer
-	Data     string
-	Version  string
-	Hosts    []string // Host header values allowed besides the listening address
-	Origins  []string // Origin header values allowed besides http://<host> (wails://wails on macOS and Linux)
-	Host     Host
+	DisablePreparation bool  // isolated/manual benchmark and test workloads
+	UI                 fs.FS // ui/: the home page and the page bridge
+	Compare            fs.FS // web/: compare.html
+	Explorer           fs.FS // python/templates/: Graphite's explorer
+	Data               string
+	Version            string
+	Hosts              []string // Host header values allowed besides the listening address
+	Origins            []string // Origin header values allowed besides http://<host> (wails://wails on macOS and Linux)
+	Host               Host
 }
 
 // Server is the engine.
 type Server struct {
-	o       Options
-	Atlas   *atlas.Atlas
-	Jobs    *Jobs
-	cmp     *compareSessions
-	drops   *dropRegistry
-	drv     *drives
-	set     *settingsStore
-	hostsMu sync.RWMutex
-	hosts   map[string]bool
-	origins map[string]bool
+	o              Options
+	Atlas          *atlas.Atlas
+	Jobs           *Jobs
+	cmp            *compareSessions
+	drops          *dropRegistry
+	drv            *drives
+	set            *settingsStore
+	surveyMu       sync.RWMutex
+	surveyID       string
+	handoff        atomic.Bool
+	surveyLock     *os.File
+	appLock        *os.File
+	admin          adminOperations
+	adminGate      sync.Mutex
+	uploadMu       sync.Mutex
+	uploads        map[string]string
+	closed         atomic.Bool
+	startupWarning string
+	preparation    *preparationRunner
+	events         *jobEvents
+	mapPoints      mapPointsCache
+	sql            sqlBrowser
+	hostsMu        sync.RWMutex
+	hosts          map[string]bool
+	origins        map[string]bool
 	// OpenURL opens a link in the user's browser (the window sets it).
 	OpenURL func(string)
 }
@@ -74,12 +91,65 @@ func New(o Options) (*Server, error) {
 	if err := os.MkdirAll(o.Data, 0o755); err != nil {
 		return nil, err
 	}
-	a, err := atlas.Open(filepath.Join(o.Data, "store"))
+	appLock, err := acquireSurveyLock(o.Data)
 	if err != nil {
-		return nil, fmt.Errorf("Signal Atlas could not open its store: %w", err)
+		return nil, fmt.Errorf("Application data directory is already in use: %w", err)
+	}
+	opened := false
+	defer func() {
+		if !opened {
+			appLock.Close()
+		}
+	}()
+	settings := newSettings(o.Data)
+	root := settings.get().LastSurvey
+	warning := ""
+	if root != "" && !atlas.IsWorkspace(root) {
+		warning = "The last workspace is unavailable; opened the default survey instead."
+		root = ""
+	}
+	if root == "" {
+		root = filepath.Join(o.Data, "store")
+		if err := os.MkdirAll(root, 0755); err != nil {
+			return nil, err
+		}
+	}
+	root, err = filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
+	lock, err := acquireSurveyLock(root)
+	if err != nil {
+		return nil, err
+	}
+	a, err := atlas.Open(root)
+	if err != nil {
+		lock.Close()
+		failedRoot := root
+		fallback, _ := filepath.Abs(filepath.Join(o.Data, "store"))
+		if strings.EqualFold(root, fallback) {
+			fallback, _ = filepath.Abs(filepath.Join(o.Data, "recovery-store"))
+		}
+		if e := os.MkdirAll(fallback, 0755); e != nil {
+			return nil, fmt.Errorf("Signal Atlas could not open %s: %w", failedRoot, err)
+		}
+		lock, err = acquireSurveyLock(fallback)
+		if err != nil {
+			return nil, err
+		}
+		a, err = atlas.Open(fallback)
+		if err != nil {
+			lock.Close()
+			return nil, err
+		}
+		root = fallback
+		warning = "Could not open " + failedRoot + ". Using " + fallback + "; the unavailable workspace was kept unchanged."
+	}
+	if a.Recovered {
+		warning = "Recovered the previous complete survey revision after an incomplete generation."
 	}
 	os.RemoveAll(filepath.Join(o.Data, "exports")) // leftovers of an earlier run
-	s := &Server{o: o, Atlas: a, Jobs: newJobs(a), drops: newDropRegistry(), hosts: map[string]bool{}, origins: map[string]bool{}}
+	s := &Server{o: o, Atlas: a, Jobs: newJobs(a), drops: newDropRegistry(), hosts: map[string]bool{}, origins: map[string]bool{}, surveyID: newHex(), surveyLock: lock, appLock: appLock, startupWarning: warning}
 	s.cmp = newCompareSessions(filepath.Join(o.Data, "exports"))
 	for _, org := range o.Origins {
 		s.origins[org] = true
@@ -87,9 +157,17 @@ func New(o Options) (*Server, error) {
 	for _, h := range o.Hosts {
 		s.AllowHost(h)
 	}
-	s.set = newSettings(o.Data)
+	s.set = settings
+	if warning == "" {
+		if err := s.rememberSurvey(root); err != nil {
+			s.startupWarning = "Could not remember this workspace: " + err.Error()
+		}
+	}
 	go s.autoCheck()
 	s.drv = newDrives(s)
+	s.events = newJobEvents()
+	s.preparation = newPreparation(s)
+	opened = true
 	return s, nil
 }
 
@@ -105,7 +183,32 @@ func (s *Server) AllowHost(h string) {
 func (s *Server) RecordDrop(paths []string) { s.drops.add(paths) }
 
 // Close closes the store.
-func (s *Server) Close() { s.cmp.closeAll(); s.drv.close(); s.Atlas.Close() }
+func (s *Server) Close() {
+	s.adminGate.Lock()
+	if !s.closed.CompareAndSwap(false, true) {
+		s.adminGate.Unlock()
+		return
+	}
+	s.adminGate.Unlock()
+	s.sql.stop("")
+	s.admin.stop()
+	s.preparation.close()
+	s.events.close()
+	s.releaseUploads(nil)
+	s.surveyMu.Lock()
+	defer s.surveyMu.Unlock()
+	s.Jobs.Retire()
+	s.Jobs.Wait(context.Background())
+	s.cmp.closeAll()
+	s.drv.close()
+	s.Atlas.Close()
+	if s.surveyLock != nil {
+		s.surveyLock.Close()
+	}
+	if s.appLock != nil {
+		s.appLock.Close()
+	}
+}
 
 type httpError struct {
 	status int
@@ -167,6 +270,10 @@ var explorerAssets = map[string]bool{"/explorer.js": true, "/explorer.css": true
 
 // ServeHTTP routes a request.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if s.closed.Load() {
+		sendErr(w, herr(503, "The application is closing"))
+		return
+	}
 	defer func() {
 		if p := recover(); p != nil {
 			buf := make([]byte, 4096)
@@ -179,6 +286,48 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		sendJSON(w, map[string]any{"error": "not allowed"}, 403)
 		return
 	}
+	// Foreground writes cancel/join background preparation before taking their
+	// survey lease. The lease then protects the captured runner through dispatch.
+	pagedMap := r.Method == http.MethodGet && r.URL.Path == "/api/app/map/features" && (r.URL.Query().Get("clustering") == "0" || r.URL.Query().Get("cursor") != "")
+	if pagedMap || (r.Method == http.MethodPost && (surveyRequest(r.URL.Path) || r.URL.Path == "/api/app/settings")) {
+		s.surveyMu.RLock()
+		prep := s.preparation
+		prep.foreground.Add(1)
+		s.surveyMu.RUnlock()
+		defer func() { prep.foreground.Add(-1); prep.signal() }()
+		if err := prep.join(r.Context()); err != nil {
+			sendErr(w, err)
+			return
+		}
+	}
+	if surveyRequest(r.URL.Path) {
+		if s.handoff.Load() {
+			sendErr(w, herr(503, "Survey handoff in progress; retry shortly"))
+			return
+		}
+		s.surveyMu.RLock()
+		defer s.surveyMu.RUnlock()
+		// Clustered AP reads use WAL snapshots and immutable observation state.
+		// Pausing after every live update can starve the preparation that
+		// generated that update. Only large sighting-buffer reads yield CPU.
+		if r.Method == http.MethodGet && r.URL.Path == "/api/app/map/points" {
+			prep := s.preparation
+			prep.mapReaders.Add(1)
+			defer func() {
+				prep.mapReaders.Add(-1)
+				prep.signal()
+			}()
+		}
+		w.Header().Set("X-Survey-ID", s.surveyID)
+		if expected := r.Header.Get("X-Survey-ID"); expected != "" && expected != s.surveyID {
+			sendErr(w, herr(409, "The active survey changed; reload this page"))
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path != "/api/cancel" && s.admin.busy.Load() {
+			sendErr(w, herr(409, "Survey administration is running; wait or cancel it first"))
+			return
+		}
+	}
 	if err := s.route(w, r); err != nil {
 		sendErr(w, err)
 	}
@@ -188,8 +337,11 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 	p := r.URL.Path
 	params := py.ParseQs(r.URL.RawQuery)
 	// the fast solver, when chosen in the settings, for every fit and every cached-fit lookup
-	if strings.HasPrefix(p, "/api/") && !strings.HasPrefix(p, "/api/app/compare") && !params.Has("solver") && s.set.get().FastFits {
-		params["solver"] = []string{"fast"}
+	if strings.HasPrefix(p, "/api/") && !strings.HasPrefix(p, "/api/app/compare") && !params.Has("solver") {
+		settings := s.set.get()
+		if solver := atlas.SolverName(settings.FastFits, settings.GPUFits); solver != "reference" {
+			params["solver"] = []string{solver}
+		}
 	}
 	if r.Method == http.MethodGet || r.Method == http.MethodHead {
 		switch {
@@ -197,10 +349,22 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return s.serveFS(w, s.o.UI, "index.html", false)
 		case p == "/app/bridge.js":
 			return s.serveFS(w, s.o.UI, "bridge.js", false)
+		case p == "/app/native.js":
+			return s.serveFS(w, s.o.UI, "native.js", false)
+		case strings.HasPrefix(p, "/app/map/"):
+			return s.serveFS(w, s.o.UI, "map/"+strings.TrimPrefix(p, "/app/map/"), false)
+		case p == "/app/admin.js" || p == "/app/admin.css" || p == "/app/sql.js" || p == "/app/sql.css":
+			return s.serveFS(w, s.o.UI, strings.TrimPrefix(p, "/app/"), false)
+		case strings.HasPrefix(p, "/app/vendor/"):
+			return s.serveFS(w, s.o.UI, "vendor/"+strings.TrimPrefix(p, "/app/vendor/"), false)
 		case p == "/compare.html" || p == "/compare":
 			return s.serveFS(w, s.o.Compare, "compare.html", true)
 		case p == "/map" || p == "/map.html":
 			return s.serveFS(w, s.o.UI, "map.html", true)
+		case p == "/sql" || p == "/sql.html":
+			return s.serveFS(w, s.o.UI, "sql.html", true)
+		case p == "/admin" || p == "/admin.html":
+			return s.serveFS(w, s.o.UI, "admin.html", true)
 		case p == "/database" || p == "/database.html":
 			return s.serveFS(w, s.o.UI, "database.html", true)
 		case p == "/atlas" || p == "/atlas/":
@@ -214,7 +378,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			sendJSON(w, s.Jobs.Snapshot(), 200)
 			return nil
 		case p == "/api/database/download":
-			return s.downloadStore(w)
+			return s.downloadStore(w, r.Context())
 		case tilePath.MatchString(p):
 			return s.tile(w, r, tilePath.FindStringSubmatch(p))
 		case strings.HasPrefix(p, "/api/app/"):
@@ -368,7 +532,10 @@ func (s *Server) atlasPost(w http.ResponseWriter, r *http.Request, p string, par
 			if v, ok := body["id"]; ok && v != nil {
 				id = fmt.Sprint(v)
 			}
-			if err := atlas.DeleteComparison(c, id); err != nil {
+			a.WriteMu.Lock()
+			err := atlas.DeleteComparison(c, id)
+			a.WriteMu.Unlock()
+			if err != nil {
 				return err
 			}
 		} else if _, err := a.SaveComparison(c, params, body["name"]); err != nil {
@@ -495,14 +662,18 @@ func saveBody(r *http.Request, dest string, length int64) error {
 
 // downloadStore streams a Graphite-format snapshot of the store (browser use; the app's window
 // saves it straight to a chosen file instead).
-func (s *Server) downloadStore(w http.ResponseWriter) error {
+func (s *Server) downloadStore(w http.ResponseWriter, ctx context.Context) error {
+	if s.admin.busy.Load() || !s.Jobs.suspendIdle() {
+		return herr(409, "Finish the current operation, then save a snapshot from Admin")
+	}
+	defer s.Jobs.Resume()
 	dir, err := os.MkdirTemp(s.o.Data, "snapshot-")
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(dir)
+	defer removeOwnedCandidate(dir, s.o.Data)
 	file := filepath.Join(dir, "survey.sqlite3")
-	if err := s.Atlas.ExportSQLite(file, nil); err != nil {
+	if err := s.Atlas.ExportSQLiteContext(ctx, file, nil, nil); err != nil {
 		return err
 	}
 	f, err := os.Open(file)
@@ -535,8 +706,19 @@ func (s *Server) serveFS(w http.ResponseWriter, fsys fs.FS, rel string, inject b
 	case ".html":
 		ctype = "text/html; charset=utf-8"
 		if inject {
+			// Keep the Python reference files unchanged while making its fallback
+			// map usable without a CDN connection.
+			data = bytes.ReplaceAll(data, []byte("https://unpkg.com/leaflet@1.9.4/dist/"), []byte("/app/vendor/leaflet/"))
 			if i := bytes.Index(bytes.ToLower(data), []byte("<head>")); i >= 0 {
-				data = append(append(append([]byte{}, data[:i+6]...), bridgeTag...), data[i+6:]...)
+				tags := bridgeTag
+				native := s.o.Host != nil
+				for _, origin := range s.o.Origins {
+					native = native || origin == "wails://wails"
+				}
+				if native {
+					tags = append([]byte(`<script src="/app/native.js"></script>`), bridgeTag...)
+				}
+				data = append(append(append([]byte{}, data[:i+6]...), tags...), data[i+6:]...)
 			}
 		}
 	}

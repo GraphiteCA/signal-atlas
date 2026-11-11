@@ -19,7 +19,40 @@
   const enc = encodeURIComponent;
   const info = { version: '', data: '', window: false };
   const ready = fetch('/api/app/info', { cache: 'no-store' }).then(json).then((j) => Object.assign(info, j)).catch(() => info);
+  const localFetch=window.fetch.bind(window);
+  window.fetch=function(input,options={}){
+    const url=new URL(typeof input==='string'?input:input.url,location.href);
+    if(url.origin===location.origin&&url.pathname.startsWith('/api/')&&info.survey_id&&!['/api/app/info','/api/app/admin/status','/api/app/admin/operation'].includes(url.pathname)){
+      const headers=new Headers(input instanceof Request?input.headers:undefined);new Headers(options.headers||{}).forEach((v,k)=>headers.set(k,v));headers.set('X-Survey-ID',info.survey_id);options={...options,headers};
+    }
+    return localFetch(input,options);
+  };
   const picked = new Map();   // name -> path, for files chosen in a native dialog
+
+  // Native push notifies; sequence polling reconciles dropped events/reloads.
+  const jobListeners=new Set();let jobAfter=0,lastNative=0,jobTimer=null,jobPolling=false,jobStopped=false;
+  function jobMessage(event,native=false){
+    if(!event)return;
+    if(event.kind==='survey-changed'&&event.survey_id!==info.survey_id){if(/^\/(map|atlas|admin|sql)(\/|\.html)?$/.test(location.pathname))location.reload();return;}
+    if(event.survey_id!==info.survey_id)return;
+    if(native)lastNative=Date.now();
+    if(event.sequence<=jobAfter&&!event.reconcile)return;
+    jobAfter=Math.max(jobAfter,event.sequence||0);
+    for(const fn of jobListeners){try{fn(event);}catch(e){console.error(e);}}
+  }
+  async function pollJobEvents(){
+    if(jobStopped||jobPolling||!jobListeners.size)return;jobPolling=true;
+    try{await ready;const r=await fetch('/api/app/preparation/events?after='+jobAfter,{cache:'no-store'});if(!r.ok)return;const j=await r.json();
+      if(j.reconcile)jobMessage({survey_id:j.survey_id,sequence:j.sequence,reconcile:true,kind:'reconcile'});
+      else for(const e of j.events||[])jobMessage(e);
+      jobAfter=Math.max(jobAfter,j.sequence||0);
+    }catch(e){}finally{jobPolling=false;}
+  }
+  function listenJobs(fn){jobListeners.add(fn);if(!jobTimer){jobTimer=setInterval(pollJobEvents,400);pollJobEvents();}
+    return()=>{jobListeners.delete(fn);if(!jobListeners.size&&jobTimer){clearInterval(jobTimer);jobTimer=null;}};
+  }
+  ready.then(async()=>{try{await window.SignalAtlasNativeReady;if(window.runtime?.EventsOn)window.runtime.EventsOn('signal-atlas:job',e=>jobMessage(e,true));}catch(e){}});
+  addEventListener('pagehide',()=>{jobStopped=true;if(jobTimer)clearInterval(jobTimer);});
 
   async function pathOf(file) {
     if (!file) return '';
@@ -93,6 +126,7 @@
     get data() { return info.data; },
     pathOf,
     compare,
+	listenJobs,
     saveFile: (file, name) => post('/api/app/save-export', { file, name }),
     pickFiles: (opts) => post('/api/app/pick-files', opts || {}),
     showData: () => post('/api/app/show-data'),
@@ -155,7 +189,7 @@
 
     // the map opens on where the user is (or where they left it, or the whole world); never on a
     // fixed place. The view is remembered between visits.
-    const VIEW = 'signal-atlas.explorer.view';
+    const viewKey = () => 'signal-atlas.explorer.view.'+(info.survey_path||info.data);
     const hookMap = (L) => {
       if (!L || !L.Map || L.Map.__saView) return;
       L.Map.__saView = true;
@@ -165,11 +199,11 @@
         let touched = false;
         setTimeout(() => {   // after the page's own setView
           try {
-            const v = JSON.parse(localStorage.getItem(VIEW) || 'null');
+            const v = JSON.parse(localStorage.getItem(viewKey()) || 'null');
             if (v && isFinite(v.lat) && isFinite(v.lng)) m.setView([v.lat, v.lng], v.zoom || 15, { animate: false });
           } catch (e) { /* no saved view */ }
           m.on('dragstart zoomstart', () => { touched = true; });
-          m.on('moveend', () => { const c = m.getCenter(); localStorage.setItem(VIEW, JSON.stringify({ lat: c.lat, lng: c.lng, zoom: m.getZoom() })); });
+          m.on('moveend', () => { const c = m.getCenter(); localStorage.setItem(viewKey(), JSON.stringify({ lat: c.lat, lng: c.lng, zoom: m.getZoom() })); });
           if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition((p) => {
               if (!touched) m.setView([p.coords.latitude, p.coords.longitude], 16);
@@ -190,10 +224,31 @@
                      'Use "Save SQLite database" first if you want to keep them.')) return;
         const skip = !!(document.getElementById('skip-invalid') || {}).checked;
         await post('/api/app/open-database', { path, skip_invalid: skip });
-        if (typeof window.pollJob === 'function') window.pollJob();
+        location.href='/admin';
       } catch (err) { alert("Couldn't open the database: " + err.message); }
     }
     const addControls = () => {
+	  // App-owned handoff from the GPU map to the reference analysis tools.
+	  const incoming = new URLSearchParams(location.search);
+	  if (incoming.has('ssid') && window.signalExplorer && !document.documentElement.dataset.saSelectionApplied) {
+	    document.documentElement.dataset.saSelectionApplied = 'true';
+	    const selected = window.signalExplorer.getState(), ssid = incoming.get('ssid');
+	    selected.all = false; selected.ssids = new Set([ssid]); selected.excluded.clear();
+	    selected.networkQuery = ssid; document.getElementById('network-search').value = ssid;
+	    if (incoming.has('band')) selected.bands = new Set(incoming.getAll('band'));
+	    if (incoming.has('min_rssi')) {selected.minimum = Number(incoming.get('min_rssi'));document.getElementById('rssi').value=selected.minimum;document.getElementById('rssi-output').textContent=selected.minimum+' dBm';}
+	    if (incoming.has('date')) {selected.dateMode='dates';selected.selectedDates=new Set(incoming.getAll('date'));}
+	    else if (incoming.has('date_from') || incoming.has('date_to')) {selected.dateMode='range';document.getElementById('date-from').value=incoming.get('date_from') || '';document.getElementById('date-to').value=incoming.get('date_to') || '';}
+	    document.getElementById('date-mode').value=selected.dateMode;
+	    document.getElementById('date-range-fields').hidden=selected.dateMode!=='range';document.getElementById('specific-date-fields').hidden=selected.dateMode!=='dates';
+	    const mac = incoming.get('mac');
+	    if (mac && /^(?:[0-9A-F]{2}:){5}[0-9A-F]{2}$/i.test(mac)) selected.macSelections.set(ssid, {mode: 'include', macs: new Set([mac])});
+	    const individual = document.getElementById('individual-estimates');
+	    document.getElementById('location-model').value=incoming.get('shared')==='1'?'both':'individual';
+	    individual.checked = incoming.get('individual') === '1'; individual.dispatchEvent(new Event('change'));
+	    if (typeof window.loadNetworks === 'function') window.loadNetworks();
+	    if (typeof window.loadSelection === 'function') window.loadSelection(true);
+	  }
       const head = document.querySelector('header > div');
       if (head && !document.querySelector('.sa-home')) {
         const a = document.createElement('a');
@@ -202,8 +257,17 @@
         const g = document.createElement('a');
         g.className = 'sa-home'; g.href = '/map'; g.textContent = 'GPU map'; g.style.marginLeft = '14px';
         g.title = 'Every sighting and fitted AP in view, drawn on the GPU';
-        a.after(g);
+        const admin=document.createElement('a');admin.className='sa-home';admin.href='/admin';admin.textContent='Database administration';admin.style.marginLeft='14px';
+		g.onclick = (event) => {
+		  if (typeof window.areaQuery !== 'function') return;
+		  event.preventDefault();
+		  const q = window.areaQuery(), m = window.signalExplorer?.getMap();
+		  if (m) {const c = m.getCenter();q.set('lng',c.lng);q.set('lat',c.lat);}
+		  location.href = '/map?' + q;
+		};
+        a.after(g);g.after(admin);
       }
+      const csvLabel=document.querySelector('label[for=csv-file]');if(csvLabel){csvLabel.hidden=true;document.getElementById('skip-invalid')?.closest('label')?.setAttribute('hidden','');if(!document.getElementById('sa-admin-import')){const link=document.createElement('a');link.id='sa-admin-import';link.className='button';link.href='/admin?tab=imports';link.textContent='Import scans…';csvLabel.after(link);}}
       const save = document.getElementById('save-database');
       if (save && !document.querySelector('.sa-db-actions')) {
         const box = document.createElement('div');
@@ -228,10 +292,7 @@
         });
         if (info.window) {
           button('sa-open-db', 'Open database…', 'Open a Signal Atlas database (replaces what is here), or add a logger database (WiGLE columns) or a WiGLE app backup')
-            .addEventListener('click', async () => {
-              const list = await window.SignalAtlasApp.pickFiles({ title: 'Open an SQLite database', exts: ['sqlite3', 'sqlite', 'db'], multiple: false }).catch(() => []);
-              if (list.length) openDatabase(list[0].path);
-            });
+            .addEventListener('click', () => { location.href='/admin'; });
         }
         box.appendChild(save);
       }
@@ -312,6 +373,7 @@
     XMLHttpRequest.prototype.open = function (method, url) { this.__sa = { method: String(method).toUpperCase(), url: String(url) }; return open.apply(this, arguments); };
     XMLHttpRequest.prototype.send = function (body) {
       const w = this.__sa;
+      if(w&&info.survey_id&&new URL(w.url,location.href).pathname.startsWith('/api/'))setHeader.call(this,'X-Survey-ID',info.survey_id);
       if (!(w && w.method === 'POST' && new URL(w.url, location.href).pathname === '/api/import' && body instanceof File)) return send.apply(this, arguments);
       pathOf(body).then(async (p) => {
         if (p) { setHeader.call(this, 'X-App-Path', enc(p)); send.call(this, null); }
@@ -333,14 +395,7 @@
         return;
       }
       const save = e.target.closest('#save-database');
-      if (save) {
-        e.preventDefault();
-        const label = save.textContent;
-        save.textContent = 'Saving…';
-        try { const r = await post('/api/app/save-atlas'); save.textContent = r.saved ? 'Saved ✓' : label; }
-        catch (err) { alert("Couldn't save the database: " + err.message); save.textContent = label; }
-        setTimeout(() => { save.textContent = label; }, 4000);
-      }
+      if (save) {e.preventDefault();location.href='/admin?tab=survey';}
     }, true);
   }
 })();

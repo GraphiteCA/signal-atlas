@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><title>SQL browser · Signal Atlas</title><link rel="stylesheet" href="/app/admin.css"><link rel="stylesheet" href="/app/sql.css"></head>
+<body class="sql-page"><main>
+<header><div><nav><a href="/map">← Survey map</a><a href="/admin">Administration</a><a href="/database">Drive database</a></nav><h1>SQL browser</h1><p class="muted">Read your survey observations and saved data using SQLite SQL.</p></div><span class="readonly">Read only</span></header>
+<p id="sqlError" class="error" role="alert" hidden></p>
+<section class="current"><div><span class="eyebrow">ACTIVE SURVEY</span><strong id="sqlName">Connecting…</strong><code id="sqlPath"></code></div><div><b id="sqlCount"></b><span class="muted"> stored observations</span></div></section>
+<div class="sql-layout"><aside><div class="title-row"><h2>Schema</h2><button id="sqlRefresh">Refresh</button></div><p class="muted">Click a table to preview its rows.</p><div id="sqlSchema"></div></aside>
+<section class="sql-work"><article><label for="sqlText">Query <span class="muted">Ctrl / ⌘ + Enter to run</span></label><textarea id="sqlText" rows="5" spellcheck="false">SELECT id, ssid, mac, band, latitude, longitude, rssi_dbm
+FROM observations
+LIMIT 200;</textarea>
+<div class="sql-options"><label>Rows per page<select id="sqlLimit"><option>200</option><option>500</option><option>1000</option><option>50</option></select></label><label>Timeout (seconds)<input id="sqlTimeout" type="number" min="1" max="120" value="30"></label></div>
+<div class="actions"><button id="sqlRun" class="primary">Run query</button><button id="sqlExplain">Explain</button><button id="sqlCancel" hidden>Cancel query</button></div>
+<details class="sql-help"><summary>Query limits &amp; value handling</summary><p class="muted">SELECT and WITH queries only. Observation IDs and source fields are preserved. Results use text to keep large integers exact; NULL is shown separately. Each page is limited to 20,000 cells and 2 MB, with long cells shortened.</p></details></article>
+<article><div class="title-row"><h2>Results</h2><button id="sqlExport" disabled>Export this page · CSV</button></div><p id="sqlStatus" role="status">Run a query to view results.</p><p id="sqlRevision" class="muted"></p><div id="sqlResults" class="table-scroll" tabindex="0" aria-label="SQL query results"></div><div class="actions"><button id="sqlPrev" disabled>Previous page</button><button id="sqlNext" disabled>Next page</button></div></article>
+</section></div></main><script src="/app/sql.js"></script></body></html>

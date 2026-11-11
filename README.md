@@ -48,17 +48,23 @@ Files are read where they are on disk. Drop logs on the window, or use **Choose 
 **Import CSV**, which open the system's file dialog. Exports and saved databases go through the
 system's Save dialog. Each tool has a **Home** link back to the start page.
 
-**SQLite databases.** In the explorer, **Open database…** (or dropping the file on the window)
-takes three kinds of file:
+**Database administration.** Open **Admin** from the map or home page. **New database** creates a
+separate survey workspace; **Open database** and recent surveys switch between existing workspaces.
+The last survey opens next time. Switching safely stops its survey job while keeping Compare and
+the independent Drive database open. Native file and folder dialogs handle paths in the desktop app.
 
-- **A Signal Atlas database**, the file **Save SQLite database** writes, or one made by Graphite's
-  Python. It replaces what the explorer holds, with its saved estimates and comparisons, after
-  asking first.
-- **A WiGLE Android app database backup.** Its Wi-Fi sightings are added like
-  a CSV import. Bluetooth and cell sightings are left out, and rows recorded before a GPS fix count
-  as invalid.
-- **A WarHog database file**, or any SQLite file with WiGLE's columns (a Drive database too). Its
-  Wi-Fi sightings with a GPS position are added like a CSV import.
+**Import scans** accepts multiple CSV logs, WiGLE backups, logger/WarHog databases and saved survey
+SQLite files. Importing a saved database adds its scans; **Convert a saved SQLite survey** creates a
+new workspace with its saved locations and comparisons. Original files stay unchanged. Rows whose
+latitude and longitude are both numeric zero are excluded automatically and counted separately.
+Valid equator or prime-meridian readings with only one zero coordinate stay. The survey takes Wi-Fi
+sightings; the independent Drive archive also retains other capture types.
+
+**Save snapshot** offers a fast, complete workspace copy or a portable SQLite file containing all
+observations and metadata. **Maintenance → Preview 0,0 rows** finds old zero pairs before explicit
+cleanup. Cleanup retains a previous revision for recovery, preserves surviving IDs and source
+history, and invalidates only affected saved locations. Validation, lookup rebuilding and metadata
+maintenance are available alongside it. See [Phase 2 administration](docs/phase2-admin.md).
 
 **Drive database.** Make a new Drive database (one `.sqlite3` file wherever you choose) or open one,
 then add files with **Add logs and databases…** or by dropping them on the window. It takes WiGLE
@@ -82,6 +88,33 @@ test of 300 noisy networks it landed on exactly the same point 292 times and wit
 times, about 7 times faster per network. Fast and exact fits are cached apart, and the switch is
 off by default; the exact search is Graphite's method, checked against his Python.
 
+**Background AP locations.** Surveys now prepare and save locations automatically, across the whole
+survey, so they are available before you pan. The map shows progress and has a **Pause background**
+button. In **Admin → Survey & backups → Prepare AP locations**, choose sample or all observations,
+shared APs or individual radios, and background resource limits. The reference solver stays the
+default; the app's fast-solver switch also applies to preparation. Completed and unavailable results
+survive pauses, snapshots and restarts. Imports, cleanup and band edits queue only affected networks;
+imports and selected calculations take priority over background work. Turning automatic preparation
+off keeps calculated locations and restores manual fitting. Preparation now uses a continuous
+worker pool and batched saves; Admin supports up to 16 workers while preserving
+existing limits. See the [preparation benchmarks](docs/preparation-performance.md)
+and [Phase 3 implementation](docs/phase3-preparation.md).
+
+**Optional GPU fitting.** Admin's Calculation preference adds experimental
+64-bit GPU acceleration on compatible Windows PCs, with automatic CPU fallback.
+It works with reference or fast fitting and keeps their saved results separate.
+Reference stays the default. Phase 5 also reduces CPU allocation/work and keeps
+APs visible while replacement map pages load. See the
+[solver comparison and full preparation results](docs/phase5-fitting.md).
+
+Administration also opens a **read-only SQL browser** for the active survey.
+It queries the real observation columns and a matching metadata snapshot, with
+schema browsing, Explain, cancellation, timeouts, bounded pages and CSV export
+of the displayed page. The dialect is SQLite. See the
+[Phase 4 storage evaluation](docs/phase4-storage.md) for benchmarks, the storage
+choice and the SQL adapter's limits.
+
+
 **GPU map.** **GPU map** (on the home page and at the top of the explorer) draws every sighting in
 view and every fitted AP with deck.gl over MapLibre, coloured by signal. Past the chosen number of
 points (half a million to eight million) it shows every k-th sighting so the whole view is covered;
@@ -91,7 +124,7 @@ is. It needs WebGL, which every supported system's web view has.
 **Fit every AP.** The explorer normally fits access points near the map view as you pan. **Fit every
 AP** fits every network the current filters keep, as one background job. It works through them a
 batch of 256 networks at a time, saves each fit as it finishes and shows them on the map as it goes,
-so memory stays flat on any size of survey. **Cancel job** keeps what is done, and running it again
+keeping the calculation queue bounded. **Cancel job** keeps what is done, and running it again
 skips networks that already have a fit. A zoomed-out map shows an even sample of up to 1,500 fits;
 zoom in to see every fit in an area.
 
@@ -113,15 +146,37 @@ the release's installer, checks it against the release's `SHA256SUMS.txt`, close
 and opens the new version. Elsewhere it opens the release page. Your data is never touched by an
 update.
 
-**Offline.** Everything that reads, analyses and stores data works offline. The map libraries
-(Leaflet, MapLibre and deck.gl) load from unpkg.com, map tiles come from OpenStreetMap, and fonts
-come from Google Fonts. Without a connection, Compare draws its map as a plain outline of the
-tracks, the explorer's map and the GPU map don't load, and the pages use the system's own fonts. Map tiles are cached for a week, and the app
-identifies itself to OpenStreetMap as their tile policy asks.
+**Offline.** Reading, analysis and storage work offline. The GPU map bundles pinned
+MapLibre, deck.gl and Leaflet assets, so it can initialize and draw survey data without a
+library CDN. New street tiles still require OpenStreetMap access; cached tiles remain
+available. Other pages may use online assets/fonts and fall back to their system fonts
+or track outlines. Map tiles are cached for a week, and the app identifies itself to
+OpenStreetMap as their tile policy asks.
 
-## Speed
+## Large-survey improvements
 
-Measured on a 16-core PC with 64 GB of memory.
+The GPU map adds exact clustering, a clustering toggle, label zoom controls and solid
+planning rings. Radius defaults to 10 m and is adjustable from 5–50 m. Admin provides
+survey switching/creation, backups, recoverable 0,0 cleanup and a read-only SQL browser.
+Preparation prioritizes the current view while continuing the whole survey in the
+background. Hidden APs use their BSSID/MAC identity, not a shared hidden-name label.
+
+On the documented 5.75M-scan / 1.46M-target survey, the metadata follow-up reduced
+complete GPU-fast preparation from 336 seconds to 149–151 seconds, with identical
+saved results. This comparison is against the pre-metadata implementation, not an
+upstream speedup claim. Final engine peaks were about 3.14 GiB; observation columns
+remain resident and DuckDB remains an isolated benchmark prototype. First opening an
+existing large survey can take longer once while internal metadata is migrated.
+
+See the [review and validation guide](docs/review-guide.md) for delivered features,
+benchmark comparators, migrations, experimental boundaries and reproduction. The
+[observation-quality findings](docs/observation-quality.md) describe optional future
+filters; they are not enabled as production defaults.
+
+## Earlier upstream speed measurements
+
+The following measurements predate this follow-up and use a different 16-core PC
+with 64 GB of memory. They are historical context, not new benchmark results.
 
 | Pipeline | Rate |
 |---|---|
@@ -146,7 +201,7 @@ engine through the window's own origin, and nothing listens on the network.
 | Path | What it is |
 |---|---|
 | `web/compare.html` | Wardrive Compare. It also runs on its own in a browser, using the analysis worker inside it. |
-| `python/` | Graphite's Signal Atlas as he wrote it: the Python package, its tests, and the explorer pages (`python/templates/`) that the app shows. |
+| `python/` | Graphite's Signal Atlas reference, with matching import/hidden-identity fixes: the Python package, its tests, and the explorer pages (`python/templates/`) that the app shows. |
 | `internal/compare` | Compare's analysis in Go, ported line for line from the worker in `web/compare.html`. |
 | `internal/atlas` | Signal Atlas in Go, ported from Graphite's Python: filters, queries, the location model and its grid search, fit groups, area estimates, comparisons. |
 | `internal/drivedb` | The Drive database: reading every kind of log and database, combining without duplicates, exporting. Compare and the explorer use its readers to take database files as the CSV logs they convert to. |
@@ -175,6 +230,9 @@ format, which his Python opens as its own.
 
 The comparisons need Python 3.10+ with numpy, and Node. They are skipped when either is missing.
 Graphite's own tests run with `python -m unittest discover -s tests` from `python/`.
+For the complete portable PR checks, run `python scripts/check.py`; it requires NumPy
+and Node so the numerical/worker comparisons cannot silently skip. Optional `--race`,
+`--gpu` and `--cross` checks are documented in the [review guide](docs/review-guide.md).
 
 ## Building
 

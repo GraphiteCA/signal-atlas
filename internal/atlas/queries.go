@@ -596,7 +596,7 @@ func (a *Atlas) AssignBand(c *sqlite.Conn, ssid, mac, band any) (map[string]any,
 		c2.Band[i], c2.BandSrc[i], c2.Radio[i] = bandID, srcID, radioID
 		n++
 	}
-	err := db.Tx(c, func() error {
+	err := db.WriteTx(c, func() error {
 		var err error
 		if b != "" {
 			_, err = db.Exec(c, "INSERT OR REPLACE INTO band_assignments VALUES(?,?,?,?)", s, m, b, py.UTCNowISO())
@@ -609,7 +609,13 @@ func (a *Atlas) AssignBand(c *sqlite.Conn, ssid, mac, band any) (map[string]any,
 		// These are disposable computations. Historical comparison pins remain immutable,
 		// including their original band declarations.
 		if n > 0 {
-			if _, err := db.Exec(c, "DELETE FROM estimates"); err != nil {
+			names, hidden := map[string]bool{}, map[string]bool{}
+			if s != "" {
+				names[s] = true
+			} else {
+				hidden[m] = true
+			}
+			if err := dropChangedFits(c, names, hidden); err != nil {
 				return err
 			}
 			return a.Obs.Commit(obs.Change{Replace: changed})

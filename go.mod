@@ -4,6 +4,7 @@ go 1.27.3
 
 require (
 	github.com/wailsapp/wails/v2 v2.17.1
+	golang.org/x/sys v0.50.0
 	zombiezen.com/go/sqlite v1.4.2
 )
 
@@ -38,7 +39,6 @@ require (
 	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/exp v0.0.0-20250408133849-7e4ce0ab07d0 // indirect
 	golang.org/x/net v0.60.0 // indirect
-	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	modernc.org/libc v1.65.7 // indirect
 	modernc.org/mathutil v1.7.1 // indirect

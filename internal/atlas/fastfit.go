@@ -2,7 +2,6 @@ package atlas
 
 import (
 	"math"
-	"sort"
 
 	"signal-atlas/internal/py"
 )
@@ -26,44 +25,20 @@ func (m *LocationModel) FitFast(idx []int, exponent, extentM, stepM float64, pre
 		return nil, py.Errorf("Need at least three within-radio contrasts (observations minus radios)")
 	}
 	s := m.subset(idx)
-	axis := Linspace(-extentM, extentM, int(math.Ceil(2*extentM/stepM))+1)
-	A := len(axis)
-	px, pyy := make([]float64, A*A), make([]float64, A*A)
-	for r := 0; r < A; r++ {
-		for c := 0; c < A; c++ {
-			px[r*A+c], pyy[r*A+c] = axis[c], axis[r]
-		}
-	}
-	errs, err := m.sse(px, pyy, s, exponent, nil)
+	px, pyy := coarseGrid(extentM, stepM)
+	errs, err := m.scoreGrid(px, pyy, s, exponent, nil, true, 3*stepM)
 	if err != nil {
 		return nil, err
 	}
-	order := make([]int, len(errs))
-	for i := range order {
-		order[i] = i
+	starts, err := coarseStarts(px, pyy, errs, 3*stepM, m.cancelled)
+	if err != nil {
+		return nil, err
 	}
-	sort.SliceStable(order, func(a, b int) bool { return errs[order[a]] < errs[order[b]] })
-	var starts [][2]float64
-	sep := 3 * stepM
-	for _, j := range order {
-		if len(starts) == 8 {
-			break
-		}
-		ok := true
-		for _, st := range starts {
-			dx, dy := px[j]-st[0], pyy[j]-st[1]
-			if !(math.Sqrt(dx*dx+dy*dy) > sep) {
-				ok = false
-				break
-			}
-		}
-		if ok {
-			starts = append(starts, [2]float64{px[j], pyy[j]})
-		}
-	}
+
 	refine := math.Min(.25, stepM/4)
+	var pointScore [1]float64
 	one := func(x, y float64) (float64, error) {
-		v, err := m.sse([]float64{x}, []float64{y}, s, exponent, nil)
+		v, err := m.sse([]float64{x}, []float64{y}, s, exponent, pointScore[:])
 		if err != nil {
 			return 0, err
 		}
