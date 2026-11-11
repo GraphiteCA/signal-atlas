@@ -7,6 +7,7 @@ let map, overlay, fallbackLayer, isFallback = false, points = null, fits = null;
 let seq = 0, timer = null, controller = null, detailController = null, detailSeq = 0;
 let display = {...MapDisplay.defaults}, prefRevision = 0, prefLoaded = false, prefSaving = false, prefTimer;
 let summaryRevision = '', observationRevision='', pointKey = '', pointData = null, initialized = false, retryTimer;
+let summarySolver='reference',fitsViewKey='';
 const incoming = new URLSearchParams(location.search);
 let inheritedBands = incoming.getAll('band'), inheritedDates = incoming.getAll('date');
 const textCanvas = document.createElement('canvas'), textContext = textCanvas.getContext('2d'), textWidths = new Map();
@@ -128,19 +129,25 @@ function statusText(loading=false) {
 async function load() {
   if(!initialized)return;
   const my=++seq;clearTimeout(retryTimer);controller?.abort();controller=new AbortController();const signal=controller.signal,p=query();
+  const visibility=new URLSearchParams(p);visibility.delete('bbox');visibility.delete('zoom');
+  const viewKey=visibility.toString()+':'+observationRevision+':'+summarySolver;
   $('status').textContent='loading…';
   // Keep observation and AP work independent: APs appear without waiting for a
   // multi-million-point buffer. Both share cancellation and stale-response guards.
   const pointTask=loadPoints(p,signal).then(pt=>{if(my===seq){points=pt;draw();statusText(true);}return null;},e=>e);
   try {
-    fits=$('showFits').checked?{count:0,total:0,loaded:0,features:[]}:null;
-    if(fits) {
+    const nextFits=$('showFits').checked?{count:0,total:0,loaded:0,features:[]}:null;
+    // Keep valid AP buffers during same-filter pan/live refreshes. Retire them
+    // immediately when filters, observation state or solver provenance changes.
+    if(!nextFits||fitsViewKey!==viewKey){fits=nextFits;fitsViewKey=viewKey;draw();}
+    if(nextFits) {
       let cursor='',revision='',lastDraw=-Infinity;
       do {
         const pp=new URLSearchParams(p);if(cursor)pp.set('cursor',cursor);
         const page=await json('/api/app/map/features?'+pp,{signal});if(my!==seq)return;
         if(revision && revision!==page.revision)throw new Error('Map changed; restart pagination');revision=page.revision;
-        fits.features.push(...page.features);fits.total=page.total;fits.count=page.total;fits.loaded+=page.features.reduce((n,r)=>n+r.count,0);
+        nextFits.features.push(...page.features);nextFits.total=page.total;nextFits.count=page.total;nextFits.loaded+=page.features.reduce((n,r)=>n+r.count,0);
+        fits=nextFits;fitsViewKey=viewKey;
         // Upload progressive buffers at most ten times a second. Re-uploading
         // the entire growing GPU buffer for each small page wastes most of the
         // loading time on dense unclustered surveys.
@@ -236,6 +243,7 @@ function makeFallback() {
 async function fitSurvey(){const b=await json('/api/app/map/bounds');if(b.empty)return;if(isFallback)map.fitBounds([[b.south,b.west],[b.north,b.east]],{maxZoom:16,padding:[40,40]});else map.fitBounds([[b.west,b.south],[b.east,b.north]],{maxZoom:16,padding:40,duration:0});}
 async function refreshSummary(live=false) {
   const s=await json('/api/app/map/summary');$('located').textContent=fi(s.located_ssids);$('observed').textContent=fi(s.observed_ssids);$('stored').textContent=fi(s.observations);
+  summarySolver=s.solver||'reference';
   if(summaryRevision && summaryRevision!==s.revision){
     if(observationRevision!==(s.observation_revision||s.revision)){pointKey='';pointData=null;}hideDetails();
     // Keep pins separate from clustering while retiring fits invalidated by an
@@ -261,7 +269,7 @@ async function pollJob(){
 }
 let preparationState=null,preparationRefresh=null;
 async function refreshPreparation(){
-  try{const s=await json('/api/app/preparation/status');preparationState=s;const p=s.progress||{},name=s.namespace?.solver||'';
+  try{const s=await json('/api/app/preparation/status');preparationState=s;const p=s.progress||{},solver=s.namespace?.solver,name=solver==='opencl64-reference-v1'?'GPU reference':solver==='opencl64-fast-v1'?'GPU fast':solver==='fast'?'Fast':'Reference';
     $('preparation').textContent=s.status==='complete'?`Locations ready · ${fi(p.completed)} networks`:s.status==='running'?`Preparing locations · ${fi(p.completed)} / ${fi(p.total)} · ${name}`:s.status==='failed'?`Preparation: ${s.error}`:s.status==='limited'?`Preparation waiting · ${fi(p.blocked)} networks exceed memory budget`:`Background: ${s.status}`;
     $('pausePreparation').textContent=s.settings?.paused?'Resume background':'Pause background';$('pausePreparation').disabled=!s.settings?.enabled;
   }catch(e){$('preparation').textContent=e.message;}

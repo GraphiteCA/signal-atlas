@@ -388,8 +388,12 @@ func EstimateScope(p py.Params) (map[string]any, string, error) {
 	scope["version"] = int64(2)
 	scope["fit_mode"] = mode
 	scope["min_rssi"] = m
-	if p.Is("solver", fitSolverFast) {
-		scope["solver"] = fitSolverFast // fast fits are cached apart from exact ones
+	solver, err := solverFromParams(p)
+	if err != nil {
+		return nil, "", err
+	}
+	if solver != "reference" {
+		scope["solver"] = solver // Never interchange CPU/GPU/algorithm versions.
 	}
 	return scope, py.MustDumps(scope, py.DumpOpts{Compact: true}), nil
 }

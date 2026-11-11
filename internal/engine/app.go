@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"signal-atlas/internal/compare"
+	"signal-atlas/internal/gpu"
 	"signal-atlas/internal/py"
 )
 
@@ -232,7 +233,7 @@ func (s *Server) appGet(w http.ResponseWriter, r *http.Request, p string, params
 		}
 		return herr(404, "Not found")
 	case p == "/api/app/settings":
-		sendJSON(w, map[string]any{"settings": s.set.get(), "update": s.updateState(), "window": s.o.Host != nil}, 200)
+		sendJSON(w, map[string]any{"settings": s.set.get(), "update": s.updateState(), "window": s.o.Host != nil, "acceleration": gpu.Status()}, 200)
 		return nil
 	case p == "/api/app/drives/status":
 		sendJSON(w, s.drv.status(), 200)

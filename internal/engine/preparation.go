@@ -164,7 +164,8 @@ func (p *preparationRunner) step() {
 		p.update(map[string]any{"status": status, "settings": settings, "reason": "", "error": ""})
 		return
 	}
-	ns, err := atlas.NewPreparationNamespace(settings, p.s.set.get().FastFits)
+	appSettings := p.s.set.get()
+	ns, err := atlas.NewPreparationNamespace(settings, appSettings.FastFits, appSettings.GPUFits)
 	if err != nil {
 		fail(err)
 		return
@@ -363,7 +364,8 @@ func (s *Server) preparationGet(w http.ResponseWriter, r *http.Request, action s
 		return err
 	}
 	m := s.preparation.snapshot()
-	ns, err := atlas.NewPreparationNamespace(settings, s.set.get().FastFits)
+	appSettings := s.set.get()
+	ns, err := atlas.NewPreparationNamespace(settings, appSettings.FastFits, appSettings.GPUFits)
 	if err != nil {
 		return err
 	}

@@ -170,14 +170,11 @@ type PreparationNamespace struct {
 	Params   py.Params `json:"-"`
 }
 
-func NewPreparationNamespace(p PreparationSettings, fast bool) (PreparationNamespace, error) {
+func NewPreparationNamespace(p PreparationSettings, fast bool, accelerated ...bool) (PreparationNamespace, error) {
 	if err := p.Validate(); err != nil {
 		return PreparationNamespace{}, err
 	}
-	solver := "reference"
-	if fast {
-		solver = "fast"
-	}
+	solver := SolverName(fast, len(accelerated) > 0 && accelerated[0])
 	params := py.Params{"fit_mode": {p.FitMode}, "min_rssi": {"-150"}, "solver": {solver}}
 	_, scope, err := EstimateScope(params)
 	return PreparationNamespace{ID: shaJSON([]string{"preparation-v1", scope, p.Grouping}), ScopeKey: scope, Solver: solver, Grouping: p.Grouping, FitMode: p.FitMode, Params: params}, err
@@ -417,14 +414,14 @@ func CommitPreparationResults(ctx context.Context, c *sqlite.Conn, ns Preparatio
 				return err
 			}
 			t := prepared.Target
-			version, err := targetVersion(c, t.Key)
+			version, err := db.CachedScalar(c, "SELECT version FROM preparation_targets WHERE target_key=?", t.Key)
 			if err != nil {
 				return err
 			}
-			if version != t.Version {
+			if db.Int(version) != t.Version {
 				continue
 			}
-			pending, err := db.Scalar(c, "SELECT 1 FROM preparation_pending WHERE namespace=? AND target_key=? AND version=?", ns.ID, t.Key, t.Version)
+			pending, err := db.CachedScalar(c, "SELECT 1 FROM preparation_pending WHERE namespace=? AND target_key=? AND version=?", ns.ID, t.Key, t.Version)
 			if err != nil {
 				return err
 			}
@@ -432,19 +429,19 @@ func CommitPreparationResults(ctx context.Context, c *sqlite.Conn, ns Preparatio
 				continue
 			}
 			if prepared.BlockedBytes > 0 {
-				if _, err = db.Exec(c, "UPDATE preparation_pending SET blocked_bytes=? WHERE namespace=? AND target_key=? AND version=?", prepared.BlockedBytes, ns.ID, t.Key, t.Version); err != nil {
+				if _, err = db.CachedExec(c, "UPDATE preparation_pending SET blocked_bytes=? WHERE namespace=? AND target_key=? AND version=?", prepared.BlockedBytes, ns.ID, t.Key, t.Version); err != nil {
 					return err
 				}
 			} else {
 				for _, w := range prepared.Writes {
-					if _, err = db.Exec(c, "INSERT OR REPLACE INTO estimates VALUES(?,?,?)", w.Key, ns.ScopeKey, w.Text); err != nil {
+					if _, err = db.CachedExec(c, "INSERT OR REPLACE INTO estimates VALUES(?,?,?)", w.Key, ns.ScopeKey, w.Text); err != nil {
 						return err
 					}
 				}
-				if _, err = db.Exec(c, "INSERT OR REPLACE INTO preparation_checkpoints VALUES(?,?,?,?,?,?)", ns.ID, t.Key, t.Version, prepared.Result.Fitted, prepared.Result.Unavailable, py.UTCNowISO()); err != nil {
+				if _, err = db.CachedExec(c, "INSERT OR REPLACE INTO preparation_checkpoints VALUES(?,?,?,?,?,?)", ns.ID, t.Key, t.Version, prepared.Result.Fitted, prepared.Result.Unavailable, py.UTCNowISO()); err != nil {
 					return err
 				}
-				if _, err = db.Exec(c, "DELETE FROM preparation_pending WHERE namespace=? AND target_key=? AND version=?", ns.ID, t.Key, t.Version); err != nil {
+				if _, err = db.CachedExec(c, "DELETE FROM preparation_pending WHERE namespace=? AND target_key=? AND version=?", ns.ID, t.Key, t.Version); err != nil {
 					return err
 				}
 			}

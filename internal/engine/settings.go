@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"signal-atlas/internal/atlas"
+	"signal-atlas/internal/gpu"
 	"signal-atlas/internal/py"
 )
 
@@ -30,6 +31,8 @@ type Settings struct {
 	RecentSurveys []string `json:"recent_surveys,omitempty"`
 	// FastFits fits with the fast solver (atlas.FitFast) instead of the exact grid search.
 	FastFits bool `json:"fast_fits"`
+	// GPUFits is opt-in, versioned float64 OpenCL scoring with CPU fallback.
+	GPUFits bool `json:"gpu_fits"`
 	// UpdateChecks is "ask" (until the user answers), "on" (once a day) or "off".
 	UpdateChecks string `json:"update_checks"`
 }
@@ -259,10 +262,13 @@ func (s *Server) settingsPost(w http.ResponseWriter, r *http.Request, p string) 
 	}
 	switch p {
 	case "/api/app/settings":
-		previousFast := s.set.get().FastFits
+		previous := s.set.get()
 		err = s.set.set(func(st *Settings) {
 			if v, ok := body["fast_fits"].(bool); ok {
 				st.FastFits = v
+			}
+			if v, ok := body["gpu_fits"].(bool); ok {
+				st.GPUFits = v
 			}
 			if v, ok := body["update_checks"].(string); ok && (v == "on" || v == "off" || v == "ask") {
 				st.UpdateChecks = v
@@ -271,11 +277,12 @@ func (s *Server) settingsPost(w http.ResponseWriter, r *http.Request, p string) 
 		if err != nil {
 			return err
 		}
-		if fast := s.set.get().FastFits; fast != previousFast && s.events != nil {
-			solver := "reference"
-			if fast {
-				solver = "fast"
-			}
+		next := s.set.get()
+		if next.GPUFits {
+			gpu.Probe()
+		}
+		if (next.FastFits != previous.FastFits || next.GPUFits != previous.GPUFits) && s.events != nil {
+			solver := atlas.SolverName(next.FastFits, next.GPUFits)
 			s.surveyMu.RLock()
 			sid := s.surveyID
 			s.surveyMu.RUnlock()
@@ -288,7 +295,7 @@ func (s *Server) settingsPost(w http.ResponseWriter, r *http.Request, p string) 
 				s.checkUpdate(ctx)
 			}()
 		}
-		sendJSON(w, map[string]any{"settings": s.set.get(), "update": s.updateState()}, 200)
+		sendJSON(w, map[string]any{"settings": s.set.get(), "update": s.updateState(), "acceleration": gpu.Status()}, 200)
 		return nil
 	case "/api/app/update/check":
 		if _, err := s.checkUpdate(r.Context()); err != nil {

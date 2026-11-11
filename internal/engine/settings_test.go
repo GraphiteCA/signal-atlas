@@ -47,8 +47,8 @@ func TestCheckUpdate(t *testing.T) {
 	if err := s.installUpdate(context.Background()); err == nil {
 		t.Fatal("installed without a window to hand over to")
 	}
-	s.set.set(func(st *Settings) { st.UpdateChecks = "off"; st.FastFits = true })
-	if again := newSettings(dir).get(); again.UpdateChecks != "off" || !again.FastFits {
+	s.set.set(func(st *Settings) { st.UpdateChecks = "off"; st.FastFits = true; st.GPUFits = true })
+	if again := newSettings(dir).get(); again.UpdateChecks != "off" || !again.FastFits || !again.GPUFits {
 		t.Fatalf("settings didn't persist: %+v", again)
 	}
 }

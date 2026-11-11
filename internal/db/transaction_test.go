@@ -84,3 +84,46 @@ func TestWriteTransactionReservesBeforeReadAndRecoversCancellation(t *testing.T)
 		t.Fatal(e)
 	}
 }
+
+func TestCachedStatementInterruptRollsBackAndCanBeReused(t *testing.T) {
+	c, e := Open(filepath.Join(t.TempDir(), "cached.sqlite3"), false)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer c.Close()
+	if _, e = Exec(c, "CREATE TABLE state(n INTEGER)"); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = Exec(c, "INSERT INTO state VALUES(1)"); e != nil {
+		t.Fatal(e)
+	}
+	const query = "WITH RECURSIVE seq(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM seq WHERE n<?) SELECT sum(n) FROM seq"
+	if _, e = CachedScalar(c, query, 10); e != nil {
+		t.Fatal(e)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	c.SetInterrupt(ctx.Done())
+	e = WriteTx(c, func() error {
+		if _, e := CachedExec(c, "UPDATE state SET n=?", 2); e != nil {
+			return e
+		}
+		_, e := CachedScalar(c, query, 100000000)
+		return e
+	})
+	c.SetInterrupt(nil)
+	if e == nil || !c.AutocommitEnabled() {
+		t.Fatal("interrupted cached transaction survived", e)
+	}
+	v, e := Scalar(c, "SELECT n FROM state")
+	if e != nil || Int(v) != 1 {
+		t.Fatal("partial cached write", v, e)
+	}
+	v, e = CachedScalar(c, query, 10)
+	if e != nil || Int(v) != 55 {
+		t.Fatal("interrupted cached statement poisoned connection", v, e)
+	}
+	if e = WriteTx(c, func() error { _, e := CachedExec(c, "UPDATE state SET n=?", 3); return e }); e != nil {
+		t.Fatal(e)
+	}
+}

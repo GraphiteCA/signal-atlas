@@ -206,6 +206,26 @@ func Exec(c *sqlite.Conn, sql string, args ...any) (int64, error) {
 	return int64(c.Changes()), nil
 }
 
+// CachedEach reuses a fixed internal statement on its exclusively leased
+// connection. Keep arbitrary SQL browser text on the transient path.
+func CachedEach(c *sqlite.Conn, query string, args []any, fn func(*sqlite.Stmt) error) error {
+	return sqlitex.Execute(c, query, &sqlitex.ExecOptions{Args: args, ResultFunc: fn})
+}
+func CachedExec(c *sqlite.Conn, query string, args ...any) (int64, error) {
+	e := CachedEach(c, query, args, nil)
+	return int64(c.Changes()), e
+}
+func CachedScalar(c *sqlite.Conn, query string, args ...any) (any, error) {
+	var value any
+	e := CachedEach(c, query, args, func(s *sqlite.Stmt) error {
+		if value == nil {
+			value = Value(s, 0)
+		}
+		return nil
+	})
+	return value, e
+}
+
 // Script runs several statements (executescript).
 func Script(c *sqlite.Conn, sql string) error { return sqlitex.ExecuteScript(c, sql, nil) }
 

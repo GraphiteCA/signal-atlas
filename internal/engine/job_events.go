@@ -138,10 +138,7 @@ func (s *Server) bindFitEvents(j *Jobs, survey string) {
 		} else if strings.HasPrefix(key, "shared:") {
 			grouping = "shared"
 		}
-		solver := "reference"
-		if p.Is("solver", "fast") {
-			solver = "fast"
-		}
+		solver := p.First("solver", "reference")
 		sum := sha256.Sum256([]byte(scope + grouping))
 		target, err := j.a.FitInputVersion(c, g)
 		e := JobEvent{Kind: "fits-committed", SurveyID: survey, JobID: jobEventID(j), Namespace: "manual:" + hex.EncodeToString(sum[:16]), Solver: solver, FitMode: p.First("fit_mode", "all"), Grouping: grouping, Written: 1, CommittedAtMS: time.Now().UnixMilli()}

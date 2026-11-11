@@ -51,6 +51,21 @@ test('individual pages accumulate all AP identities and expose loading progress'
   c.context.fetch=async()=>({ok:true,json:async()=>pages.shift()});await c.run('load()');
   assert.equal(c.run('fits.loaded'),2);assert.equal(c.run('fits.features.length'),2);assert.match(c.node('status').textContent,/2 of 2 APs/);
 });
+
+test('pan/live refreshes retain APs until a current page replaces them',async()=>{
+  const c=controller();c.context.fetch=async()=>({ok:true,json:async()=>({features:[{id:'visible',count:1}],total:1,next:'',revision:'1'})});await c.run('load()');
+  let resolve;c.context.fetch=()=>new Promise(r=>{resolve=r;});const pending=c.run('load()');
+  assert.equal(c.run('fits.features[0].id'),'visible');
+  c.run('soon()');resolve({ok:true,json:async()=>({features:[{id:'cancelled',count:1}],total:1,next:'',revision:'2'})});await pending;
+  assert.equal(c.run('fits.features[0].id'),'visible');
+  c.context.fetch=async()=>({ok:true,json:async()=>({features:[],total:0,next:'',revision:'3'})});await c.run('load()');assert.equal(c.run('fits.loaded'),0);
+});
+
+test('new filters and solver namespaces clear APs before replacement',async()=>{
+  const c=controller();c.context.fetch=async()=>({ok:true,json:async()=>({features:[{id:'old',count:1}],total:1,next:'',revision:'1'})});await c.run('load()');
+  c.context.fetch=()=>new Promise(()=>{});c.node('ssid').value='different';c.run('load()');assert.equal(c.run('fits.loaded'),0);
+  c.run(`fits={loaded:1,features:[{id:'wrong-solver',count:1}]};summarySolver='opencl64-fast-v1';load();`);assert.equal(c.run('fits.loaded'),0);
+});
 test('new saved fits retain unchanged multi-million-point observation buffers',async()=>{
   const c=controller();let summary={revision:'fit-new',observation_revision:'observations-same',located_ssids:1,observed_ssids:2,observations:10000000};
   c.context.fetch=async()=>({ok:true,json:async()=>summary});

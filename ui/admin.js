@@ -3,9 +3,12 @@
   const $=id=>document.getElementById(id),fi=n=>Number(n||0).toLocaleString(),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   let active=null,operation=null,preview=null,historyOffset=0,historyTotal=0,native=false,pending='',refreshing=false;
   let prepSettings=null;
+  const solverLabel=s=>s==='opencl64-reference-v1'?'GPU reference':s==='opencl64-fast-v1'?'GPU fast':s==='fast'?'Fast':'Reference';
+  function renderAcceleration(j){const s=j.acceleration||{};$('adminGPUStatus').textContent=!j.settings?.gpu_fits?'GPU acceleration is off.':s.available?`GPU ready · ${s.device}${s.fallbacks?` · ${fi(s.fallbacks)} CPU fallbacks`:''}`:s.reason||'GPU will be checked when calculations start.';}
   async function refreshPreparationAdmin(force=false){
+    const config=await(await fetch('/api/app/settings',{cache:'no-store'})).json();renderAcceleration(config);
     const r=await fetch('/api/app/preparation/status',{cache:'no-store'});if(!r.ok)return;const s=await r.json(),p=s.progress||{};
-    $('adminPrepStatus').textContent=s.status==='complete'?`Locations ready · ${fi(p.completed)} networks prepared.`:s.status==='running'?`Preparing ${fi(p.completed)} of ${fi(p.total)} networks · ${s.namespace?.solver||''} solver.`:s.status==='limited'?`${fi(p.blocked)} networks remain above the background memory allowance.`:s.status==='failed'?s.error:`Background preparation: ${s.status}.`;
+    $('adminPrepStatus').textContent=s.status==='complete'?`Locations ready · ${fi(p.completed)} networks prepared.`:s.status==='running'?`Preparing ${fi(p.completed)} of ${fi(p.total)} networks · ${solverLabel(s.namespace?.solver)} solver.`:s.status==='limited'?`${fi(p.blocked)} networks remain above the background memory allowance.`:s.status==='failed'?s.error:`Background preparation: ${s.status}.`;
     if(!prepSettings||force){const d=s.settings;$('adminPrepEnabled').checked=d.enabled;$('adminPrepMode').value=d.fit_mode;$('adminPrepGrouping').value=d.grouping;$('adminPrepWorkers').value=d.workers;$('adminPrepMemory').value=d.memory_mb;}
     prepSettings=s.settings;$('adminPrepPause').textContent=s.settings.paused?'Resume background':'Pause background';
   }
@@ -102,8 +105,9 @@
     for(const b of document.querySelectorAll('[data-task]'))b.onclick=()=>run('maintenance',{task:b.dataset.task});
     $('adminCancel').onclick=()=>request('cancel',{id:operation?.id}).then(renderOperation).catch(e=>error(e.message));
     $('adminCancelJob').onclick=()=>fetch('/api/cancel',{method:'POST'}).then(refresh).catch(e=>error(e.message));
-    const settings=await(await fetch('/api/app/settings',{cache:'no-store'})).json();$('adminFastFits').checked=!!settings.settings.fast_fits;
-    $('adminFastFits').onchange=async()=>{try{const r=await fetch('/api/app/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fast_fits:$('adminFastFits').checked})});if(!r.ok)throw new Error((await r.json()).error);$('adminSettingsStatus').textContent='Saved for this app';}catch(e){error(e.message);}};
+    const settings=await(await fetch('/api/app/settings',{cache:'no-store'})).json();$('adminFastFits').checked=!!settings.settings.fast_fits;$('adminGPUFits').checked=!!settings.settings.gpu_fits;renderAcceleration(settings);
+    const saveCalculation=async()=>{try{const r=await fetch('/api/app/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fast_fits:$('adminFastFits').checked,gpu_fits:$('adminGPUFits').checked})}),j=await r.json();if(!r.ok)throw new Error(j.error);renderAcceleration(j);$('adminSettingsStatus').textContent='Saved for this app';}catch(e){error(e.message);}};
+    $('adminFastFits').onchange=saveCalculation;$('adminGPUFits').onchange=saveCalculation;
     try{const notice=JSON.parse(sessionStorage.getItem('signal-atlas.admin.notice')||'null');if(notice){$('adminNotice').textContent=notice.text;$('adminNotice').hidden=false;sessionStorage.removeItem('signal-atlas.admin.notice');}}catch(e){}
     const panel=new URLSearchParams(location.search).get('tab');tab(['survey','imports','maintenance'].includes(panel)?panel:'survey');await refresh();setInterval(refresh,1000);
   }

@@ -336,8 +336,11 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 	p := r.URL.Path
 	params := py.ParseQs(r.URL.RawQuery)
 	// the fast solver, when chosen in the settings, for every fit and every cached-fit lookup
-	if strings.HasPrefix(p, "/api/") && !strings.HasPrefix(p, "/api/app/compare") && !params.Has("solver") && s.set.get().FastFits {
-		params["solver"] = []string{"fast"}
+	if strings.HasPrefix(p, "/api/") && !strings.HasPrefix(p, "/api/app/compare") && !params.Has("solver") {
+		settings := s.set.get()
+		if solver := atlas.SolverName(settings.FastFits, settings.GPUFits); solver != "reference" {
+			params["solver"] = []string{solver}
+		}
 	}
 	if r.Method == http.MethodGet || r.Method == http.MethodHead {
 		switch {

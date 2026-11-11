@@ -623,6 +623,7 @@ type MapSummary struct {
 	Observations        int    `json:"observations"`
 	Revision            string `json:"revision"`
 	ObservationRevision string `json:"observation_revision"`
+	Solver              string `json:"solver"`
 }
 
 // Counts describe the entire survey, independent of map selection and viewport.

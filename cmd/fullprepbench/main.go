@@ -31,6 +31,7 @@ func main() {
 	data := flag.String("data", "", "owned disposable engine directory")
 	workers := flag.Int("workers", 2, "preparation workers")
 	solver := flag.String("solver", "reference", "reference or fast, identical between engines")
+	accelerated := flag.Bool("gpu", false, "opt-in float64 GPU scoring, with versioned cache namespace")
 	profile := flag.String("profile", "", "optional separate diagnostic CPU profile")
 	verify := flag.Bool("verify-existing", false, "reopen a completed owned sweep and verify no calculations are repeated")
 	flag.Parse()
@@ -94,7 +95,7 @@ func main() {
 		return v
 	}
 	call("POST", "/api/app/preparation/settings", map[string]any{"paused": false, "enabled": true, "workers": *workers, "memory_mb": 256, "grouping": "shared", "fit_mode": "sample"})
-	call("POST", "/api/app/settings", map[string]any{"fast_fits": *solver == "fast"})
+	call("POST", "/api/app/settings", map[string]any{"fast_fits": *solver == "fast", "gpu_fits": *accelerated})
 	samples := []map[string]any{}
 	var state map[string]any
 	for {
@@ -141,5 +142,7 @@ func main() {
 		}
 	}
 	report := map[string]any{"schema": 1, "verification_only": *verify, "solver": *solver, "workers": *workers, "threads": 8, "seconds": seconds, "rows": s.Atlas.Obs.State().N, "stats": stats, "saved": saved, "targets_per_second": float64(db.Int(stats["completed"])) / seconds, "fitted_per_second": float64(db.Int(stats["fitted"])) / seconds, "samples": samples, "metrics": state, "estimates_sha256": hex.EncodeToString(sum.Sum(nil))}
+	report["acceleration"] = call("GET", "/api/app/settings", nil)["acceleration"]
+	report["gpu_requested"] = *accelerated
 	must(json.NewEncoder(os.Stdout).Encode(report))
 }

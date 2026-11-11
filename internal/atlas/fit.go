@@ -241,13 +241,15 @@ func (a *Atlas) FitRadio(group Group, p py.Params, cancelled func() bool) (map[s
 	result["sampled_observations"], result["used_observations"], result["coordinate_groups"] = used, used, int64(len(sample))
 	model, err := NewLocationModel(cols, 3, weights, within, cancelled)
 	if err == nil {
+		solver := p.First("solver", "reference")
+		model.accelerated = solver == GPUReference || solver == GPUFast
 		idx := make([]int, len(sample))
 		for i := range idx {
 			idx[i] = i
 		}
 		var fit *Fit
 		fitter := model.Fit
-		if p.Is("solver", fitSolverFast) {
+		if solver == fitSolverFast || solver == GPUFast {
 			fitter = model.FitFast
 		}
 		if fit, err = fitter(idx, 3.0, 500, 10, false); err == nil {
@@ -258,6 +260,13 @@ func (a *Atlas) FitRadio(group Group, p py.Params, cancelled func() bool) (map[s
 			result["status"], result["latitude"], result["longitude"] = "fitted", fit.Latitude, fit.Longitude
 			result["residual_rms_db"], result["boundary_limited"], result["path_loss_exponent"] = fit.RMS, fit.BoundaryLimited, 3.0
 			result["note"] = note + "Fixed-power, stationary-radio model. Planning radius is not a confidence interval."
+			if model.accelerated {
+				backend := "opencl64-v1"
+				if model.gpuCalls == 0 {
+					backend = "cpu-fallback"
+				}
+				result["acceleration"] = map[string]any{"backend": backend, "gpu_grids": model.gpuCalls, "cpu_fallback_grids": model.gpuFallbacks, "solver": solver}
+			}
 		}
 	}
 	if err != nil {

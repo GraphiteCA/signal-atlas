@@ -25,15 +25,8 @@ func (m *LocationModel) FitFast(idx []int, exponent, extentM, stepM float64, pre
 		return nil, py.Errorf("Need at least three within-radio contrasts (observations minus radios)")
 	}
 	s := m.subset(idx)
-	axis := Linspace(-extentM, extentM, int(math.Ceil(2*extentM/stepM))+1)
-	A := len(axis)
-	px, pyy := make([]float64, A*A), make([]float64, A*A)
-	for r := 0; r < A; r++ {
-		for c := 0; c < A; c++ {
-			px[r*A+c], pyy[r*A+c] = axis[c], axis[r]
-		}
-	}
-	errs, err := m.sse(px, pyy, s, exponent, nil)
+	px, pyy := coarseGrid(extentM, stepM)
+	errs, err := m.scoreGrid(px, pyy, s, exponent, nil, true, 3*stepM)
 	if err != nil {
 		return nil, err
 	}
@@ -43,8 +36,9 @@ func (m *LocationModel) FitFast(idx []int, exponent, extentM, stepM float64, pre
 	}
 
 	refine := math.Min(.25, stepM/4)
+	var pointScore [1]float64
 	one := func(x, y float64) (float64, error) {
-		v, err := m.sse([]float64{x}, []float64{y}, s, exponent, nil)
+		v, err := m.sse([]float64{x}, []float64{y}, s, exponent, pointScore[:])
 		if err != nil {
 			return 0, err
 		}
