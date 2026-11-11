@@ -473,9 +473,9 @@ func parallelRows(produce func(emit func([]string, int64) error) error, parse fu
 		out   []parsedRow
 		done  chan struct{}
 	}
-	workers := max(1, runtime.NumCPU()-1)
-	jobs := make(chan *job, workers*4)
-	ordered := make(chan *job, workers*4)
+	workers := max(1, min(runtime.NumCPU(), runtime.GOMAXPROCS(0))-1)
+	jobs := make(chan *job, workers*2)
+	ordered := make(chan *job, workers*2)
 	stop := make(chan struct{})
 	var stopOnce sync.Once
 	halt := func() { stopOnce.Do(func() { close(stop) }) }
@@ -489,6 +489,11 @@ func parallelRows(produce func(emit func([]string, int64) error) error, parse fu
 				for k := range j.recs {
 					j.out[k] = parse(j.recs[k], j.lines[k])
 				}
+				// Parsed observations retain their own field strings; the CSV
+				// record slices and line buffer are no longer needed while
+				// this batch waits for earlier batches to commit in order.
+				j.recs = nil
+				j.lines = nil
 				close(j.done)
 			}
 		}()

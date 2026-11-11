@@ -89,13 +89,32 @@ func seed(a *atlas.Atlas, n int) {
 	}))
 	fmt.Fprintln(os.Stderr, "Seeded", len(gs), "synthetic render-only AP locations; not calculated fits")
 }
+
+// The SQL export probe uses the production save-bytes bridge with a fixed,
+// fresh benchmark-owned destination instead of opening an interactive dialog.
+type sqlExportHost struct{ dir string }
+
+func (h sqlExportHost) PickFiles(string, []string, bool) ([]string, error) { return nil, nil }
+func (h sqlExportHost) PickFolder(string) (string, error)                  { return "", nil }
+func (h sqlExportHost) SavePath(_ string, name, ext string) (string, bool, error) {
+	if name != "query-page.csv" || ext != "csv" {
+		return "", false, fmt.Errorf("unexpected SQL export")
+	}
+	path := filepath.Join(h.dir, name)
+	if _, e := os.Stat(path); !os.IsNotExist(e) {
+		return "", false, fmt.Errorf("fresh export required")
+	}
+	return path, true, nil
+}
+func (h sqlExportHost) ShowFolder(string) {}
+
 func main() {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	data := flag.String("data", "", "owned benchmark data (contains store/)")
 	repo := flag.String("repo", ".", "upstream checkout")
 	donor := flag.String("donor", "..", "donor source copy")
-	page := flag.String("page", "gpu", "gpu, canvas, admin, explorer or donor")
+	page := flag.String("page", "gpu", "gpu, canvas, admin, sql, explorer or donor")
 	output := flag.String("output", "", "new JSON output path")
 	count := flag.Int("seed-fits", 0, "seed synthetic saved locations for rendering only")
 	driver := flag.String("driver", "native.js", "diagnostic script name inside benchmarks/")
@@ -110,7 +129,11 @@ func main() {
 	if _, err := os.Stat(*output); !os.IsNotExist(err) {
 		panic("output already exists")
 	}
-	s, err := engine.New(engine.Options{DisablePreparation: !*automatic, Data: *data, Version: "dev", UI: os.DirFS(filepath.Join(*repo, "ui")), Explorer: os.DirFS(filepath.Join(*repo, "python", "templates")), Compare: os.DirFS(filepath.Join(*repo, "web")), Hosts: []string{"wails.localhost", "wails.localhost:80", "wails"}, Origins: []string{"wails://wails"}})
+	var dialogHost engine.Host
+	if *page == "sql" {
+		dialogHost = sqlExportHost{dir: filepath.Dir(*output)}
+	}
+	s, err := engine.New(engine.Options{Host: dialogHost, DisablePreparation: !*automatic, Data: *data, Version: "dev", UI: os.DirFS(filepath.Join(*repo, "ui")), Explorer: os.DirFS(filepath.Join(*repo, "python", "templates")), Compare: os.DirFS(filepath.Join(*repo, "web")), Hosts: []string{"wails.localhost", "wails.localhost:80", "wails"}, Origins: []string{"wails://wails"}})
 	must(err)
 	defer s.Close()
 	if *count > 0 {
@@ -123,6 +146,11 @@ func main() {
 	must(err)
 	var ctx context.Context
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if *page == "sql" && r.URL.Path == "/__bench/export-status" {
+			b, e := os.ReadFile(filepath.Join(filepath.Dir(*output), "query-page.csv"))
+			json.NewEncoder(w).Encode(map[string]any{"saved": e == nil, "bytes": len(b), "has_exact_integer": bytes.Contains(b, []byte("9223372036854775807"))})
+			return
+		}
 		if r.URL.Path == "/__bench/report" && r.Method == "POST" {
 			b, err := io.ReadAll(io.LimitReader(r.Body, 2<<20))
 			must(err)
@@ -161,10 +189,13 @@ func main() {
 			if *page == "admin" {
 				path = "/admin"
 			}
+			if *page == "sql" {
+				path = "/sql"
+			}
 			http.Redirect(w, r, path, http.StatusFound)
 			return
 		}
-		if r.URL.Path == "/map" || r.URL.Path == "/atlas/" || r.URL.Path == "/admin" {
+		if r.URL.Path == "/map" || r.URL.Path == "/atlas/" || (r.URL.Path == "/admin" || r.URL.Path == "/sql") {
 			out := httptest.NewRecorder()
 			s.ServeHTTP(out, r)
 			body := bytes.Replace(out.Body.Bytes(), []byte("</body>"), []byte(`<script src="/__bench/native.js"></script></body>`), 1)
@@ -182,7 +213,7 @@ func main() {
 		}
 		s.ServeHTTP(w, r)
 	})
-	must(wails.Run(&options.App{Title: "Signal Atlas baseline benchmark", StartHidden: *page == "admin", Width: 1400, Height: 950, AssetServer: &assetserver.Options{Handler: h}, OnStartup: func(c context.Context) {
+	must(wails.Run(&options.App{Title: "Signal Atlas baseline benchmark", StartHidden: *page == "admin" || *page == "sql", Width: 1400, Height: 950, AssetServer: &assetserver.Options{Handler: h}, OnStartup: func(c context.Context) {
 		ctx = c
 		s.SetJobEventSink(engine.JobEventSinkFunc(func(e engine.JobEvent) { wr.EventsEmit(c, engine.JobEventName, e) }))
 	}, Windows: &windows.Options{Theme: windows.Dark, WebviewUserDataPath: filepath.Join(*data, "webview-benchmark-"+*page)}}))

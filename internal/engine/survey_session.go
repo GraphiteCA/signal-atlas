@@ -23,7 +23,7 @@ func surveyRequest(p string) bool {
 		}
 	}
 	switch p {
-	case "/api/app/settings", "/api/app/path", "/api/app/pick-files", "/api/app/save-export", "/api/app/save-bytes", "/api/app/open-url", "/api/app/show-data", "/api/app/save-atlas", "/api/app/open-database", "/api/app/database-kind":
+	case "/api/app/sql/cancel", "/api/app/settings", "/api/app/path", "/api/app/pick-files", "/api/app/save-export", "/api/app/save-bytes", "/api/app/open-url", "/api/app/show-data", "/api/app/save-atlas", "/api/app/open-database", "/api/app/database-kind":
 		return false
 	}
 	return true
@@ -62,6 +62,7 @@ func (s *Server) expectedSurvey(expected string) error {
 
 func (s *Server) handoffLock(ctx context.Context) (func(), error) {
 	s.handoff.Store(true)
+	s.sql.stop("")
 	for !s.surveyMu.TryLock() {
 		select {
 		case <-ctx.Done():

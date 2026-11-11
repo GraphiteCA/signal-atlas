@@ -207,6 +207,13 @@ func (d *dropRegistry) find(name string, size int64, wait time.Duration) string 
 
 func (s *Server) appGet(w http.ResponseWriter, r *http.Request, p string, params py.Params) error {
 	switch {
+	case p == "/api/app/sql/schema":
+		result, err := s.Atlas.SQLSchema(r.Context())
+		if err != nil {
+			return err
+		}
+		sendJSON(w, result, 200)
+		return nil
 	case strings.HasPrefix(p, "/api/app/preparation/"):
 		return s.preparationGet(w, r, strings.TrimPrefix(p, "/api/app/preparation/"))
 	case strings.HasPrefix(p, "/api/app/admin/"):
@@ -245,6 +252,12 @@ func (s *Server) appGet(w http.ResponseWriter, r *http.Request, p string, params
 
 func (s *Server) appPost(w http.ResponseWriter, r *http.Request, p string, params py.Params) error {
 	switch {
+	case p == "/api/app/sql/query":
+		return s.sqlQuery(w, r)
+	case p == "/api/app/sql/cancel":
+		s.sql.stop(params.First("id", ""))
+		sendJSON(w, map[string]any{"cancelled": true}, 200)
+		return nil
 	case p == "/api/app/preparation/settings":
 		return s.preparationPost(w, r)
 	case strings.HasPrefix(p, "/api/app/admin/"):

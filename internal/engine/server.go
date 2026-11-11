@@ -79,6 +79,7 @@ type Server struct {
 	preparation    *preparationRunner
 	events         *jobEvents
 	mapPoints      mapPointsCache
+	sql            sqlBrowser
 	hostsMu        sync.RWMutex
 	hosts          map[string]bool
 	origins        map[string]bool
@@ -190,6 +191,7 @@ func (s *Server) Close() {
 		return
 	}
 	s.adminGate.Unlock()
+	s.sql.stop("")
 	s.admin.stop()
 	s.preparation.close()
 	s.events.close()
@@ -347,7 +349,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return s.serveFS(w, s.o.UI, "native.js", false)
 		case strings.HasPrefix(p, "/app/map/"):
 			return s.serveFS(w, s.o.UI, "map/"+strings.TrimPrefix(p, "/app/map/"), false)
-		case p == "/app/admin.js" || p == "/app/admin.css":
+		case p == "/app/admin.js" || p == "/app/admin.css" || p == "/app/sql.js" || p == "/app/sql.css":
 			return s.serveFS(w, s.o.UI, strings.TrimPrefix(p, "/app/"), false)
 		case strings.HasPrefix(p, "/app/vendor/"):
 			return s.serveFS(w, s.o.UI, "vendor/"+strings.TrimPrefix(p, "/app/vendor/"), false)
@@ -355,6 +357,8 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return s.serveFS(w, s.o.Compare, "compare.html", true)
 		case p == "/map" || p == "/map.html":
 			return s.serveFS(w, s.o.UI, "map.html", true)
+		case p == "/sql" || p == "/sql.html":
+			return s.serveFS(w, s.o.UI, "sql.html", true)
 		case p == "/admin" || p == "/admin.html":
 			return s.serveFS(w, s.o.UI, "admin.html", true)
 		case p == "/database" || p == "/database.html":

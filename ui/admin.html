@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><title>Database administration · Signal Atlas</title><link rel="stylesheet" href="/app/admin.css"></head>
 <body><main>
-<header><div><nav><a href="/map">← Survey map</a><a href="/">Home</a><a href="/compare.html">Compare</a><a href="/database">Drive database</a></nav><h1>Database administration</h1><p class="muted">Keep surveys separate, import scans and maintain saved data.</p></div><button id="adminRefresh">Refresh</button></header>
+<header><div><nav><a href="/map">← Survey map</a><a href="/">Home</a><a href="/compare.html">Compare</a><a href="/database">Drive database</a><a href="/sql">SQL browser</a></nav><h1>Database administration</h1><p class="muted">Keep surveys separate, import scans and maintain saved data.</p></div><button id="adminRefresh">Refresh</button></header>
 <p id="adminError" class="error" role="alert" hidden></p><p id="adminNotice" role="status" hidden></p>
 <section class="current"><div><span class="eyebrow">ACTIVE SURVEY</span><strong id="adminName">Connecting…</strong><code id="adminPath"></code></div><div id="adminCounts" class="counts"></div></section>
 <nav class="tabs" aria-label="Administration sections"><button data-tab="survey" aria-selected="true">Survey &amp; backups</button><button data-tab="imports" aria-selected="false">Import scans</button><button data-tab="maintenance" aria-selected="false">Maintenance</button></nav>

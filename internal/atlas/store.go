@@ -23,14 +23,17 @@ import (
 // band assignments, the basemap, in Graphite's schema; its observations table stays empty) and
 // observations/ (the column store with every observation).
 type Atlas struct {
-	Root      string // logical workspace, including a generation pointer after maintenance
-	Recovered bool
-	Dir       string
-	MetaPath  string
-	Obs       *obs.Store
-	pool      *sqlitex.Pool
-	closeOnce sync.Once
-	closeErr  error
+	Root       string // logical workspace, including a generation pointer after maintenance
+	Recovered  bool
+	Dir        string
+	MetaPath   string
+	Obs        *obs.Store
+	pool       *sqlitex.Pool
+	closeOnce  sync.Once
+	closeErr   error
+	sqlMu      sync.Mutex
+	sqlVersion *sqlite.Conn
+	sqlClosed  bool
 	// WriteMu serialises the writers (imports, band assignments, the bridge); queries never wait.
 	WriteMu                 sync.Mutex
 	mapCache                mapCache
@@ -207,7 +210,15 @@ func openGenerationWith(root, dir string, columns *obs.Store) (*Atlas, error) {
 
 // Close closes the store.
 func (a *Atlas) Close() error {
-	a.closeOnce.Do(func() { a.closeErr = a.pool.Close() })
+	a.closeOnce.Do(func() {
+		a.sqlMu.Lock()
+		a.sqlClosed = true
+		if a.sqlVersion != nil {
+			a.closeErr = a.sqlVersion.Close()
+		}
+		a.sqlMu.Unlock()
+		a.closeErr = errors.Join(a.closeErr, a.pool.Close())
+	})
 	return a.closeErr
 }
 

@@ -97,6 +97,14 @@ survive pauses, snapshots and restarts. Imports, cleanup and band edits queue on
 imports and selected calculations take priority over background work. Turning automatic preparation
 off keeps calculated locations and restores manual fitting. See [Phase 3 preparation](docs/phase3-preparation.md).
 
+Administration also opens a **read-only SQL browser** for the active survey.
+It queries the real observation columns and a matching metadata snapshot, with
+schema browsing, Explain, cancellation, timeouts, bounded pages and CSV export
+of the displayed page. The dialect is SQLite. See the
+[Phase 4 storage evaluation](docs/phase4-storage.md) for benchmarks, the storage
+choice and the SQL adapter's limits.
+
+
 **GPU map.** **GPU map** (on the home page and at the top of the explorer) draws every sighting in
 view and every fitted AP with deck.gl over MapLibre, coloured by signal. Past the chosen number of
 points (half a million to eight million) it shows every k-th sighting so the whole view is covered;
@@ -106,7 +114,7 @@ is. It needs WebGL, which every supported system's web view has.
 **Fit every AP.** The explorer normally fits access points near the map view as you pan. **Fit every
 AP** fits every network the current filters keep, as one background job. It works through them a
 batch of 256 networks at a time, saves each fit as it finishes and shows them on the map as it goes,
-so memory stays flat on any size of survey. **Cancel job** keeps what is done, and running it again
+keeping the calculation queue bounded. **Cancel job** keeps what is done, and running it again
 skips networks that already have a fit. A zoomed-out map shows an even sample of up to 1,500 fits;
 zoom in to see every fit in an area.
 

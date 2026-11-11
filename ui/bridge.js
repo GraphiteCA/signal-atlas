@@ -33,7 +33,7 @@
   const jobListeners=new Set();let jobAfter=0,lastNative=0,jobTimer=null,jobPolling=false,jobStopped=false;
   function jobMessage(event,native=false){
     if(!event)return;
-    if(event.kind==='survey-changed'&&event.survey_id!==info.survey_id){if(/^\/(map|atlas|admin)(\/|\.html)?$/.test(location.pathname))location.reload();return;}
+    if(event.kind==='survey-changed'&&event.survey_id!==info.survey_id){if(/^\/(map|atlas|admin|sql)(\/|\.html)?$/.test(location.pathname))location.reload();return;}
     if(event.survey_id!==info.survey_id)return;
     if(native)lastNative=Date.now();
     if(event.sequence<=jobAfter&&!event.reconcile)return;

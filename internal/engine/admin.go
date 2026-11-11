@@ -152,7 +152,7 @@ func (s *Server) adminGet(w http.ResponseWriter, r *http.Request, action string)
 		if err != nil {
 			return err
 		}
-		sendGoJSON(w, map[string]any{"survey_id": s.surveyID, "path": s.Atlas.Root, "generation": pointer.Active, "recovery_available": pointer.Previous != "", "database": info, "job": s.Jobs.Snapshot(), "operation": s.admin.snapshot(), "recent": s.set.get().RecentSurveys, "dialogs": s.o.Host != nil, "warning": s.startupWarning, "capabilities": map[string]bool{"workspace_snapshot": true, "portable_sqlite": true, "full_observation_sql": false}}, 200)
+		sendGoJSON(w, map[string]any{"survey_id": s.surveyID, "path": s.Atlas.Root, "generation": pointer.Active, "recovery_available": pointer.Previous != "", "database": info, "job": s.Jobs.Snapshot(), "operation": s.admin.snapshot(), "recent": s.set.get().RecentSurveys, "dialogs": s.o.Host != nil, "warning": s.startupWarning, "capabilities": map[string]bool{"workspace_snapshot": true, "portable_sqlite": true, "full_observation_sql": true}}, 200)
 		return nil
 	case "imports":
 		offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))

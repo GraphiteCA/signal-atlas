@@ -27,6 +27,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -243,8 +244,9 @@ func Editable(bandSource string) bool {
 	return bandSource == "frequency/band unavailable" || bandSource == "manual assignment"
 }
 
-func (st *State) index() {
+func (st *State) shape() {
 	st.start = make([]int, len(st.Segs))
+	st.MaxID = 0
 	n := 0
 	for i, s := range st.Segs {
 		st.start[i] = n
@@ -254,6 +256,10 @@ func (st *State) index() {
 		}
 	}
 	st.N = n
+}
+
+func (st *State) index() {
+	st.shape()
 	var wg sync.WaitGroup
 	each := func(fn func(g uint32, s *Segment, i int)) {
 		g := uint32(0)
@@ -266,55 +272,49 @@ func (st *State) index() {
 	}
 	run := func(f func()) { wg.Add(1); go func() { defer wg.Done(); f() }() }
 	run(func() {
-		m := map[uint32][]uint32{}
-		each(func(g uint32, s *Segment, i int) { m[s.Radio[i]] = append(m[s.Radio[i]], g) })
+		m := postings(st, func(s *Segment, i int) uint32 { return s.Radio[i] })
 		st.ByRadio = m
 	})
 	run(func() {
-		m := map[uint32][]uint32{}
-		each(func(g uint32, s *Segment, i int) { m[s.SSID[i]] = append(m[s.SSID[i]], g) })
+		m := postings(st, func(s *Segment, i int) uint32 { return s.SSID[i] })
 		st.BySSID = m
 	})
 	run(func() {
-		m := map[int64][]uint32{}
-		each(func(g uint32, s *Segment, i int) { k := CellOf(s.Lat[i], s.Lon[i]); m[k] = append(m[k], g) })
+		m := postings(st, func(s *Segment, i int) int64 { return CellOf(s.Lat[i], s.Lon[i]) })
 		st.Grid = m
 	})
 	run(func() {
-		m := map[Pair][]uint32{}
+		m := postings(st, func(s *Segment, i int) Pair { return Pair{s.SSID[i], s.MAC[i]} })
 		ts := map[Pair]*TransStat{}
-		bandSets := map[Pair]map[uint32]bool{}
 		each(func(g uint32, s *Segment, i int) {
 			k := Pair{s.SSID[i], s.MAC[i]}
-			m[k] = append(m[k], g)
 			t := ts[k]
 			if t == nil {
 				t = &TransStat{Peak: math.Inf(-1)}
 				ts[k] = t
-				bandSets[k] = map[uint32]bool{}
 			}
 			t.Count++
 			if s.RSSI[i] > t.Peak {
 				t.Peak = s.RSSI[i]
 			}
-			bandSets[k][s.Band[i]] = true
+			if !slices.Contains(t.Bands, s.Band[i]) {
+				t.Bands = append(t.Bands, s.Band[i])
+			}
 			if Editable(st.Str[s.BandSrc[i]]) {
 				t.Editable++
 			}
 		})
-		for k, t := range ts {
-			t.Bands = sortedIDs(bandSets[k], st.Str)
+		for _, t := range ts {
+			sort.Slice(t.Bands, func(i, j int) bool { return st.Str[t.Bands[i]] < st.Str[t.Bands[j]] })
 		}
 		st.ByTrans, st.Trans = m, ts
 		// the network catalogue from the transmitter one
 		net := map[uint32]*NetStat{}
-		nb := map[uint32]map[uint32]bool{}
 		for k, t := range ts {
 			ns := net[k[0]]
 			if ns == nil {
 				ns = &NetStat{Peak: math.Inf(-1)}
 				net[k[0]] = ns
-				nb[k[0]] = map[uint32]bool{}
 			}
 			ns.Count += t.Count
 			ns.Macs++
@@ -323,23 +323,44 @@ func (st *State) index() {
 				ns.Peak = t.Peak
 			}
 			for _, b := range t.Bands {
-				nb[k[0]][b] = true
+				if !slices.Contains(ns.Bands, b) {
+					ns.Bands = append(ns.Bands, b)
+				}
 			}
 		}
-		for k, ns := range net {
-			ns.Bands = sortedIDs(nb[k], st.Str)
+		for _, ns := range net {
+			sort.Slice(ns.Bands, func(i, j int) bool { return st.Str[ns.Bands[i]] < st.Str[ns.Bands[j]] })
 		}
 		st.Net = net
 	})
 	wg.Wait()
 }
 
-func sortedIDs(set map[uint32]bool, str []string) []uint32 {
-	out := make([]uint32, 0, len(set))
-	for id := range set {
-		out = append(out, id)
+// postings builds exact-size, contiguous posting lists. Two linear passes avoid
+// per-key slice growth, spare capacity and the old generations of backing arrays
+// that otherwise coexist during every import/reopen. Lists remain row-ordered.
+func postings[K comparable](st *State, key func(*Segment, int) K) map[K][]uint32 {
+	counts := make(map[K]int)
+	for _, s := range st.Segs {
+		for i := 0; i < s.N; i++ {
+			counts[key(s, i)]++
+		}
 	}
-	sort.Slice(out, func(a, b int) bool { return str[out[a]] < str[out[b]] })
+	rows := make([]uint32, st.N)
+	out := make(map[K][]uint32, len(counts))
+	offset := 0
+	for k, n := range counts {
+		out[k] = rows[offset : offset : offset+n]
+		offset += n
+	}
+	var g uint32
+	for _, s := range st.Segs {
+		for i := 0; i < s.N; i++ {
+			k := key(s, i)
+			out[k] = append(out[k], g)
+			g++
+		}
+	}
 	return out
 }
 
@@ -657,7 +678,9 @@ func (s *Store) Commit(ch Change) error {
 		return err
 	}
 	st := &State{Segs: segs, Str: s.Dict.Snapshot()}
-	st.index()
+	if ch.Segments != nil || len(ch.Drop) > 0 || len(ch.Replace) > 0 || !st.appendIndex(old) {
+		st.index()
+	}
 	s.state.Store(st)
 	s.sweep(segs)
 	return nil
@@ -750,31 +773,55 @@ func writeSegment(path string, sg *Segment) error {
 }
 
 func readSegment(path string) (*Segment, error) {
-	raw, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	if len(raw) < 16 || string(raw[:8]) != segMagic {
-		return nil, errors.New("not a segment file")
-	}
-	hl := int(binary.LittleEndian.Uint32(raw[8:]))
-	var h segHeader
-	if err := json.Unmarshal(raw[16:16+hl], &h); err != nil {
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
 		return nil, err
 	}
-	// copy into an 8-aligned buffer (ReadFile's slice is aligned in practice, but do not rely on it)
-	buf := make([]uint64, (len(raw)+7)/8)
-	b := unsafe.Slice((*byte)(unsafe.Pointer(&buf[0])), len(raw))
-	copy(b, raw)
+	if info.Size() < 16 || info.Size() > int64(int(^uint(0)>>1))-7 {
+		return nil, errors.New("invalid segment length")
+	}
+	// Read directly into the final aligned backing allocation. Never keep a
+	// second file-sized ReadFile copy alive while rebuilding observation indexes.
+	buf := make([]uint64, (int(info.Size())+7)/8)
+	b := unsafe.Slice((*byte)(unsafe.Pointer(&buf[0])), int(info.Size()))
+	if _, err = io.ReadFull(f, b); err != nil {
+		return nil, err
+	}
+	if string(b[:8]) != segMagic {
+		return nil, errors.New("not a segment file")
+	}
+	hl := int(binary.LittleEndian.Uint32(b[8:]))
+	if hl < 1 || hl > 4096 || hl > len(b)-16 {
+		return nil, errors.New("invalid segment header")
+	}
+	var h segHeader
+	if err := json.Unmarshal(b[16:16+hl], &h); err != nil {
+		return nil, err
+	}
+	if h.N < 0 || h.N > (len(b)-16-hl)/89 || h.Base < 1 || int64(h.N) > math.MaxInt64-h.Base {
+		return nil, errors.New("invalid segment row count or IDs")
+	}
 	pos := 16 + hl
 	al := func() { pos = (pos + 7) &^ 7 }
 	al()
 	n := h.N
+	expected := pos
+	for _, width := range []int{4, 4, 4, 4, 4, 4, 4, 4, 8, 8, 8, 8, 8, 8, 1, 8} {
+		expected = (expected + width*n + 7) &^ 7
+	}
+	if expected != len(b) {
+		return nil, errors.New("segment file is truncated or has trailing data")
+	}
 	sg := &Segment{ImportID: h.ImportID, Base: h.Base, N: n}
 	take := func(size int) []byte {
 		if pos+size > len(b) {
 			err = errors.New("segment file is truncated")
-			return make([]byte, size)
+			return nil
 		}
 		x := b[pos : pos+size]
 		pos += size
