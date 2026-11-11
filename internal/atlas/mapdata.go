@@ -1,10 +1,9 @@
 package atlas
 
 import (
-	"encoding/json"
+	"context"
 	"math"
 
-	"signal-atlas/internal/db"
 	"signal-atlas/internal/obs"
 	"signal-atlas/internal/py"
 
@@ -39,11 +38,18 @@ func (a *Atlas) Bounds() ([4]float64, bool) {
 // PointsIn returns the observations the filters keep (bbox included), at most max of them: past
 // that, every k-th, so the whole view is covered evenly.
 func (a *Atlas) PointsIn(p py.Params, max int) (*Points, error) {
+	return a.PointsInContext(context.Background(), p, max)
+}
+
+func (a *Atlas) PointsInContext(ctx context.Context, p py.Params, max int) (*Points, error) {
 	f, _, err := a.compile(p, true)
 	if err != nil {
 		return nil, err
 	}
-	counts := Scan(f, func() *int { return new(int) }, func(n *int, _ uint32, _ *obs.Segment, _ int) { *n++ })
+	counts := ScanContext(ctx, f, func() *int { return new(int) }, func(n *int, _ uint32, _ *obs.Segment, _ int) { *n++ })
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	total := 0
 	for _, n := range counts {
 		total += *n
@@ -64,7 +70,7 @@ func (a *Atlas) PointsIn(p py.Params, max int) (*Points, error) {
 		xy, rssi []float32
 	}
 	lon0, lat0 := out.Lon0, out.Lat0
-	parts := Scan(f, func() *acc { return &acc{} }, func(a *acc, _ uint32, s *obs.Segment, i int) {
+	parts := ScanContext(ctx, f, func() *acc { return &acc{} }, func(a *acc, _ uint32, s *obs.Segment, i int) {
 		a.k++
 		if a.k%every != 0 {
 			return
@@ -72,6 +78,9 @@ func (a *Atlas) PointsIn(p py.Params, max int) (*Points, error) {
 		a.xy = append(a.xy, float32(s.Lon[i]-lon0), float32(s.Lat[i]-lat0))
 		a.rssi = append(a.rssi, float32(s.RSSI[i]))
 	})
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	n := 0
 	for _, pt := range parts {
 		n += len(pt.rssi)
@@ -87,56 +96,34 @@ func (a *Atlas) PointsIn(p py.Params, max int) (*Points, error) {
 
 // MapFit is one saved fit for the GPU map.
 type MapFit struct {
-	Lat, Lon        float64
-	SSID, MAC       string
-	Shared          bool
-	Used            int64
-	RMS             float64
-	BoundaryLimited bool
+	ID              string  `json:"id"`
+	Band            string  `json:"band"`
+	Lat             float64 `json:"lat"`
+	Lon             float64 `json:"lon"`
+	SSID            string  `json:"ssid"`
+	MAC             string  `json:"mac"`
+	Shared          bool    `json:"shared"`
+	Used            int64   `json:"used"`
+	RMS             float64 `json:"rms"`
+	BoundaryLimited bool    `json:"edge"`
 }
 
 // FitsIn returns every fitted location in the bbox saved under the filters' nearby-fit scope
 // (sample mode, or all-observations fits where there are both). No cap: the page draws them on
 // the GPU.
 func (a *Atlas) FitsIn(c *sqlite.Conn, p py.Params) ([]MapFit, error) {
-	scoped := AreaScope(p)
-	_, sampleKey, err := EstimateScope(scoped)
+	idx, _, err := a.mapIndex(context.Background(), c, p)
 	if err != nil {
 		return nil, err
 	}
-	_, exactKey, err := EstimateScope(scoped.With("fit_mode", []string{"all"}))
-	if err != nil {
-		return nil, err
-	}
-	b := [4]float64{-180, -85, 180, 85}
+	b := [4]float64{-180, -85.051129, 180, 85.051129}
 	if p.Has("bbox") {
-		if b, err = Bbox(p.First("bbox", "")); err != nil {
+		b, err = Bbox(p.First("bbox", ""))
+		if err != nil {
 			return nil, err
 		}
 	}
-	var out []MapFit
-	err = db.Each(c, `SELECT e.result FROM estimates e
-        WHERE e.scope_key IN (?, ?) AND json_extract(e.result,'$.status')='fitted'
-        AND json_extract(e.result,'$.longitude') BETWEEN ? AND ?
-        AND json_extract(e.result,'$.latitude') BETWEEN ? AND ?
-        AND (e.scope_key=? OR NOT EXISTS (SELECT 1 FROM estimates x
-            WHERE x.radio_key=e.radio_key AND x.scope_key=?
-            AND json_extract(x.result,'$.status')='fitted'))`, []any{exactKey, sampleKey, b[0], b[2], b[1], b[3], exactKey, exactKey},
-		func(st *sqlite.Stmt) error {
-			var r struct {
-				Latitude, Longitude float64
-				SSID                string  `json:"ssid"`
-				MAC                 string  `json:"mac"`
-				Shared              bool    `json:"co_location_assumed"`
-				Used                int64   `json:"used_observations"`
-				RMS                 float64 `json:"residual_rms_db"`
-				Boundary            bool    `json:"boundary_limited"`
-			}
-			if err := json.Unmarshal([]byte(st.ColumnText(0)), &r); err != nil {
-				return nil
-			}
-			out = append(out, MapFit{Lat: r.Latitude, Lon: r.Longitude, SSID: r.SSID, MAC: r.MAC, Shared: r.Shared, Used: r.Used, RMS: r.RMS, BoundaryLimited: r.Boundary})
-			return nil
-		})
-	return out, err
+	out := []MapFit{}
+	idx.in(b, func(r MapFit) { out = append(out, r) })
+	return out, nil
 }

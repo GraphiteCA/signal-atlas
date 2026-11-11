@@ -3,3 +3,6 @@
 Dockerfile  text eol=lf
 *.desktop   text eol=lf
 *.plist     text eol=lf
+
+# Keep pinned vendor downloads byte-identical to their SHA-256 manifest.
+ui/vendor/** -text -whitespace

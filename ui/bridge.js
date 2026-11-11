@@ -194,6 +194,27 @@
       } catch (err) { alert("Couldn't open the database: " + err.message); }
     }
     const addControls = () => {
+	  // App-owned handoff from the GPU map to the reference analysis tools.
+	  const incoming = new URLSearchParams(location.search);
+	  if (incoming.has('ssid') && window.signalExplorer && !document.documentElement.dataset.saSelectionApplied) {
+	    document.documentElement.dataset.saSelectionApplied = 'true';
+	    const selected = window.signalExplorer.getState(), ssid = incoming.get('ssid');
+	    selected.all = false; selected.ssids = new Set([ssid]); selected.excluded.clear();
+	    selected.networkQuery = ssid; document.getElementById('network-search').value = ssid;
+	    if (incoming.has('band')) selected.bands = new Set(incoming.getAll('band'));
+	    if (incoming.has('min_rssi')) {selected.minimum = Number(incoming.get('min_rssi'));document.getElementById('rssi').value=selected.minimum;document.getElementById('rssi-output').textContent=selected.minimum+' dBm';}
+	    if (incoming.has('date')) {selected.dateMode='dates';selected.selectedDates=new Set(incoming.getAll('date'));}
+	    else if (incoming.has('date_from') || incoming.has('date_to')) {selected.dateMode='range';document.getElementById('date-from').value=incoming.get('date_from') || '';document.getElementById('date-to').value=incoming.get('date_to') || '';}
+	    document.getElementById('date-mode').value=selected.dateMode;
+	    document.getElementById('date-range-fields').hidden=selected.dateMode!=='range';document.getElementById('specific-date-fields').hidden=selected.dateMode!=='dates';
+	    const mac = incoming.get('mac');
+	    if (mac && /^(?:[0-9A-F]{2}:){5}[0-9A-F]{2}$/i.test(mac)) selected.macSelections.set(ssid, {mode: 'include', macs: new Set([mac])});
+	    const individual = document.getElementById('individual-estimates');
+	    document.getElementById('location-model').value=incoming.get('shared')==='1'?'both':'individual';
+	    individual.checked = incoming.get('individual') === '1'; individual.dispatchEvent(new Event('change'));
+	    if (typeof window.loadNetworks === 'function') window.loadNetworks();
+	    if (typeof window.loadSelection === 'function') window.loadSelection(true);
+	  }
       const head = document.querySelector('header > div');
       if (head && !document.querySelector('.sa-home')) {
         const a = document.createElement('a');
@@ -202,6 +223,13 @@
         const g = document.createElement('a');
         g.className = 'sa-home'; g.href = '/map'; g.textContent = 'GPU map'; g.style.marginLeft = '14px';
         g.title = 'Every sighting and fitted AP in view, drawn on the GPU';
+		g.onclick = (event) => {
+		  if (typeof window.areaQuery !== 'function') return;
+		  event.preventDefault();
+		  const q = window.areaQuery(), m = window.signalExplorer?.getMap();
+		  if (m) {const c = m.getCenter();q.set('lng',c.lng);q.set('lat',c.lat);}
+		  location.href = '/map?' + q;
+		};
         a.after(g);
       }
       const save = document.getElementById('save-database');

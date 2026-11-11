@@ -55,16 +55,17 @@ type Options struct {
 
 // Server is the engine.
 type Server struct {
-	o       Options
-	Atlas   *atlas.Atlas
-	Jobs    *Jobs
-	cmp     *compareSessions
-	drops   *dropRegistry
-	drv     *drives
-	set     *settingsStore
-	hostsMu sync.RWMutex
-	hosts   map[string]bool
-	origins map[string]bool
+	o         Options
+	Atlas     *atlas.Atlas
+	Jobs      *Jobs
+	cmp       *compareSessions
+	drops     *dropRegistry
+	drv       *drives
+	set       *settingsStore
+	mapPoints mapPointsCache
+	hostsMu   sync.RWMutex
+	hosts     map[string]bool
+	origins   map[string]bool
 	// OpenURL opens a link in the user's browser (the window sets it).
 	OpenURL func(string)
 }
@@ -197,6 +198,10 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return s.serveFS(w, s.o.UI, "index.html", false)
 		case p == "/app/bridge.js":
 			return s.serveFS(w, s.o.UI, "bridge.js", false)
+		case strings.HasPrefix(p, "/app/map/"):
+			return s.serveFS(w, s.o.UI, "map/"+strings.TrimPrefix(p, "/app/map/"), false)
+		case strings.HasPrefix(p, "/app/vendor/"):
+			return s.serveFS(w, s.o.UI, "vendor/"+strings.TrimPrefix(p, "/app/vendor/"), false)
 		case p == "/compare.html" || p == "/compare":
 			return s.serveFS(w, s.o.Compare, "compare.html", true)
 		case p == "/map" || p == "/map.html":
@@ -535,6 +540,9 @@ func (s *Server) serveFS(w http.ResponseWriter, fsys fs.FS, rel string, inject b
 	case ".html":
 		ctype = "text/html; charset=utf-8"
 		if inject {
+			// Keep the Python reference files unchanged while making its fallback
+			// map usable without a CDN connection.
+			data = bytes.ReplaceAll(data, []byte("https://unpkg.com/leaflet@1.9.4/dist/"), []byte("/app/vendor/leaflet/"))
 			if i := bytes.Index(bytes.ToLower(data), []byte("<head>")); i >= 0 {
 				data = append(append(append([]byte{}, data[:i+6]...), bridgeTag...), data[i+6:]...)
 			}

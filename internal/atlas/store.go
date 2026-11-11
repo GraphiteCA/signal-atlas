@@ -26,7 +26,8 @@ type Atlas struct {
 	Obs      *obs.Store
 	pool     *sqlitex.Pool
 	// WriteMu serialises the writers (imports, band assignments, the bridge); queries never wait.
-	WriteMu sync.Mutex
+	WriteMu  sync.Mutex
+	mapCache mapCache
 }
 
 const schemaSQL = `
@@ -52,6 +53,14 @@ const schemaSQL = `
   CREATE TABLE IF NOT EXISTS estimates(radio_key TEXT NOT NULL,scope_key TEXT NOT NULL,
     result TEXT NOT NULL,PRIMARY KEY(radio_key,scope_key));
   CREATE TABLE IF NOT EXISTS map_assets(name TEXT PRIMARY KEY,payload TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS map_revision(id INTEGER PRIMARY KEY CHECK(id=1),value INTEGER NOT NULL);
+  INSERT OR IGNORE INTO map_revision VALUES(1,0);
+  CREATE TRIGGER IF NOT EXISTS map_fit_insert AFTER INSERT ON estimates BEGIN
+    UPDATE map_revision SET value=value+1 WHERE id=1; END;
+  CREATE TRIGGER IF NOT EXISTS map_fit_update AFTER UPDATE ON estimates BEGIN
+    UPDATE map_revision SET value=value+1 WHERE id=1; END;
+  CREATE TRIGGER IF NOT EXISTS map_fit_delete AFTER DELETE ON estimates BEGIN
+    UPDATE map_revision SET value=value+1 WHERE id=1; END;
   CREATE TABLE IF NOT EXISTS comparisons(id TEXT PRIMARY KEY,name TEXT NOT NULL,
     created_utc TEXT NOT NULL,payload TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS band_assignments(ssid TEXT NOT NULL,mac TEXT NOT NULL,

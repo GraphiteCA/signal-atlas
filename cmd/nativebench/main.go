@@ -98,6 +98,7 @@ func main() {
 	page := flag.String("page", "gpu", "gpu, explorer or donor")
 	output := flag.String("output", "", "new JSON output path")
 	count := flag.Int("seed-fits", 0, "seed synthetic saved locations for rendering only")
+	driver := flag.String("driver", "native.js", "diagnostic script name inside benchmarks/")
 	flag.Parse()
 	realData, err := filepath.EvalSymlinks(*data)
 	must(err)
@@ -114,7 +115,10 @@ func main() {
 	if *count > 0 {
 		seed(s.Atlas, *count)
 	}
-	script, err := os.ReadFile(filepath.Join(*repo, "benchmarks", "native.js"))
+	if filepath.Base(*driver) != *driver {
+		panic("driver must be a file in benchmarks/")
+	}
+	script, err := os.ReadFile(filepath.Join(*repo, "benchmarks", *driver))
 	must(err)
 	var ctx context.Context
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -147,6 +151,9 @@ func main() {
 				return
 			}
 			path := "/map"
+			if *page == "canvas" {
+				path = "/map?renderer=canvas"
+			}
 			if *page == "explorer" {
 				path = "/atlas/"
 			}

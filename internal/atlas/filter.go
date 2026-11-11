@@ -1,6 +1,7 @@
 package atlas
 
 import (
+	"context"
 	"math"
 	"runtime"
 	"sort"
@@ -309,6 +310,11 @@ func (f *Filter) candidates() []uint32 {
 // Scan visits every matching row in id order, split over the cores: each worker gets a
 // contiguous run of rows and its own accumulator, and the accumulators come back in row order.
 func Scan[A any](f *Filter, newAcc func() A, visit func(a A, g uint32, s *obs.Segment, i int)) []A {
+	return ScanContext(context.Background(), f, newAcc, visit)
+}
+
+// ScanContext joins all workers before returning, including on cancellation.
+func ScanContext[A any](ctx context.Context, f *Filter, newAcc func() A, visit func(a A, g uint32, s *obs.Segment, i int)) []A {
 	st := f.st
 	if f.none {
 		return nil
@@ -345,6 +351,9 @@ func Scan[A any](f *Filter, newAcc func() A, visit func(a A, g uint32, s *obs.Se
 			ff := f.Clone()
 			if cand != nil {
 				for k := pt.lo; k < pt.hi; k++ {
+					if k&4095 == 0 && ctx.Err() != nil {
+						return
+					}
 					g := cand[k]
 					s, i := st.Loc(g)
 					if ff.Match(s, i) {
@@ -358,6 +367,9 @@ func Scan[A any](f *Filter, newAcc func() A, visit func(a A, g uint32, s *obs.Se
 			s, i := st.Loc(g)
 			si := segIndex(st, s)
 			for k := pt.lo; k < pt.hi; k++ {
+				if k&4095 == 0 && ctx.Err() != nil {
+					return
+				}
 				for i >= s.N {
 					si++
 					s, i = st.Segs[si], 0

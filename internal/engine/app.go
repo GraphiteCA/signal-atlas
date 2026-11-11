@@ -243,6 +243,8 @@ func (s *Server) appGet(w http.ResponseWriter, r *http.Request, p string, params
 
 func (s *Server) appPost(w http.ResponseWriter, r *http.Request, p string, params py.Params) error {
 	switch {
+	case p == "/api/app/map/display":
+		return s.mapDisplayPost(w, r)
 	case p == "/api/app/compare/new":
 		sendJSON(w, map[string]any{"id": s.cmp.create().id}, 200)
 		return nil
