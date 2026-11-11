@@ -23,7 +23,7 @@
   function tab(name){for(const button of document.querySelectorAll('[data-tab]'))button.setAttribute('aria-selected',String(button.dataset.tab===name));for(const panel of document.querySelectorAll('[data-panel]'))panel.hidden=panel.dataset.panel!==name;try{history.replaceState(null,'','/admin?tab='+encodeURIComponent(name));}catch(e){}if(name==='imports')loadHistory();}
   function resultHTML(result){
     if(!result)return '';
-    if(Array.isArray(result.files))return '<div class="table-scroll"><table><thead><tr><th>Source</th><th>Accepted</th><th>Duplicates skipped</th><th>Zero pairs excluded</th><th>Invalid</th><th>Other rows</th><th>Outcome</th></tr></thead><tbody>'+result.files.map(r=>`<tr><td>${esc(r.filename)}</td><td>${fi(r.duplicate?0:r.valid_rows)}</td><td>${fi(r.duplicate?0:r.duplicate_rows)}</td><td>${fi(r.zero_excluded_rows)}</td><td>${fi(r.invalid_rows)}</td><td>${fi(r.non_wifi_rows)}</td><td>${esc(r.error|| (r.duplicate?'Already imported':r.empty?(r.duplicate_rows?'All sightings already stored':'No rows added'):'Committed'))}</td></tr>`).join('')+'</tbody></table></div>';
+    if(Array.isArray(result.files))return '<div class="table-scroll"><table><thead><tr><th>Source</th><th>Accepted</th><th>Duplicates skipped</th><th>Zero pairs excluded</th><th>Invalid</th><th>Other rows</th><th>Outcome</th></tr></thead><tbody>'+result.files.map(r=>`<tr><td>${esc(r.filename)}${r.format_message?`<br><small>${esc(r.format_message)}</small>`:''}</td><td>${fi(r.duplicate?0:r.valid_rows)}</td><td>${fi(r.duplicate?0:r.duplicate_rows)}</td><td>${fi(r.zero_excluded_rows)}</td><td>${fi(r.invalid_rows)}</td><td>${fi(r.non_wifi_rows)}</td><td>${esc(r.error|| (r.duplicate?'Already imported':r.empty?(r.duplicate_rows?'All sightings already stored':'No rows added'):'Committed'))}</td></tr>`).join('')+'</tbody></table></div>';
     if(result.removed_rows!==undefined)return `<strong>${fi(result.removed_rows)} rows removed.</strong> ${result.recovery_available?'The prior revision is available under Recovery.':''}`;
     if(result.deleted)return 'Permanently deleted workspace: <code>'+esc(result.deleted)+'</code>';
     if(result.saved&&['csv','days'].includes(result.format))return fi(result.observations)+' observations exported to <code>'+esc(result.path)+'</code>';
@@ -47,7 +47,7 @@
     $('adminResult').innerHTML=resultHTML(op.result);
     if(!running&&pending===op.id){
       pending='';preview=null;duplicatePreview=null;$('adminDuplicateResult').hidden=true;$('adminPreviewResult').hidden=true;
-      if(op.result?.reload){sessionStorage.setItem('signal-atlas.admin.notice',JSON.stringify({id:op.id,text:op.status==='cancelled'?'Import cancelled. Completed files were retained.':(titles[op.kind]||'Operation')+' complete.'}));location.reload();return;}
+      if(op.result?.reload){sessionStorage.setItem('signal-atlas.admin.notice',JSON.stringify({id:op.id,text:op.status==='cancelled'?'Import cancelled. Completed files were retained.':(titles[op.kind]||'Operation')+' complete.'+(op.result.files?.some(r=>r.format_message==='WDG formatting recognized')?' WDG formatting recognized.':'')}));location.reload();return;}
       loadHistory();
     }
   }

@@ -487,6 +487,9 @@ func (a *Atlas) ImportCSV(path string, skipInvalid bool, progress Progress, file
 				_, err := hdr.take(rec)
 				if err == nil && hdr.done {
 					line = hdr.firstLine - 1
+					if hdr.wdg && say != nil {
+						say("WDG formatting recognized")
+					}
 				}
 				return err
 			}
@@ -587,7 +590,11 @@ func (a *Atlas) ImportCSV(path string, skipInvalid bool, progress Progress, file
 		return nil, err
 	}
 	duplicatesCommitted = true
-	return map[string]any{"duplicate": false, "valid_rows": valid, "invalid_rows": invalid, "non_wifi_rows": nonWifi, "zero_excluded_rows": zero, "duplicate_rows": duplicates, "added_rows": valid, "empty": valid == 0, "invalid_examples": examples}, nil
+	result := map[string]any{"duplicate": false, "valid_rows": valid, "invalid_rows": invalid, "non_wifi_rows": nonWifi, "zero_excluded_rows": zero, "duplicate_rows": duplicates, "added_rows": valid, "empty": valid == 0, "invalid_examples": examples}
+	if hdr.wdg {
+		result["format_message"] = "WDG formatting recognized"
+	}
+	return result, nil
 }
 
 // DropStaleEstimates deletes the saved fits of every network that has sightings in seg: named

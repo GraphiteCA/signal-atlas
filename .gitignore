@@ -3,6 +3,7 @@
 *.exe
 # a development run's data and caches
 /data/
+/testing/
 __pycache__/
 python/outputs/
 /dist/

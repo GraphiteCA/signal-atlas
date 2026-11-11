@@ -407,6 +407,7 @@ type Progress func(valid, invalid, read, total int64) error
 // csvHeader handles csv_reader's header: the WiGLE preamble, the names, the required columns.
 type csvHeader struct {
 	names     []string
+	wdg       bool
 	preamble  bool
 	firstLine int64
 	done      bool
@@ -429,6 +430,18 @@ func (h *csvHeader) take(rec []string) (bool, error) {
 	for i, n := range rec {
 		h.names[i] = py.Strip(n)
 		have[h.names[i]] = true
+	}
+	// WDG exports use snake_case names and contain aggregate scan metadata.
+	// Only normalize a recognized header, leaving ordinary CSV validation intact.
+	h.wdg = have["mac"] && have["ssid"] && have["rssi"] && have["latitude"] && have["longitude"] && have["first_seen"] && have["auth_mode"] && have["captured_at"] && have["scan_count"]
+	if h.wdg {
+		aliases := map[string]string{"mac": "MAC", "ssid": "SSID", "auth_mode": "AuthMode", "channel": "Channel", "frequency": "Frequency", "rssi": "RSSI", "latitude": "CurrentLatitude", "longitude": "CurrentLongitude", "first_seen": "FirstSeen"}
+		for i, name := range h.names {
+			if canonical, ok := aliases[name]; ok {
+				h.names[i] = canonical
+				have[canonical] = true
+			}
+		}
 	}
 	var missing []string
 	for _, c := range RequiredColumns {
