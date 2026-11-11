@@ -114,7 +114,7 @@ func AreaScope(p py.Params) py.Params {
 	scoped := py.Params{}
 	for k, v := range p {
 		switch k {
-		case "ssid_query", "band", "min_rssi", "date", "date_from", "date_to", "none", "solver":
+		case "ssid_query", "hide_hidden", "band", "min_rssi", "date", "date_from", "date_to", "none", "solver":
 			scoped[k] = v
 		}
 	}
