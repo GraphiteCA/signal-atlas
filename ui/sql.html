@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><title>SQL browser · Signal Atlas</title><link rel="stylesheet" href="/app/admin.css"><link rel="stylesheet" href="/app/sql.css"></head>
 <body class="sql-page"><main>
-<header><div><nav><a href="/map">← Survey map</a><a href="/admin">Administration</a><a href="/database">Drive database</a></nav><h1>SQL browser</h1><p class="muted">Read your survey observations and saved data using SQLite SQL.</p></div><span class="readonly">Read only</span></header>
+<header><div><nav><a href="/map">← Survey map</a><a href="/admin">Administration</a></nav><h1>SQL browser</h1><p class="muted">Read your survey observations and saved data using SQLite SQL.</p></div><span class="readonly">Read only</span></header>
 <p id="sqlError" class="error" role="alert" hidden></p>
 <section class="current"><div><span class="eyebrow">ACTIVE SURVEY</span><strong id="sqlName">Connecting…</strong><code id="sqlPath"></code></div><div><b id="sqlCount"></b><span class="muted"> stored observations</span></div></section>
 <div class="sql-layout"><aside><div class="title-row"><h2>Schema</h2><button id="sqlRefresh">Refresh</button></div><p class="muted">Click a table to preview its rows.</p><div id="sqlSchema"></div></aside>

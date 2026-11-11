@@ -176,10 +176,17 @@ func (s *Server) adminGet(w http.ResponseWriter, r *http.Request, action string)
 		}
 		sendGoJSON(w, map[string]any{"rows": rows, "total": db.Int(total), "offset": offset, "limit": 100}, 200)
 		return nil
-	case "preview":
+	case "preview", "duplicates":
 		state := s.Atlas.Obs.State()
 		token := zeroToken(s.surveyID, s.Atlas)
-		v, err := s.Atlas.ZeroPreview(r.Context())
+		var v atlas.ZeroPreview
+		var err error
+		if action == "duplicates" {
+			token = "duplicates:" + token
+			v, err = s.Atlas.DuplicatePreview(r.Context())
+		} else {
+			v, err = s.Atlas.ZeroPreview(r.Context())
+		}
 		if err != nil {
 			return err
 		}
@@ -277,6 +284,35 @@ func (s *Server) adminPost(w http.ResponseWriter, r *http.Request, action string
 			return py.Errorf("Choose a workspace or destination path")
 		}
 	}
+	if action == "export-csv" {
+		if format != "csv" && format != "days" {
+			return herr(400, "Choose one CSV or daily CSV files")
+		}
+		if path == "" && s.o.Host != nil {
+			if format == "days" {
+				path, err = s.o.Host.PickFolder("Choose a parent folder for a new survey CSV export")
+				if path != "" {
+					path = filepath.Join(path, "survey-csv-"+newHex())
+				}
+			} else {
+				var ok bool
+				path, ok, err = s.o.Host.SavePath("Export active survey as WiGLE CSV", "survey.csv", "csv")
+				if !ok {
+					path = ""
+				}
+			}
+			if err != nil {
+				return err
+			}
+			if path == "" {
+				sendGoJSON(w, map[string]any{"cancelled": true}, 200)
+				return nil
+			}
+		}
+		if path == "" {
+			return herr(400, "Choose an export destination")
+		}
+	}
 	if action == "wigle" {
 		token, _ := body["token"].(string)
 		token = strings.TrimSpace(token)
@@ -307,6 +343,11 @@ func (s *Server) adminPost(w http.ResponseWriter, r *http.Request, action string
 		switch action {
 		case "new", "open", "convert":
 			return s.adminOpen(ctx, action, path, source)
+		case "export-csv":
+			return s.adminExportCSV(ctx, path, format)
+		case "deduplicate":
+			token, _ := body["token"].(string)
+			return s.adminRemoveRows(ctx, token, true)
 		case "snapshot":
 			return s.adminSnapshot(ctx, path, format)
 		case "delete":
@@ -531,6 +572,9 @@ func portableSurvey(path string) error {
 }
 
 func (s *Server) adminCleanup(ctx context.Context, token string) (any, error) {
+	return s.adminRemoveRows(ctx, token, false)
+}
+func (s *Server) adminRemoveRows(ctx context.Context, token string, duplicates bool) (any, error) {
 	a, j, err := s.freezeSurvey(ctx, false)
 	if err != nil {
 		return nil, err
@@ -541,10 +585,19 @@ func (s *Server) adminCleanup(ctx context.Context, token string) (any, error) {
 			j.Resume()
 		}
 	}()
-	if token == "" || token != zeroToken(s.surveyID, a) {
+	expectedToken := zeroToken(s.surveyID, a)
+	if duplicates {
+		expectedToken = "duplicates:" + expectedToken
+	}
+	if token == "" || token != expectedToken {
 		return nil, py.Errorf("The preview is stale; preview the active survey again")
 	}
-	preview, err := a.ZeroPreview(ctx)
+	var preview atlas.ZeroPreview
+	if duplicates {
+		preview, err = a.DuplicatePreview(ctx)
+	} else {
+		preview, err = a.ZeroPreview(ctx)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -565,7 +618,11 @@ func (s *Server) adminCleanup(ctx context.Context, token string) (any, error) {
 			removeOwnedCandidate(stage, parent)
 		}
 	}()
-	candidate, result, err := a.PrepareCleanup(ctx, stage, func(done, total int64, stage string) { s.admin.progress(stage, done, total, true) })
+	prepare := a.PrepareCleanup
+	if duplicates {
+		prepare = a.PrepareDeduplication
+	}
+	candidate, result, err := prepare(ctx, stage, func(done, total int64, stage string) { s.admin.progress(stage, done, total, true) })
 	if err != nil {
 		return nil, err
 	}

@@ -278,6 +278,10 @@ func (a *Atlas) ZeroPreview(ctx context.Context) (ZeroPreview, error) {
 // PrepareCleanup modifies only a newly created candidate directory. Until the
 // caller publishes it, a crash/failure/cancel leaves the old generation intact.
 func (a *Atlas) PrepareCleanup(ctx context.Context, dest string, progress func(int64, int64, string)) (*Atlas, map[string]any, error) {
+	return a.prepareFiltered(ctx, dest, progress, "Removing 0,0 rows in candidate", true, func(s *obs.Segment, i int) (bool, error) { return geo.ZeroPair(s.Lat[i], s.Lon[i]), nil })
+}
+
+func (a *Atlas) prepareFiltered(ctx context.Context, dest string, progress func(int64, int64, string), stage string, zero bool, remove func(*obs.Segment, int) (bool, error)) (*Atlas, map[string]any, error) {
 	say := func(stage string) {
 		if progress != nil {
 			progress(0, int64(a.Obs.State().N), stage)
@@ -305,10 +309,14 @@ func (a *Atlas) PrepareCleanup(ctx context.Context, dest string, progress func(i
 					return fail(err)
 				}
 				if progress != nil {
-					progress(done+int64(i), int64(st.N), "Removing 0,0 rows in candidate")
+					progress(done+int64(i), int64(st.N), stage)
 				}
 			}
-			if !geo.ZeroPair(s.Lat[i], s.Lon[i]) {
+			drop, err := remove(s, i)
+			if err != nil {
+				return fail(err)
+			}
+			if !drop {
 				continue
 			}
 			changed = true
@@ -338,7 +346,11 @@ func (a *Atlas) PrepareCleanup(ctx context.Context, dest string, progress func(i
 	}
 	err = db.WriteTx(c, func() error {
 		for id, n := range counts {
-			if _, err := db.Exec(c, "UPDATE imports SET active_rows=active_rows-?,zero_removed_rows=zero_removed_rows+? WHERE id=?", n, n, id); err != nil {
+			zeroRemoved := int64(0)
+			if zero {
+				zeroRemoved = n
+			}
+			if _, err := db.Exec(c, "UPDATE imports SET active_rows=active_rows-?,zero_removed_rows=zero_removed_rows+? WHERE id=?", n, zeroRemoved, id); err != nil {
 				return err
 			}
 		}

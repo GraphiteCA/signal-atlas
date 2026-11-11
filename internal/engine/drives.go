@@ -30,18 +30,10 @@ type drives struct {
 
 func (s *Server) drivesFile() string { return filepath.Join(s.o.Data, "drive-database.json") }
 
+// Retain the old API for compatibility, but do not reopen a separate archive.
+// Survey administration owns deduplication and CSV exports now.
 func newDrives(s *Server) *drives {
-	v := &drives{s: s, job: map[string]any{"status": "idle"}}
-	// reopen the database used last time
-	if b, err := os.ReadFile(s.drivesFile()); err == nil {
-		var saved struct{ Path string }
-		if json.Unmarshal(b, &saved) == nil && saved.Path != "" {
-			if d, err := drivedb.Open(saved.Path); err == nil {
-				v.d = d
-			}
-		}
-	}
-	return v
+	return &drives{s: s, job: map[string]any{"status": "idle"}}
 }
 
 func (v *drives) remember() {

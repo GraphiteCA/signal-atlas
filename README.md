@@ -1,7 +1,6 @@
 # Signal Atlas
 
-A desktop app for Windows, macOS and Linux, for wardriving data too big for the browser. It has three
-tools:
+A desktop app for Windows, macOS and Linux, for wardriving data too big for the browser. Its main analysis tools are:
 
 - **Wardrive Compare**, by **[Champ](https://github.com/TheChampCodes)**. Drop WiGLE CSV logs from any logger and compare drives on the road they
   share: networks per second and per km, how long networks stay visible, speed bands, channels, a
@@ -9,8 +8,9 @@ tools:
 - **Signal Atlas explorer**, by **[Graphite](https://github.com/GraphiteCA)**. Import whole CSV surveys or open SQLite databases, filter by SSID, MAC, band,
   date and signal, and fit where each network's access point is. It supports one fit per radio or
   one shared location per SSID, nearby fits as you pan, and pinned date-range comparisons.
-- **Drive database.** Collect every log and database into one SQLite file on your PC, without
-  duplicate sightings, and export it all as WiGLE CSV: in one file, one per day, or as a copy.
+
+Database administration includes duplicate-sighting cleanup and WiGLE CSV export directly on the
+active survey workspace. No separate archive is required.
 
 **Which files.** Every tool takes plain **WiGLE CSV logs** from any logger, and **WarHog's database
 files**: the per-day `wardrive_YYYY_MM_DD.sqlite3` files a WarHog Core writes to its SD card, copied
@@ -50,8 +50,8 @@ system's Save dialog. Each tool has a **Home** link back to the start page.
 
 **Database administration.** Open **Admin** from the map or home page. **New database** creates a
 separate survey workspace; **Open database** and recent surveys switch between existing workspaces.
-The last survey opens next time. Switching safely stops its survey job while keeping Compare and
-the independent Drive database open. Native file and folder dialogs handle paths in the desktop app.
+The last survey opens next time. Switching safely stops its survey job while keeping
+Compare open. Native file and folder dialogs handle paths in the desktop app.
 **Refresh list** rechecks recent workspace folders; missing folders disappear automatically.
 **Remove from list** forgets the selected workspace without deleting its files or closing it.
 A forgotten workspace can be added again with **Open database**.
@@ -64,7 +64,7 @@ SQLite files. Importing a saved database adds its scans; **Convert a saved SQLit
 new workspace with its saved locations and comparisons. Original files stay unchanged. Rows whose
 latitude and longitude are both numeric zero are excluded automatically and counted separately.
 Valid equator or prime-meridian readings with only one zero coordinate stay. The survey takes Wi-Fi
-sightings; the independent Drive archive also retains other capture types.
+sightings.
 
 **Save snapshot** offers a fast, complete workspace copy or a portable SQLite file containing all
 observations and metadata. **Maintenance → Preview 0,0 rows** finds old zero pairs before explicit
@@ -72,15 +72,19 @@ cleanup. Cleanup retains a previous revision for recovery, preserves surviving I
 history, and invalidates only affected saved locations. Validation, lookup rebuilding and metadata
 maintenance are available alongside it. See [Phase 2 administration](docs/phase2-admin.md).
 
-**Drive database.** Make a new Drive database (one `.sqlite3` file wherever you choose) or open one,
-then add files with **Add logs and databases…** or by dropping them on the window. It takes WiGLE
-CSV logs, WarHog's day files and other SQLite files with WiGLE's columns, WiGLE Android app backups,
-Signal Atlas databases and other Drive databases. A sighting already in the database is skipped,
-whichever file it came from: the same device seen at the same time and place, with the same signal,
-by the same node. A file added before is skipped whole. **Export everything** writes one WiGLE CSV,
-one CSV per day (`wigle_YYYY-MM-DD.csv` in a folder you pick), or a compact copy of the database.
-Files are read where they are and nothing is uploaded; the Drive database opened last opens again
-next time. The sightings are kept as the text the logs had, in a table any SQLite tool can read.
+**Deduplication and CSV export.** Imports automatically skip identical stored sightings within a file
+and across earlier imports. Results and import history report **Duplicates skipped**, including files
+that contain only duplicates. Failed or cancelled files can be retried safely.
+
+For duplicates stored by older versions, **Admin → Maintenance → Remove duplicate sightings** still
+provides preview, cleanup and recovery. It preserves the earliest stored row, its ID, import history
+and comparisons.
+
+Use **Admin → Survey & backups → Export survey CSV** for one WiGLE CSV or a new folder containing
+one file per day. Exports stream the active survey's stored rows; undated rows use `wigle_undated.csv`.
+Authentication, altitude and other fields not retained by the survey are blank. Export does not
+remove duplicates automatically. Existing Drive database files can be added through **Import scans**,
+with duplicate sightings skipped automatically; the original archive file is left unchanged.
 
 **Fits are kept across imports.** Adding a drive drops only the saved fits of networks it has new
 sightings of (named networks by SSID, hidden ones by MAC); every other fit stays. **Fit every AP**
@@ -190,9 +194,9 @@ with 64 GB of memory. They are historical context, not new benchmark results.
 | Wardrive Compare, add and analyse | 76 million rows a minute |
 | Explorer, opening a saved SQLite database | about 42 million rows a minute |
 | Explorer, Fit every AP | about 13,000 networks a minute; 5 million rows (130,000 networks) in about 10 minutes, memory flat |
-| Drive database, adding logs | about 18 million rows a minute, the same at 10 million rows; under 0.2 GB of memory |
-| Drive database, adding a file already in it | about 50 million rows a minute (every row a duplicate) |
-| Drive database, exporting WiGLE CSV | about 58 million rows a minute, one file or one per day |
+| Legacy Drive archive, adding logs | about 18 million rows a minute, the same at 10 million rows; under 0.2 GB of memory |
+| Legacy Drive archive, adding a file already in it | about 50 million rows a minute (every row a duplicate) |
+| Legacy Drive archive, exporting WiGLE CSV | about 58 million rows a minute, one file or one per day |
 | Explorer queries | under 0.6 s at 10 million rows, under 3 s at 50 million |
 | AP location fits | about 10,700 radios a minute |
 
@@ -210,11 +214,11 @@ engine through the window's own origin, and nothing listens on the network.
 | `python/` | Graphite's Signal Atlas reference, with matching import/hidden-identity fixes: the Python package, its tests, and the explorer pages (`python/templates/`) that the app shows. |
 | `internal/compare` | Compare's analysis in Go, ported line for line from the worker in `web/compare.html`. |
 | `internal/atlas` | Signal Atlas in Go, ported from Graphite's Python: filters, queries, the location model and its grid search, fit groups, area estimates, comparisons. |
-| `internal/drivedb` | The Drive database: reading every kind of log and database, combining without duplicates, exporting. Compare and the explorer use its readers to take database files as the CSV logs they convert to. |
+| `internal/drivedb` | Legacy archive support and readers for logs and databases. Compare and the explorer use its readers to take database files as the CSV logs they convert to. |
 | `internal/obs` | The column store that holds the explorer's observations. |
 | `internal/engine` | The local server: Signal Atlas's API, background jobs, compare sessions, native dialogs, saving exports, the map tile cache. |
 | `internal/py`, `internal/pycsv` | Python's behaviour where results depend on it: `json.dumps` text for cache keys and group hashes, `float()` and `int()`, the `csv` module's record splitting. |
-| `ui/` | The home page, the Drive database page, the GPU map, and the bridge script loaded into each page. |
+| `ui/` | The home page, database administration, the GPU map, and the bridge script loaded into each page. |
 | `internal/engine/settings.go` | The app's settings, and the update check and install. |
 | `packaging/`, `scripts/release.py` | The app icon, the Windows manifest, the Linux build container and desktop entry, the macOS app bundle, and the script that builds releases. |
 

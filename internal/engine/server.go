@@ -366,7 +366,8 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		case p == "/admin" || p == "/admin.html":
 			return s.serveFS(w, s.o.UI, "admin.html", true)
 		case p == "/database" || p == "/database.html":
-			return s.serveFS(w, s.o.UI, "database.html", true)
+			http.Redirect(w, r, "/admin?tab=survey", http.StatusTemporaryRedirect)
+			return nil
 		case p == "/atlas" || p == "/atlas/":
 			return s.serveFS(w, s.o.Explorer, "explorer.html", true)
 		case explorerAssets[p]:

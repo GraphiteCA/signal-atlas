@@ -286,7 +286,7 @@ func (a *Atlas) ImportWiGLE(path string, skipInvalid bool, progress func(valid, 
 	if existing, err := db.One(c, "SELECT * FROM imports WHERE sha256=?", sum); err != nil {
 		return nil, err
 	} else if existing != nil {
-		return map[string]any{"duplicate": true, "valid_rows": existing["valid_rows"], "invalid_rows": existing["invalid_rows"], "non_wifi_rows": existing["non_wifi_rows"], "zero_excluded_rows": existing["zero_excluded_rows"], "added_rows": int64(0)}, nil
+		return map[string]any{"duplicate": true, "valid_rows": existing["valid_rows"], "invalid_rows": existing["invalid_rows"], "non_wifi_rows": existing["non_wifi_rows"], "zero_excluded_rows": existing["zero_excluded_rows"], "duplicate_rows": existing["duplicate_rows"], "added_rows": int64(0)}, nil
 	}
 	src, err := db.OpenReadOnly(path)
 	if err != nil {
@@ -304,9 +304,23 @@ func (a *Atlas) ImportWiGLE(path string, skipInvalid bool, progress func(valid, 
 	if say != nil {
 		say("Reading the WiGLE database")
 	}
+	if say != nil {
+		say("Checking existing observations for duplicates")
+	}
+	checkDuplicate, closeDuplicates, err := a.importDuplicateChecker(func() error {
+		if progress != nil {
+			return progress(0, 0)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	duplicatesCommitted := false
+	defer func() { closeDuplicates(duplicatesCommitted) }()
 	seg := obs.NewSegment(importID, a.Obs.NextBase(nil), 1<<16)
 	in := a.Obs.Dict.NewInterner()
-	var valid, invalid, nonWifi, zero, line int64
+	var valid, invalid, nonWifi, zero, duplicates, line int64
 	examples := []string{}
 	s := func(v string) *string { return &v }
 	err = db.Each(src, `SELECT l._id, l.bssid, n.ssid, n.capabilities, n.frequency, n.type, l.level, l.lat, l.lon,
@@ -357,6 +371,14 @@ func (a *Atlas) ImportWiGLE(path string, skipInvalid bool, progress func(valid, 
 			o.Band, o.BandSource, o.RadioKey = b, "manual assignment", RadioKey(o.SSID, o.MAC, b)
 		}
 		row := rowOf(in, a.Obs.Dict, o, line)
+		duplicate, err := checkDuplicate(&row)
+		if err != nil {
+			return err
+		}
+		if duplicate {
+			duplicates++
+			return nil
+		}
 		seg.Append(&row)
 		valid++
 		if valid%20000 == 0 && progress != nil {
@@ -372,7 +394,7 @@ func (a *Atlas) ImportWiGLE(path string, skipInvalid bool, progress func(valid, 
 			return nil, err
 		}
 	}
-	if valid == 0 && zero == 0 {
+	if valid == 0 && zero == 0 && duplicates == 0 {
 		return nil, py.Errorf("The WiGLE database has no Wi-Fi observations with a GPS position")
 	}
 	if say != nil {
@@ -384,8 +406,8 @@ func (a *Atlas) ImportWiGLE(path string, skipInvalid bool, progress func(valid, 
 		}
 	}
 	err = db.WriteTx(c, func() error {
-		if _, err := db.Exec(c, "INSERT INTO imports(id,filename,sha256,imported_utc,valid_rows,invalid_rows,non_wifi_rows,zero_excluded_rows,active_rows) VALUES(?,?,?,?,?,?,?,?,?)",
-			importID, filepath.Base(path), sum, py.UTCNowISO(), valid, invalid, nonWifi, zero, valid); err != nil {
+		if _, err := db.Exec(c, "INSERT INTO imports(id,filename,sha256,imported_utc,valid_rows,invalid_rows,non_wifi_rows,zero_excluded_rows,active_rows,duplicate_rows) VALUES(?,?,?,?,?,?,?,?,?,?)",
+			importID, filepath.Base(path), sum, py.UTCNowISO(), valid, invalid, nonWifi, zero, valid, duplicates); err != nil {
 			return err
 		}
 		return DropStaleEstimates(c, a.Obs.State(), seg) // only networks with new sightings refit
@@ -394,5 +416,6 @@ func (a *Atlas) ImportWiGLE(path string, skipInvalid bool, progress func(valid, 
 		a.Obs.Commit(obs.Change{Drop: map[int64]bool{importID: true}})
 		return nil, err
 	}
-	return map[string]any{"duplicate": false, "valid_rows": valid, "invalid_rows": invalid, "non_wifi_rows": nonWifi, "zero_excluded_rows": zero, "empty": valid == 0, "invalid_examples": examples}, nil
+	duplicatesCommitted = true
+	return map[string]any{"duplicate": false, "valid_rows": valid, "invalid_rows": invalid, "non_wifi_rows": nonWifi, "zero_excluded_rows": zero, "duplicate_rows": duplicates, "added_rows": valid, "empty": valid == 0, "invalid_examples": examples}, nil
 }
