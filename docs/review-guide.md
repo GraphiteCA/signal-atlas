@@ -16,7 +16,7 @@ the cost of calculation and durable metadata publication.
 | Observation memory and sampling | `internal/obs/`, `internal/atlas/sample.go`, `internal/atlas/fit.go` | [Memory/storage findings](memory-preparation.md) |
 | SQL browser | `internal/atlas/sql_browser.go`, `internal/engine/sql_browser.go`, `ui/sql.*` | [SQLite adapter and limits](phase4-storage.md) |
 | Optional GPU scoring | `internal/gpu/`, `internal/atlas/acceleration.go` | [Solver validation](phase5-fitting.md), [GPU throughput](viewport-preparation-gpu.md) |
-| Hidden-network identity and quality research | `internal/atlas/selection.go`, `internal/atlas/hidden_identity_test.go`, `python/selection_estimates.py` | [BSSID identity and quality recommendations](observation-quality.md) |
+| Hidden-network identity and quality research | `internal/atlas/selection.go`, `internal/atlas/hidden_identity_test.go` | [BSSID identity and quality recommendations](observation-quality.md) |
 
 The phase commits remain separate for review. Publication replaces private paths
 and input filenames in every phase, summarizes long timing/progress series, and
@@ -127,13 +127,13 @@ with exclusions/provenance and BSSID/site diagnostics.
 ## Validation and reproduction
 
 Run `python scripts/check.py` for the portable local checks. It requires Go,
-Python with NumPy and Node, and refuses to silently skip their parity prerequisites.
+Python and Node, and refuses to silently skip their parity prerequisites.
 Release building remains local; this PR does not publish a release or change
 signing/update settings. Windows desktop packaging was tested; macOS/Linux
 desktop packaging and signing need their native release environments.
 
-The fast checks cover the full Go suite, active Python/Node parity, the Python
-reference tests, map-controller tests, benchmark safety/publication checks, vet
+The fast checks cover the full Go suite, recorded survey reference fixtures, Compare
+worker parity, map-controller tests, benchmark safety/publication checks, vet
 and pinned vendor hashes. `--race` adds lifecycle/cache/metadata/GPU-boundary race
 tests. `--gpu` explicitly requires supported physical OpenCL hardware and executes
 the score/solver integration checks. See [benchmarking](benchmarking.md) and the

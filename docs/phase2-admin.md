@@ -1,6 +1,6 @@
 # Phase 2: survey administration
 
-The Admin page is reachable from Home, the GPU map and observation analysis. Phase 2 delivers plan items A01–A07 on the Phase 1 GPU-map base. The upstream baseline remains `6d8833659906faa89b1677424caf5f5cd905c56d`.
+The Admin page is reachable from Home and the survey map. Phase 2 delivers plan items A01–A07 on the Phase 1 GPU-map base. The upstream baseline remains `6d8833659906faa89b1677424caf5f5cd905c56d`.
 
 ## User workflow
 

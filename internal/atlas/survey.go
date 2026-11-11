@@ -1,4 +1,4 @@
-// Package atlas is Signal Atlas (Graphite's Python, kept in python) in Go: the store, filters and
+// Package atlas is Signal Atlas (originally Graphite's Python) in Go: the store, filters and
 // queries (survey_data.py), the location model (estimate_ap.py), selection-aware fit groups and
 // comparisons (selection_estimates.py, area_estimates.py), the fit job (serve_survey.fit_radio)
 //
@@ -608,7 +608,7 @@ func ReadObservations(path string, ssid *string, mac string) ([]*Observation, er
 		if chosen == nil {
 			chosen = &s
 		} else if s != *chosen {
-			return py.Errorf("Select one network with --ssid, or use import_survey.py and serve_survey.py for multiple SSIDs")
+			return py.Errorf("Select one network, or use the survey map for multiple SSIDs")
 		}
 		o, err := ParseObservation(f, line)
 		if err != nil {

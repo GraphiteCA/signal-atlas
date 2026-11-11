@@ -295,7 +295,7 @@ def main():
     r.add_argument("--archive", action="store_true")
     n = sub.add_parser('native')
     n.add_argument('--data',required=True)
-    n.add_argument('--page',choices=['gpu','explorer','donor'],required=True)
+    n.add_argument('--page',choices=['gpu','donor'],required=True)
     n.add_argument('--probe',required=True)
     n.add_argument('--donor',required=True)
     n.add_argument('--seed-fits',type=int,default=0)

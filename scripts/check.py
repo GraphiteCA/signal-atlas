@@ -1,6 +1,6 @@
 """Local PR checks; release creation/upload remains a separate maintainer action.
 
-Run with a Python that has NumPy installed. --race needs a working C toolchain;
+Run with Python. --race needs a working C toolchain;
 --gpu requires a supported physical OpenCL device; --cross compiles CPU fallbacks.
 """
 import argparse
@@ -29,7 +29,6 @@ def main():
     for tool in ('go', 'node'):
         if not shutil.which(tool):
             raise SystemExit(f'{tool} is required; parity checks must not silently skip')
-    run([sys.executable, '-c', 'import numpy; print("NumPy", numpy.__version__)'])
     env = {**os.environ, 'PATH': str(Path(sys.executable).parent)+os.pathsep+os.environ.get('PATH', '')}
     for key in ('SIGNAL_ATLAS_QUALITY_REPORT', 'SIGNAL_ATLAS_PHASE5_HARDWARE_REPORT'):
         env.pop(key, None)
@@ -41,7 +40,6 @@ def main():
     print('Bundled map assets match their pinned manifest', flush=True)
     run(['go', 'test', '-count=1', './...'], env=env)
     run(['go', 'vet', './...'], env=env)
-    run([sys.executable, '-m', 'unittest', 'discover', '-s', 'tests'], cwd=ROOT/'python', env=env)
     run(['node', '--test', 'benchmarks/map-display.test.cjs'], env=env)
     run([sys.executable, '-m', 'unittest', 'discover', '-s', 'benchmarks', '-p', 'test_*.py'], env=env)
     if args.race:

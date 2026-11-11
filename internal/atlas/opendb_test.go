@@ -13,7 +13,7 @@ import (
 
 func demoCSV(t *testing.T) string {
 	_, here, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(here), "..", "..", "python", "demo-survey.csv")
+	return filepath.Join(filepath.Dir(here), "..", "..", "test", "parity", "demo-survey.csv")
 }
 
 func allRows(a *Atlas) []Row {

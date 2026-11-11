@@ -5,9 +5,9 @@ A desktop app for Windows, macOS and Linux, for wardriving data too big for the 
 - **Wardrive Compare**, by **[Champ](https://github.com/TheChampCodes)**. Drop WiGLE CSV logs from any logger and compare drives on the road they
   share: networks per second and per km, how long networks stay visible, speed bands, channels, a
   baseline drive with a bootstrap range and fairness checks, repeat passes, multi-node rigs.
-- **Signal Atlas explorer**, by **[Graphite](https://github.com/GraphiteCA)**. Import whole CSV surveys or open SQLite databases, filter by SSID, MAC, band,
+- **Survey map**, by **[Graphite](https://github.com/GraphiteCA)**. Import whole CSV surveys or open SQLite databases, filter by SSID, MAC, band,
   date and signal, and fit where each network's access point is. It supports one fit per radio or
-  one shared location per SSID, nearby fits as you pan, and pinned date-range comparisons.
+  one shared location per SSID, background AP preparation, and pinned APs.
 
 Database administration includes duplicate-sighting cleanup and WiGLE CSV export directly on the
 active survey workspace. No separate archive is required.
@@ -88,10 +88,9 @@ with duplicate sightings skipped automatically; the original archive file is lef
 
 **Fits are kept across imports.** Adding a drive drops only the saved fits of networks it has new
 sightings of (named networks by SSID, hidden ones by MAC); every other fit stays. **Fit every AP**
-then refits just those. Graphite's Python drops every fit on every import; the app keeps the rest
-because they can't have changed.
+then refits just those. Unaffected fits remain available.
 
-**Fast fits.** The explorer's **Fast fits** switch uses a quicker solver. It scores the same coarse
+**Fast fits.** Admin's **Fast fits** setting uses a quicker solver. It scores the same coarse
 grid as the exact search and starts from the same eight best cells, but walks downhill from each
 instead of scoring every 0.25 m point, then checks the 0.25 m points around where it lands. On a
 test of 300 noisy networks it landed on exactly the same point 292 times and within a metre 298
@@ -125,22 +124,15 @@ of the displayed page. The dialect is SQLite. See the
 choice and the SQL adapter's limits.
 
 
-**GPU map.** **GPU map** (on the home page and at the top of the explorer) draws every sighting in
+**GPU map.** **Open survey map** on the home page draws every sighting in
 view and every fitted AP with deck.gl over MapLibre, coloured by signal. Past the chosen number of
 points (half a million to eight million) it shows every k-th sighting so the whole view is covered;
 zoom in for all of them. It filters by band, signal and SSID, and hovering a fitted AP shows what it
 is. It needs WebGL, which every supported system's web view has.
 
-**Fit every AP.** The explorer normally fits access points near the map view as you pan. **Fit every
-AP** fits every network the current filters keep, as one background job. It works through them a
-batch of 256 networks at a time, saves each fit as it finishes and shows them on the map as it goes,
-keeping the calculation queue bounded. **Cancel job** keeps what is done, and running it again
-skips networks that already have a fit. A zoomed-out map shows an even sample of up to 1,500 fits;
-zoom in to see every fit in an area.
-
 **The map** opens where you are when the system will say. That means Windows with location
 services on, and macOS after you allow it. Otherwise it opens where you last left it, or on the
-whole world. Nothing is sent anywhere to find you. The explorer's store, exports and the map tile
+whole world. Nothing is sent anywhere to find you. The survey store, exports and the map tile
 cache live in the app's data folder:
 
 | System | Data folder |
@@ -200,7 +192,7 @@ with 64 GB of memory. They are historical context, not new benchmark results.
 | Explorer queries | under 0.6 s at 10 million rows, under 3 s at 50 million |
 | AP location fits | about 10,700 radios a minute |
 
-Compare uses about 80 MB of memory per million rows while it works. The explorer's store holds about
+Compare uses about 80 MB of memory per million rows while it works. The survey store holds about
 150 MB per million observations while the app is open.
 
 ## How it works
@@ -211,11 +203,10 @@ engine through the window's own origin, and nothing listens on the network.
 | Path | What it is |
 |---|---|
 | `web/compare.html` | Wardrive Compare. It also runs on its own in a browser, using the analysis worker inside it. |
-| `python/` | Graphite's Signal Atlas reference, with matching import/hidden-identity fixes: the Python package, its tests, and the explorer pages (`python/templates/`) that the app shows. |
 | `internal/compare` | Compare's analysis in Go, ported line for line from the worker in `web/compare.html`. |
 | `internal/atlas` | Signal Atlas in Go, ported from Graphite's Python: filters, queries, the location model and its grid search, fit groups, area estimates, comparisons. |
-| `internal/drivedb` | Legacy archive support and readers for logs and databases. Compare and the explorer use its readers to take database files as the CSV logs they convert to. |
-| `internal/obs` | The column store that holds the explorer's observations. |
+| `internal/drivedb` | Legacy archive support and readers for logs and databases. Compare and survey imports use its readers to take database files as the CSV logs they convert to. |
+| `internal/obs` | The column store that holds the survey's observations. |
 | `internal/engine` | The local server: Signal Atlas's API, background jobs, compare sessions, native dialogs, saving exports, the map tile cache. |
 | `internal/py`, `internal/pycsv` | Python's behaviour where results depend on it: `json.dumps` text for cache keys and group hashes, `float()` and `int()`, the `csv` module's record splitting. |
 | `ui/` | The home page, database administration, the GPU map, and the bridge script loaded into each page. |
@@ -231,17 +222,15 @@ format, which his Python opens as its own.
 
 `go test ./...` runs two comparisons.
 
-- **Signal Atlas.** A deliberately awkward synthetic survey goes through Graphite's Python and the Go
-  port. The test compares every result: imports, every query under twenty filter sets (errors
+- **Signal Atlas.** A deliberately awkward synthetic survey runs through Go against recorded reference results. The test compares every result: imports, every query under twenty filter sets (errors
   included), group keys, every fit in four modes, area plans, comparisons and the single-network
   report. Positions agree to a centimetre, and everything else to one part in a billion.
 - **Wardrive Compare.** The page's own worker runs in Node next to the Go port, on the same drives
   under seven configurations. About 31,000 result values and the CSV exports match exactly.
 
-The comparisons need Python 3.10+ with numpy, and Node. They are skipped when either is missing.
-Graphite's own tests run with `python -m unittest discover -s tests` from `python/`.
-For the complete portable PR checks, run `python scripts/check.py`; it requires NumPy
-and Node so the numerical/worker comparisons cannot silently skip. Optional `--race`,
+The Signal Atlas regression test runs entirely in Go. Compare tests use Python for drive fixtures
+and Node for the active JavaScript worker. For complete portable PR checks, run
+`python scripts/check.py`; it requires Go and Node. Optional `--race`,
 `--gpu` and `--cross` checks are documented in the [review guide](docs/review-guide.md).
 
 ## Building
@@ -313,8 +302,7 @@ runs the Windows build through its built-in emulation.
 
 - **Wardrive Compare** is **[Champ](https://github.com/TheChampCodes)**'s work. `web/compare.html` is the tool, and
   `internal/compare` is its analysis ported to Go.
-- **Signal Atlas**, its location method and its explorer are **[Graphite](https://github.com/GraphiteCA)**'s work. `python/` is
-  his code as delivered, and `internal/atlas` is a Go port of it.
+- **Signal Atlas**, its location method and its explorer are **[Graphite](https://github.com/GraphiteCA)**'s work. `internal/atlas` is a Go port of the original implementation.
 
 Third-party software and data are listed in [NOTICE.md](NOTICE.md).
 

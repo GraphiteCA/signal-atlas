@@ -1,5 +1,5 @@
 // ============================================================================
-//  Signal Atlas's page bridge, loaded first in the compare page and the explorer.
+//  Signal Atlas's page bridge, loaded first in the app pages.
 //
 //  window.SignalAtlasApp gives the pages what only the app can do:
 //    pathOf(file)          where a dropped or picked file lives (a page is never told)
@@ -7,8 +7,7 @@
 //    compare.listen(fn)    and its answers back (long-polled)
 //    saveFile(file, name)  move an export the engine wrote to where the user chooses
 //    pickFiles(opts)       the Windows file dialog
-//  It also adapts Graphite's explorer (CSV imports read in place, the database saved to a file),
-//  sends links to other sites to the user's browser, and points OpenStreetMap tiles at the engine.
+//  It sends links to other sites to the user's browser, and points OpenStreetMap tiles at the engine.
 // ============================================================================
 (function () {
   'use strict';
@@ -27,13 +26,12 @@
     }
     return localFetch(input,options);
   };
-  const picked = new Map();   // name -> path, for files chosen in a native dialog
 
   // Native push notifies; sequence polling reconciles dropped events/reloads.
   const jobListeners=new Set();let jobAfter=0,lastNative=0,jobTimer=null,jobPolling=false,jobStopped=false;
   function jobMessage(event,native=false){
     if(!event)return;
-    if(event.kind==='survey-changed'&&event.survey_id!==info.survey_id){if(/^\/(map|atlas|admin|sql)(\/|\.html)?$/.test(location.pathname))location.reload();return;}
+    if(event.kind==='survey-changed'&&event.survey_id!==info.survey_id){if(/^\/(map|admin|sql)(\/|\.html)?$/.test(location.pathname))location.reload();return;}
     if(event.survey_id!==info.survey_id)return;
     if(native)lastNative=Date.now();
     if(event.sequence<=jobAfter&&!event.reconcile)return;
@@ -57,7 +55,6 @@
   async function pathOf(file) {
     if (!file) return '';
     if (file.path) return file.path;
-    if (picked.has(file.name) && file.size === 0) return picked.get(file.name);
     try { return (await json(await fetch('/api/app/path?name=' + enc(file.name) + '&size=' + file.size, { cache: 'no-store' }))).path || ''; }
     catch (e) { return ''; }
   }
@@ -172,230 +169,6 @@
       e.preventDefault();
       const list = await window.SignalAtlasApp.pickFiles({ title: 'Add WiGLE CSV logs or logger databases', exts: ['csv', 'sqlite3', 'sqlite', 'db'], multiple: true }).catch(() => []);
       if (list.length && typeof window.addFiles === 'function') window.addFiles(list);
-    }, true);
-  }
-  // Graphite's explorer: a chosen CSV is imported where it is (no upload, any size), and the database
-  // is saved straight to a file the user picks.
-  if (/^\/atlas\/?$/.test(page)) {
-    // always dark: OpenStreetMap's street tiles get the same night treatment as Compare's map
-    // (satellite imagery and the offline styles are left as they are)
-    const st = document.createElement('style');
-    st.textContent = 'img.leaflet-tile[src^="/tiles/osm/"]{filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9)}' +
-      '.sa-home{display:inline-block;margin-bottom:10px;font-size:13px;color:#52c2b0;text-decoration:none}.sa-home:hover{text-decoration:underline}' +
-      '.database-bar .sa-db-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}' +
-      'body.sa-dropping::after{content:"Drop a CSV survey or an SQLite database";position:fixed;inset:12px;display:flex;align-items:center;justify-content:center;' +
-      'border:2px dashed #52c2b0;border-radius:14px;background:rgba(10,20,18,.82);color:#e8eeea;font-size:20px;z-index:100000;pointer-events:none}';
-    document.documentElement.appendChild(st);
-
-    // the map opens on where the user is (or where they left it, or the whole world); never on a
-    // fixed place. The view is remembered between visits.
-    const viewKey = () => 'signal-atlas.explorer.view.'+(info.survey_path||info.data);
-    const hookMap = (L) => {
-      if (!L || !L.Map || L.Map.__saView) return;
-      L.Map.__saView = true;
-      L.Map.addInitHook(function () {
-        const m = this;
-        if (!m.getContainer || m.getContainer().id !== 'map') return;
-        let touched = false;
-        setTimeout(() => {   // after the page's own setView
-          try {
-            const v = JSON.parse(localStorage.getItem(viewKey()) || 'null');
-            if (v && isFinite(v.lat) && isFinite(v.lng)) m.setView([v.lat, v.lng], v.zoom || 15, { animate: false });
-          } catch (e) { /* no saved view */ }
-          m.on('dragstart zoomstart', () => { touched = true; });
-          m.on('moveend', () => { const c = m.getCenter(); localStorage.setItem(viewKey(), JSON.stringify({ lat: c.lat, lng: c.lng, zoom: m.getZoom() })); });
-          if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition((p) => {
-              if (!touched) m.setView([p.coords.latitude, p.coords.longitude], 16);
-            }, () => { /* no location: stay on the saved view or the world */ }, { enableHighAccuracy: false, timeout: 15000, maximumAge: 600000 });
-          }
-        }, 0);
-      });
-    };
-    if (window.L) hookMap(window.L); else { const prev = Object.getOwnPropertyDescriptor(window, 'L'); if (prev && prev.set) { const set = prev.set; Object.defineProperty(window, 'L', { configurable: true, enumerable: true, get: prev.get, set: (v) => { set(v); try { hookMap(v); } catch (e) { /* not Leaflet */ } } }); } }
-
-    // back to the home page, and SQLite databases from this computer
-    const isDb = (name) => /\.(sqlite3?|db)$/i.test(name || '');
-    async function openDatabase(path) {
-      try {
-        const k = await post('/api/app/database-kind', { path });
-        if (k.kind === 'atlas' && k.store_observations > 0 &&
-            !confirm('Open ' + k.name + '?\n\nIt replaces the ' + k.store_observations.toLocaleString() + ' observations in the explorer now, with their saved estimates and comparisons. ' +
-                     'Use "Save SQLite database" first if you want to keep them.')) return;
-        const skip = !!(document.getElementById('skip-invalid') || {}).checked;
-        await post('/api/app/open-database', { path, skip_invalid: skip });
-        location.href='/admin';
-      } catch (err) { alert("Couldn't open the database: " + err.message); }
-    }
-    const addControls = () => {
-	  // App-owned handoff from the GPU map to the reference analysis tools.
-	  const incoming = new URLSearchParams(location.search);
-	  if (incoming.has('ssid') && window.signalExplorer && !document.documentElement.dataset.saSelectionApplied) {
-	    document.documentElement.dataset.saSelectionApplied = 'true';
-	    const selected = window.signalExplorer.getState(), ssid = incoming.get('ssid');
-	    selected.all = false; selected.ssids = new Set([ssid]); selected.excluded.clear();
-	    selected.networkQuery = ssid; document.getElementById('network-search').value = ssid;
-	    if (incoming.has('band')) selected.bands = new Set(incoming.getAll('band'));
-	    if (incoming.has('min_rssi')) {selected.minimum = Number(incoming.get('min_rssi'));document.getElementById('rssi').value=selected.minimum;document.getElementById('rssi-output').textContent=selected.minimum+' dBm';}
-	    if (incoming.has('date')) {selected.dateMode='dates';selected.selectedDates=new Set(incoming.getAll('date'));}
-	    else if (incoming.has('date_from') || incoming.has('date_to')) {selected.dateMode='range';document.getElementById('date-from').value=incoming.get('date_from') || '';document.getElementById('date-to').value=incoming.get('date_to') || '';}
-	    document.getElementById('date-mode').value=selected.dateMode;
-	    document.getElementById('date-range-fields').hidden=selected.dateMode!=='range';document.getElementById('specific-date-fields').hidden=selected.dateMode!=='dates';
-	    const mac = incoming.get('mac');
-	    if (mac && /^(?:[0-9A-F]{2}:){5}[0-9A-F]{2}$/i.test(mac)) selected.macSelections.set(ssid, {mode: 'include', macs: new Set([mac])});
-	    const individual = document.getElementById('individual-estimates');
-	    document.getElementById('location-model').value=incoming.get('shared')==='1'?'both':'individual';
-	    individual.checked = incoming.get('individual') === '1'; individual.dispatchEvent(new Event('change'));
-	    if (typeof window.loadNetworks === 'function') window.loadNetworks();
-	    if (typeof window.loadSelection === 'function') window.loadSelection(true);
-	  }
-      const head = document.querySelector('header > div');
-      if (head && !document.querySelector('.sa-home')) {
-        const a = document.createElement('a');
-        a.className = 'sa-home'; a.href = '/'; a.textContent = '← Home';
-        head.insertBefore(a, head.firstChild);
-        const g = document.createElement('a');
-        g.className = 'sa-home'; g.href = '/map'; g.textContent = 'GPU map'; g.style.marginLeft = '14px';
-        g.title = 'Every sighting and fitted AP in view, drawn on the GPU';
-        const admin=document.createElement('a');admin.className='sa-home';admin.href='/admin';admin.textContent='Database administration';admin.style.marginLeft='14px';
-		g.onclick = (event) => {
-		  if (typeof window.areaQuery !== 'function') return;
-		  event.preventDefault();
-		  const q = window.areaQuery(), m = window.signalExplorer?.getMap();
-		  if (m) {const c = m.getCenter();q.set('lng',c.lng);q.set('lat',c.lat);}
-		  location.href = '/map?' + q;
-		};
-        a.after(g);g.after(admin);
-      }
-      const csvLabel=document.querySelector('label[for=csv-file]');if(csvLabel){csvLabel.hidden=true;document.getElementById('skip-invalid')?.closest('label')?.setAttribute('hidden','');if(!document.getElementById('sa-admin-import')){const link=document.createElement('a');link.id='sa-admin-import';link.className='button';link.href='/admin?tab=imports';link.textContent='Import scans…';csvLabel.after(link);}}
-      const save = document.getElementById('save-database');
-      if (save && !document.querySelector('.sa-db-actions')) {
-        const box = document.createElement('div');
-        box.className = 'sa-db-actions';
-        save.parentNode.insertBefore(box, save);
-        const button = (id, text, title) => {
-          const b = document.createElement('button');
-          b.id = id; b.className = 'button'; b.type = 'button'; b.textContent = text; b.title = title;
-          box.appendChild(b);
-          return b;
-        };
-        button('sa-fit-all', 'Fit every AP', 'Fit the location of every network the filters keep, a batch at a time, instead of only those near the map view')
-          .addEventListener('click', fitEveryAP);
-        const fast = document.createElement('label');
-        fast.className = 'tiny'; fast.title = 'About 7 times faster fits that walk downhill from the coarse grid instead of scoring every 0.25 m point. They land on the same point as the exact search almost always, within a metre nearly always. Fast and exact fits are kept apart.';
-        fast.innerHTML = '<input type="checkbox" id="sa-fast-fits"> Fast fits';
-        box.appendChild(fast);
-        fetch('/api/app/settings', { cache: 'no-store' }).then((r) => r.json()).then((j) => { document.getElementById('sa-fast-fits').checked = !!(j.settings && j.settings.fast_fits); }).catch(() => {});
-        fast.querySelector('input').addEventListener('change', async (e) => {
-          await post('/api/app/settings', { fast_fits: e.target.checked }).catch((err) => alert(err.message));
-          location.reload();   // every cached fit the page shows changes with the solver
-        });
-        if (info.window) {
-          button('sa-open-db', 'Open database…', 'Open a Signal Atlas database (replaces what is here), or add a logger database (WiGLE columns) or a WiGLE app backup')
-            .addEventListener('click', () => { location.href='/admin'; });
-        }
-        box.appendChild(save);
-      }
-    };
-
-    // "Fit every AP": one background job over every network, in batches (internal/engine/jobs.go
-    // FitAll). Its fits go to the cache the map's nearby fits use, so they appear on the map as the
-    // job goes; the map is refreshed every few seconds while it runs.
-    let fitAll = null;   // the latest snapshot of a fit-all job this page started
-    const fmt = (n) => Number(n || 0).toLocaleString();
-    const relabel = () => {
-      if (!fitAll) return;
-      const t = document.getElementById('job-title'), d = document.getElementById('job-detail');
-      const title = 'Fitting every AP';
-      const detail = fitAll.status === 'failed' ? (fitAll.error || 'failed') :
-        fmt(fitAll.completed) + ' of ' + fmt(fitAll.total) + ' networks · ' + fmt(fitAll.fitted) + ' fitted · ' +
-        fmt(fitAll.skipped) + ' too few observations · ' + fmt(fitAll.cached) + ' already fitted · ' + fitAll.status;
-      if (t && t.textContent !== title) t.textContent = title;
-      if (d && d.textContent !== detail) d.textContent = detail;
-    };
-    new MutationObserver(relabel).observe(document.documentElement, { subtree: true, childList: true, characterData: true });
-    async function followFitAll() {
-      let lastRefresh = 0;
-      for (;;) {
-        try { fitAll = await (await fetch('/api/job', { cache: 'no-store' })).json(); } catch (e) { /* try again */ }
-        if (!fitAll || fitAll.kind !== 'fit-all') { fitAll = null; return; }
-        relabel();
-        const doneNow = fitAll.status !== 'running';
-        if (doneNow || Date.now() - lastRefresh > 6000) {
-          lastRefresh = Date.now();
-          try { if (typeof window.scheduleAreaEstimates === 'function') window.scheduleAreaEstimates(); } catch (e) { /* the page will catch up */ }
-          try { if (typeof window.loadDatabaseInfo === 'function') window.loadDatabaseInfo(); } catch (e) { /* ditto */ }
-        }
-        const b = document.getElementById('sa-fit-all');
-        if (b) b.disabled = !doneNow;
-        if (doneNow) { setTimeout(() => { fitAll = null; }, 15000); return; }
-        await sleep(1000);
-      }
-    }
-    async function fitEveryAP() {
-      if (typeof window.areaQuery !== 'function') return;
-      const nearby = document.getElementById('nearby-networks');
-      if (nearby && !nearby.checked) { nearby.checked = true; nearby.dispatchEvent(new Event('change', { bubbles: true })); }
-      try {
-        const q = window.areaQuery();
-        q.delete('bbox'); q.delete('zoom');
-        fitAll = await post('/api/app/fit-all?' + q.toString());
-        if (typeof window.pollJob === 'function') window.pollJob();
-        followFitAll();
-      } catch (err) { alert("Couldn't start fitting: " + err.message); }
-    }
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => ready.then(addControls)); else ready.then(addControls);
-
-    // drop a CSV survey or a database anywhere on the explorer
-    let depth = 0;
-    const hasFiles = (e) => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
-    addEventListener('dragenter', (e) => { if (hasFiles(e)) { depth++; document.body.classList.add('sa-dropping'); } });
-    addEventListener('dragleave', (e) => { if (hasFiles(e) && --depth <= 0) { depth = 0; document.body.classList.remove('sa-dropping'); } });
-    addEventListener('dragover', (e) => { if (hasFiles(e)) e.preventDefault(); });
-    addEventListener('drop', async (e) => {
-      if (!hasFiles(e)) return;
-      e.preventDefault(); depth = 0; document.body.classList.remove('sa-dropping');
-      const f = e.dataTransfer.files[0];
-      if (!f) return;
-      await sleep(150);   // the window reports a drop's file paths just after the page sees it
-      if (isDb(f.name)) {
-        const p = await pathOf(f);
-        if (p) openDatabase(p); else alert("Couldn't find where " + f.name + ' is on disk; use Open database… instead.');
-        return;
-      }
-      if (/\.csv$/i.test(f.name)) {
-        const input = document.getElementById('csv-file'), dt = new DataTransfer();
-        dt.items.add(f); input.files = dt.files;
-        input.dispatchEvent(new Event('change', { bubbles: true }));
-      }
-    });
-    const open = XMLHttpRequest.prototype.open, send = XMLHttpRequest.prototype.send, setHeader = XMLHttpRequest.prototype.setRequestHeader;
-    XMLHttpRequest.prototype.open = function (method, url) { this.__sa = { method: String(method).toUpperCase(), url: String(url) }; return open.apply(this, arguments); };
-    XMLHttpRequest.prototype.send = function (body) {
-      const w = this.__sa;
-      if(w&&info.survey_id&&new URL(w.url,location.href).pathname.startsWith('/api/'))setHeader.call(this,'X-Survey-ID',info.survey_id);
-      if (!(w && w.method === 'POST' && new URL(w.url, location.href).pathname === '/api/import' && body instanceof File)) return send.apply(this, arguments);
-      pathOf(body).then(async (p) => {
-        if (p) { setHeader.call(this, 'X-App-Path', enc(p)); send.call(this, null); }
-        else send.call(this, await body.arrayBuffer());   // not the File itself: see describe()
-      });
-    };
-    document.addEventListener('click', async (e) => {
-      if (!info.window || !e.target || !e.target.closest) return;
-      if (e.target.closest('label[for=csv-file]') || e.target.closest('#csv-file')) {
-        e.preventDefault();
-        const list = await window.SignalAtlasApp.pickFiles({ title: 'Import a CSV survey', exts: ['csv'], multiple: false }).catch(() => []);
-        if (!list.length) return;
-        const f = new File([], list[0].name, { type: 'text/csv' });
-        picked.set(f.name, list[0].path);
-        const input = document.getElementById('csv-file'), dt = new DataTransfer();
-        dt.items.add(f);
-        input.files = dt.files;
-        input.dispatchEvent(new Event('change', { bubbles: true }));
-        return;
-      }
-      const save = e.target.closest('#save-database');
-      if (save) {e.preventDefault();location.href='/admin?tab=survey';}
     }, true);
   }
 })();

@@ -5,34 +5,36 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
 )
 
-// TestMatchesGraphitesPython runs the same awkward synthetic survey through Graphite's Python
-// Signal Atlas (python) and through the Go port, and compares every result: imports,
+// TestMatchesReference checks recorded reference results against Go: imports,
 // every query under twenty filter sets (errors included), group keys, every fit in four modes,
 // stored estimates, area plans, comparisons, and the single-network
 // report. Numbers must agree to a relative 1e-9 (positions: 1e-7, a centimetre). It is skipped
-// when Python with numpy is not installed.
-func TestMatchesGraphitesPython(t *testing.T) {
+// with -short. The fixtures and expected results were captured from the original
+// Python implementation at 017022f1ba7faefcb7c3b181fe834edfe93f29e8 before its removal.
+// Expected results adopt the current Go API: numeric bands before unknown, the
+// current invalid-date message, and added_rows/duplicate_rows import counters.
+func TestMatchesReference(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow")
 	}
-	if exec.Command("python", "-c", "import numpy").Run() != nil {
-		t.Skip("Python with numpy is not available")
-	}
 	root, _ := filepath.Abs("../..")
 	work := t.TempDir()
-	if out, err := exec.Command("python", filepath.Join(root, "test", "parity", "gen_survey.py"), work).CombinedOutput(); err != nil {
-		t.Fatalf("gen_survey: %v\n%s", err, out)
-	}
-	ref, err := exec.Command("python", filepath.Join(root, "test", "parity", "ref_atlas.py"), work).Output()
+	fixture, err := os.ReadFile(filepath.Join(root, "test", "parity", "fixtures", "survey.csv"))
 	if err != nil {
-		t.Fatalf("ref_atlas: %v", err)
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(work, "survey.csv"), fixture, 0600); err != nil {
+		t.Fatal(err)
+	}
+	ref, err := os.ReadFile(filepath.Join(root, "test", "parity", "expected.json"))
+	if err != nil {
+		t.Fatal(err)
 	}
 	got, err := Run(work, root)
 	if err != nil {
@@ -134,5 +136,3 @@ func describe(v any) string {
 	}
 	return fmt.Sprintf("%v", v)
 }
-
-var _ = os.Getenv
