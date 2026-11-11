@@ -1,0 +1,60 @@
+{
+  "base": "6d8833659906faa89b1677424caf5f5cd905c56d",
+  "phases": [
+    {
+      "original_local_commit": "25947c68e719129e0ae8a6487a35a61672f75093",
+      "published_commit": "7d41ae0127c32391b7d4b86a7df9c90da2df9b06",
+      "subject": "bench: establish Phase 0 performance and correctness baselines"
+    },
+    {
+      "original_local_commit": "8226c73100c1f7c9462513f472b5640662fef399",
+      "published_commit": "db97794824d6fba8f6d897665095b6d812499540",
+      "subject": "feat(map): port survey controls to GPU map and cache viewport data"
+    },
+    {
+      "original_local_commit": "a8f164cad17408136e349fbaad03560a11a3f78e",
+      "published_commit": "5c54f94f695b143a361311e489379babcfa80859",
+      "subject": "feat(admin): add survey management and recoverable zero-coordinate cleanup"
+    },
+    {
+      "original_local_commit": "8ca161bb48c3df7d5b7676ec94e754388bfacf39",
+      "published_commit": "481057a4778a90b229fe1073d2c1f1358c47402f",
+      "subject": "feat(preparation): add resumable AP preparation and live map updates"
+    },
+    {
+      "original_local_commit": "7a32a8acce9ab797ad065bad1ed9ed30ac8660e4",
+      "published_commit": "53c6d07f241bb02a96d1038962891ddc64e74a73",
+      "subject": "perf(storage): reduce memory and add a read-only SQL browser"
+    },
+    {
+      "original_local_commit": "30305bb6871a88356a9b21e2a583100a63dfa05c",
+      "published_commit": "8af4accb927fee362cd5b527aa2c98f6bd3eca48",
+      "subject": "perf(preparation): batch saves and keep fitting workers busy"
+    },
+    {
+      "original_local_commit": "77bdcad6593dfc206f5c558f7f0f473bce0ecb98",
+      "published_commit": "0b73cab1c6edd788987bc0367b71f74240c0c079",
+      "subject": "perf(fitting): add optional float64 GPU scoring and validate solver tradeoffs"
+    },
+    {
+      "original_local_commit": "62ec17a0ad76e21f41da6ec2abe5ad93be5c37dd",
+      "published_commit": "80fcc3d01ad83d9183cea90dee20c3e211eb4382",
+      "subject": "perf(preparation): reduce survey memory and remove live map stalls"
+    },
+    {
+      "original_local_commit": "a7637e34d9487c47acb9fe7ee089b77ffe4668f6",
+      "published_commit": "e60214a11ec672db61a6565f20898cdb850f0864",
+      "subject": "perf(map): prioritize viewport preparation and improve GPU throughput"
+    },
+    {
+      "original_local_commit": "0f5b29bbc75ed10e48bb1a5c6351dd5f7a4e5a53",
+      "published_commit": "e6efb2ca496504b2539bdfa7f97f25152e5a4929",
+      "subject": "perf(preparation): batch metadata updates and overlap saves"
+    },
+    {
+      "original_local_commit": "ad1e342d7738b12fc4f774851755ec396a75fea8",
+      "published_commit": "b4dd4091b2c4901f2246cc49c1db0fab7ffb4497",
+      "subject": "fix(fitting): keep hidden access points isolated by BSSID"
+    }
+  ]
+}

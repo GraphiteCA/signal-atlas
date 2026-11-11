@@ -146,15 +146,37 @@ the release's installer, checks it against the release's `SHA256SUMS.txt`, close
 and opens the new version. Elsewhere it opens the release page. Your data is never touched by an
 update.
 
-**Offline.** Everything that reads, analyses and stores data works offline. The map libraries
-(Leaflet, MapLibre and deck.gl) load from unpkg.com, map tiles come from OpenStreetMap, and fonts
-come from Google Fonts. Without a connection, Compare draws its map as a plain outline of the
-tracks, the explorer's map and the GPU map don't load, and the pages use the system's own fonts. Map tiles are cached for a week, and the app
-identifies itself to OpenStreetMap as their tile policy asks.
+**Offline.** Reading, analysis and storage work offline. The GPU map bundles pinned
+MapLibre, deck.gl and Leaflet assets, so it can initialize and draw survey data without a
+library CDN. New street tiles still require OpenStreetMap access; cached tiles remain
+available. Other pages may use online assets/fonts and fall back to their system fonts
+or track outlines. Map tiles are cached for a week, and the app identifies itself to
+OpenStreetMap as their tile policy asks.
 
-## Speed
+## Large-survey improvements
 
-Measured on a 16-core PC with 64 GB of memory.
+The GPU map adds exact clustering, a clustering toggle, label zoom controls and solid
+planning rings. Radius defaults to 10 m and is adjustable from 5–50 m. Admin provides
+survey switching/creation, backups, recoverable 0,0 cleanup and a read-only SQL browser.
+Preparation prioritizes the current view while continuing the whole survey in the
+background. Hidden APs use their BSSID/MAC identity, not a shared hidden-name label.
+
+On the documented 5.75M-scan / 1.46M-target survey, the metadata follow-up reduced
+complete GPU-fast preparation from 336 seconds to 149–151 seconds, with identical
+saved results. This comparison is against the pre-metadata implementation, not an
+upstream speedup claim. Final engine peaks were about 3.14 GiB; observation columns
+remain resident and DuckDB remains an isolated benchmark prototype. First opening an
+existing large survey can take longer once while internal metadata is migrated.
+
+See the [review and validation guide](docs/review-guide.md) for delivered features,
+benchmark comparators, migrations, experimental boundaries and reproduction. The
+[observation-quality findings](docs/observation-quality.md) describe optional future
+filters; they are not enabled as production defaults.
+
+## Earlier upstream speed measurements
+
+The following measurements predate this follow-up and use a different 16-core PC
+with 64 GB of memory. They are historical context, not new benchmark results.
 
 | Pipeline | Rate |
 |---|---|
@@ -179,7 +201,7 @@ engine through the window's own origin, and nothing listens on the network.
 | Path | What it is |
 |---|---|
 | `web/compare.html` | Wardrive Compare. It also runs on its own in a browser, using the analysis worker inside it. |
-| `python/` | Graphite's Signal Atlas as he wrote it: the Python package, its tests, and the explorer pages (`python/templates/`) that the app shows. |
+| `python/` | Graphite's Signal Atlas reference, with matching import/hidden-identity fixes: the Python package, its tests, and the explorer pages (`python/templates/`) that the app shows. |
 | `internal/compare` | Compare's analysis in Go, ported line for line from the worker in `web/compare.html`. |
 | `internal/atlas` | Signal Atlas in Go, ported from Graphite's Python: filters, queries, the location model and its grid search, fit groups, area estimates, comparisons. |
 | `internal/drivedb` | The Drive database: reading every kind of log and database, combining without duplicates, exporting. Compare and the explorer use its readers to take database files as the CSV logs they convert to. |
@@ -208,6 +230,9 @@ format, which his Python opens as its own.
 
 The comparisons need Python 3.10+ with numpy, and Node. They are skipped when either is missing.
 Graphite's own tests run with `python -m unittest discover -s tests` from `python/`.
+For the complete portable PR checks, run `python scripts/check.py`; it requires NumPy
+and Node so the numerical/worker comparisons cannot silently skip. Optional `--race`,
+`--gpu` and `--cross` checks are documented in the [review guide](docs/review-guide.md).
 
 ## Building
 
