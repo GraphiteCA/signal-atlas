@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/maphash"
 	"io"
 	"math"
 	"os"
@@ -153,32 +154,73 @@ func (s *Segment) Range(lo, hi int) *Segment {
 
 // Dict interns strings to ids. Ids are never reused or changed; readers take a snapshot slice.
 type Dict struct {
-	mu   sync.Mutex
-	ids  map[string]uint32
-	list []string
+	mu    sync.Mutex
+	slots []uint32 // id+1; zero is an empty slot
+	seed  maphash.Seed
+	list  []string
 }
 
-func newDict() *Dict { return &Dict{ids: map[string]uint32{}} }
+func newDict() *Dict { return &Dict{seed: maphash.MakeSeed()} }
 
-// ID interns s.
+// find uses IDs into the immutable string list instead of storing another
+// string header in every hash bucket. Equality still checks the whole string.
+func (d *Dict) find(s string) (int, bool) {
+	if len(d.slots) == 0 {
+		return 0, false
+	}
+	mask := uint64(len(d.slots) - 1)
+	for pos := maphash.String(d.seed, s) & mask; ; pos = (pos + 1) & mask {
+		id := d.slots[pos]
+		if id == 0 {
+			return int(pos), false
+		}
+		if d.list[id-1] == s {
+			return int(id - 1), true
+		}
+	}
+}
+func (d *Dict) reserve(n int) {
+	size := 8
+	for n > size*7/10 {
+		size *= 2
+	}
+	if size <= len(d.slots) {
+		return
+	}
+	d.slots = make([]uint32, size)
+	for id, s := range d.list {
+		pos, _ := d.find(s)
+		d.slots[pos] = uint32(id) + 1
+	}
+}
+
+// ID interns s. The lock also protects table growth and existing snapshots.
 func (d *Dict) ID(s string) uint32 {
 	d.mu.Lock()
-	id, ok := d.ids[s]
-	if !ok {
-		id = uint32(len(d.list))
-		d.list = append(d.list, s)
-		d.ids[s] = id
+	defer d.mu.Unlock()
+	if id, ok := d.find(s); ok {
+		return uint32(id)
 	}
-	d.mu.Unlock()
+	if len(d.list) >= math.MaxUint32 {
+		panic("observation string dictionary is full")
+	}
+	d.reserve(len(d.list) + 1)
+	pos, _ := d.find(s)
+	id := uint32(len(d.list))
+	d.list = append(d.list, s)
+	d.slots[pos] = id + 1
 	return id
 }
 
 // Lookup finds s without adding it.
 func (d *Dict) Lookup(s string) (uint32, bool) {
 	d.mu.Lock()
-	id, ok := d.ids[s]
-	d.mu.Unlock()
-	return id, ok
+	defer d.mu.Unlock()
+	id, ok := d.find(s)
+	if !ok {
+		return 0, false
+	}
+	return uint32(id), true
 }
 
 // Snapshot is the strings so far (safe to read while others append).
@@ -558,20 +600,43 @@ func (s *Store) loadStrings(n int) error {
 		return err
 	}
 	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	if n < 0 || int64(n) > info.Size() || uint64(n) > math.MaxUint32 {
+		return errors.New("observation store: invalid dictionary count")
+	}
 	r := bufio.NewReaderSize(f, 1<<20)
 	s.Dict.list = make([]string, 0, n)
+	s.Dict.reserve(n)
+	// Immutable arenas avoid millions of separately allocated byte/string
+	// objects. Each string retains its arena; neither is modified after use.
+	var arena []byte
 	for i := 0; i < n; i++ {
 		l, err := binary.ReadUvarint(r)
 		if err != nil {
 			return fmt.Errorf("observation store strings: %w", err)
 		}
-		b := make([]byte, l)
+		if l > uint64(info.Size()) {
+			return errors.New("observation store: invalid string length")
+		}
+		if uint64(cap(arena)-len(arena)) < l {
+			arena = make([]byte, 0, max(1<<20, int(l)))
+		}
+		off := len(arena)
+		arena = arena[:off+int(l)]
+		b := arena[off:]
 		if _, err := io.ReadFull(r, b); err != nil {
 			return fmt.Errorf("observation store strings: %w", err)
 		}
-		str := string(b)
-		s.Dict.ids[str] = uint32(len(s.Dict.list))
+		str := unsafe.String(unsafe.SliceData(b), len(b))
+		pos, exists := s.Dict.find(str)
+		if exists {
+			return errors.New("observation store: duplicate dictionary string")
+		}
 		s.Dict.list = append(s.Dict.list, str)
+		s.Dict.slots[pos] = uint32(i) + 1
 	}
 	return nil
 }

@@ -72,6 +72,11 @@ func (a *Atlas) overviewTargetsContext(ctx context.Context, scoped py.Params, ss
 		k := key{s.MAC[i], s.Band[i]}
 		r := agg[k]
 		if r == nil {
+			// Shared grouping accepts at most 20 distinct radios. Once the
+			// filtered scan has found 21, further rows cannot change that.
+			if shared && !individual && len(agg) == 20 {
+				return t, nil
+			}
 			r = &radioAgg{radio: s.Radio[i], ssid: s.SSID[i], mac: s.MAC[i], band: s.Band[i]}
 			agg[k] = r
 		}

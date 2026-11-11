@@ -31,7 +31,6 @@ type preparationRunner struct {
 	state        map[string]any
 	foreground   atomic.Int64
 	mapReaders   atomic.Int64
-	mapUntil     atomic.Int64
 	closed       atomic.Bool
 	// Optional deterministic calculation seam for lifecycle tests.
 	prepare func(context.Context, atlas.PreparationNamespace, atlas.PreparationTarget, int64) (atlas.PreparedTarget, error)
@@ -99,7 +98,7 @@ func (p *preparationRunner) close() {
 	<-p.done
 }
 func (p *preparationRunner) busy() bool {
-	return p.closed.Load() || p.foreground.Load() > 0 || p.jobs.Running() || p.jobs.Retired() || p.s.admin.busy.Load() || p.mapReaders.Load() > 0 || time.Now().UnixNano() < p.mapUntil.Load()
+	return p.closed.Load() || p.foreground.Load() > 0 || p.jobs.Running() || p.jobs.Retired() || p.s.admin.busy.Load() || p.mapReaders.Load() > 0
 }
 func (p *preparationRunner) loop() {
 	defer close(p.done)
@@ -230,6 +229,7 @@ func (p *preparationRunner) runPool(ctx context.Context, cancel context.CancelFu
 	defer priority.Stop()
 	claimed := map[string]bool{}
 	var queue []atlas.PreparationTarget
+	exhausted := false
 	var batch []atlas.PreparedTarget
 	batchBytes := 0
 	var computeSeconds, commitSeconds float64
@@ -271,11 +271,14 @@ func (p *preparationRunner) runPool(ctx context.Context, cancel context.CancelFu
 		p.update(map[string]any{"compute_seconds": computeSeconds, "commit_seconds": commitSeconds, "commit_batches": transactions, "targets_committed": committed, "locations_written": written})
 		batch = nil
 		batchBytes = 0
+		exhausted = false
 		return true
 	}
 	for ctx.Err() == nil {
-		if len(queue) == 0 {
-			targets, err := p.a.NextPreparationTargets(ctx, ns.ID, budget, 256)
+		if len(queue) == 0 && !exhausted {
+			// Pending includes work already in flight and awaiting commit. Read
+			// past those claims rather than repeatedly fetching the same head.
+			targets, err := p.a.NextPreparationTargets(ctx, ns.ID, budget, 256+len(claimed))
 			if err != nil {
 				fail(err)
 				return
@@ -285,19 +288,20 @@ func (p *preparationRunner) runPool(ctx context.Context, cancel context.CancelFu
 					queue = append(queue, t)
 				}
 			}
-			if len(queue) == 0 && len(claimed) == 0 {
-				progress, err := p.a.PreparationProgress(ctx, ns.ID, budget)
-				if err != nil {
-					fail(err)
-					return
-				}
-				status := "complete"
-				if progress.Pending > 0 {
-					status = "limited"
-				}
-				p.update(map[string]any{"status": status, "progress": progress})
+			exhausted = len(queue) == 0
+		}
+		if len(queue) == 0 && len(claimed) == 0 {
+			progress, err := p.a.PreparationProgress(ctx, ns.ID, budget)
+			if err != nil {
+				fail(err)
 				return
 			}
+			status := "complete"
+			if progress.Pending > 0 {
+				status = "limited"
+			}
+			p.update(map[string]any{"status": status, "progress": progress})
+			return
 		}
 		var send chan atlas.PreparationTarget
 		var next atlas.PreparationTarget
@@ -323,7 +327,7 @@ func (p *preparationRunner) runPool(ctx context.Context, cancel context.CancelFu
 			for _, write := range result.value.Writes {
 				batchBytes += len(write.Key) + len(write.Text)
 			}
-			if (len(batch) >= 64 || batchBytes >= 2<<20) && !flush() {
+			if (len(batch) >= 512 || batchBytes >= 2<<20) && !flush() {
 				return
 			}
 		case <-flushTick.C:
@@ -332,8 +336,8 @@ func (p *preparationRunner) runPool(ctx context.Context, cancel context.CancelFu
 			}
 		case <-priority.C:
 			// Explicit foreground writes, paginated maps, switch and shutdown cancel
-			// and join. Ordinary clustered map reads only pause dispatch briefly, so
-			// frequent live refreshes do not repeatedly throw away calculations.
+			// and join. Ordinary clustered map reads run alongside preparation
+			// without cancelling calculations or resetting a cooldown.
 			if p.closed.Load() || p.foreground.Load() > 0 || p.jobs.Running() || p.jobs.Retired() || p.s.admin.busy.Load() {
 				cancel()
 				return

@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/pprof"
+	"slices"
 	"time"
 
 	"signal-atlas/internal/atlas"
@@ -34,8 +35,10 @@ func main() {
 	accelerated := flag.Bool("gpu", false, "opt-in float64 GPU scoring, with versioned cache namespace")
 	profile := flag.String("profile", "", "optional separate diagnostic CPU profile")
 	verify := flag.Bool("verify-existing", false, "reopen a completed owned sweep and verify no calculations are repeated")
+	mapPoll := flag.Int("map-poll-ms", 0, "exercise the live summary and clustered map during preparation")
+	threads := flag.Int("threads", 8, "Go CPU parallelism")
 	flag.Parse()
-	runtime.GOMAXPROCS(8)
+	runtime.GOMAXPROCS(*threads)
 	root, e := filepath.Abs(*data)
 	must(e)
 	owned := false
@@ -96,6 +99,33 @@ func main() {
 	}
 	call("POST", "/api/app/preparation/settings", map[string]any{"paused": false, "enabled": true, "workers": *workers, "memory_mb": 256, "grouping": "shared", "fit_mode": "sample"})
 	call("POST", "/api/app/settings", map[string]any{"fast_fits": *solver == "fast", "gpu_fits": *accelerated})
+	mapDone := make(chan []float64, 1)
+	stopMap := make(chan struct{})
+	go func() {
+		var latencies []float64
+		if *mapPoll > 0 {
+			for {
+				select {
+				case <-stopMap:
+					mapDone <- latencies
+					return
+				default:
+				}
+				t := time.Now()
+				call("GET", "/api/app/map/summary", nil)
+				name := atlas.SolverName(*solver == "fast", *accelerated)
+				call("GET", "/api/app/map/features?bbox=-124,48,-123,49&zoom=12&clustering=1&solver="+name, nil)
+				latencies = append(latencies, time.Since(t).Seconds()*1000)
+				select {
+				case <-stopMap:
+					mapDone <- latencies
+					return
+				case <-time.After(time.Duration(*mapPoll) * time.Millisecond):
+				}
+			}
+		}
+		mapDone <- latencies
+	}()
 	samples := []map[string]any{}
 	var state map[string]any
 	for {
@@ -117,6 +147,9 @@ func main() {
 		time.Sleep(time.Second)
 	}
 	seconds := time.Since(start).Seconds()
+	close(stopMap)
+	mapLatencies := <-mapDone
+	slices.Sort(mapLatencies)
 	call("POST", "/api/app/preparation/settings", map[string]any{"paused": true})
 	c, put, e := s.Atlas.Conn(nil)
 	must(e)
@@ -141,8 +174,11 @@ func main() {
 			panic("reopen repeated preparation work or changed durable counts")
 		}
 	}
-	report := map[string]any{"schema": 1, "verification_only": *verify, "solver": *solver, "workers": *workers, "threads": 8, "seconds": seconds, "rows": s.Atlas.Obs.State().N, "stats": stats, "saved": saved, "targets_per_second": float64(db.Int(stats["completed"])) / seconds, "fitted_per_second": float64(db.Int(stats["fitted"])) / seconds, "samples": samples, "metrics": state, "estimates_sha256": hex.EncodeToString(sum.Sum(nil))}
+	report := map[string]any{"schema": 1, "verification_only": *verify, "solver": *solver, "workers": *workers, "threads": *threads, "seconds": seconds, "rows": s.Atlas.Obs.State().N, "stats": stats, "saved": saved, "targets_per_second": float64(db.Int(stats["completed"])) / seconds, "fitted_per_second": float64(db.Int(stats["fitted"])) / seconds, "samples": samples, "metrics": state, "estimates_sha256": hex.EncodeToString(sum.Sum(nil))}
 	report["acceleration"] = call("GET", "/api/app/settings", nil)["acceleration"]
 	report["gpu_requested"] = *accelerated
+	if len(mapLatencies) > 0 {
+		report["live_map"] = map[string]any{"requests": len(mapLatencies), "poll_ms": *mapPoll, "p50_ms": mapLatencies[len(mapLatencies)/2], "p95_ms": mapLatencies[min(len(mapLatencies)-1, len(mapLatencies)*95/100)]}
+	}
 	must(json.NewEncoder(os.Stdout).Encode(report))
 }

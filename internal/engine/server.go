@@ -22,7 +22,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"signal-atlas/internal/atlas"
 	"signal-atlas/internal/db"
@@ -308,11 +307,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		s.surveyMu.RLock()
 		defer s.surveyMu.RUnlock()
-		if r.Method == http.MethodGet && (r.URL.Path == "/api/app/map/features" || r.URL.Path == "/api/app/map/points" || r.URL.Path == "/api/app/map/detail" || r.URL.Path == "/api/app/map/fits") {
+		// Clustered AP reads use WAL snapshots and immutable observation state.
+		// Pausing after every live update can starve the preparation that
+		// generated that update. Only large sighting-buffer reads yield CPU.
+		if r.Method == http.MethodGet && r.URL.Path == "/api/app/map/points" {
 			prep := s.preparation
 			prep.mapReaders.Add(1)
 			defer func() {
-				prep.mapUntil.Store(time.Now().Add(100 * time.Millisecond).UnixNano())
 				prep.mapReaders.Add(-1)
 				prep.signal()
 			}()

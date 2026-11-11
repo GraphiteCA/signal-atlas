@@ -52,25 +52,36 @@ func main() {
 	build := flag.String("build-from", "", "build canonical DuckDB observations from an owned native copy, then exit")
 	workers := flag.Int("workers", 8, "Go fitting workers")
 	solver := flag.String("solver", "fast", "fast or reference, matched to native run")
+	orderedFrom := flag.String("order-from", "", "create new target-ordered DuckDB from owned canonical observations")
+	ordered := flag.Bool("ordered", false, "read target-ordered observations with zonemap range pruning")
+	duckThreads := flag.Int("duck-threads", 2, "DuckDB query threads")
+	memory := flag.String("memory", "512MB", "DuckDB buffer budget; process RSS is measured separately")
+	threads := flag.Int("threads", 8, "Go CPU parallelism")
+	gpu := flag.Bool("gpu", false, "same versioned float64 GPU solver as native")
+	rowGroup := flag.Int("row-group", 16384, "row group size for new ordered file")
 	batchSize := flag.Int("batch", 256, "targets per bounded observation read")
 	flag.Parse()
-	runtime.GOMAXPROCS(8)
+	runtime.GOMAXPROCS(*threads)
 	ctx := context.Background()
 	absolute, e := filepath.Abs(*path)
 	must(e)
 	if !owned(filepath.Dir(absolute)) {
 		panic("owned benchmark database required")
 	}
-	if *build != "" {
+	if *build != "" || *orderedFrom != "" {
 		if _, e := os.Stat(absolute); !os.IsNotExist(e) {
 			panic("new DuckDB file required")
 		}
 		must(os.MkdirAll(filepath.Dir(absolute), 0755))
-		if !owned(*build) {
+		if *build != "" && !owned(*build) {
 			panic("owned canonical source required")
 		}
 	}
-	store, e := candidate.Open(absolute, 8, "1GB")
+	if *orderedFrom != "" {
+		buildOrdered(ctx, absolute, *orderedFrom, *rowGroup, *duckThreads, *memory)
+		return
+	}
+	store, e := candidate.Open(absolute, *duckThreads, *memory)
 	must(e)
 	defer store.DB.Close()
 	if *build != "" {
@@ -83,6 +94,7 @@ func main() {
 	c, e := db.Open(*metadata, true)
 	must(e)
 	defer c.Close()
+	must(db.Script(c, "PRAGMA journal_mode=WAL;"))
 	n, e := db.Scalar(c, "SELECT count(*) FROM preparation_checkpoints")
 	must(e)
 	saved, e := db.Scalar(c, "SELECT count(*) FROM estimates")
@@ -90,6 +102,7 @@ func main() {
 	if db.Int(n) != 0 || db.Int(saved) != 0 {
 		panic("fresh unfitted preparation metadata required")
 	}
+	must(atlas.EnsureLocationProjection(c))
 	var observationCount int64
 	must(store.DB.QueryRow("SELECT count(*) FROM observations").Scan(&observationCount))
 	expected, e := db.Scalar(c, "SELECT sum(active_rows) FROM imports")
@@ -99,26 +112,37 @@ func main() {
 	}
 	settings := atlas.DefaultPreparationSettings()
 	settings.Workers = *workers
-	ns, e := atlas.NewPreparationNamespace(settings, *solver == "fast")
+	ns, e := atlas.NewPreparationNamespace(settings, *solver == "fast", *gpu)
 	must(e)
 	start := time.Now()
 	must(db.WriteTx(c, func() error {
 		if _, e := db.Exec(c, "INSERT INTO preparation_namespaces(namespace,scope_key,grouping,total) SELECT ?,?,?,count(*) FROM preparation_targets", ns.ID, ns.ScopeKey, ns.Grouping); e != nil {
 			return e
 		}
-		_, e := db.Exec(c, "INSERT INTO preparation_pending(namespace,target_key,version) SELECT ?,target_key,version FROM preparation_targets", ns.ID)
+		_, e := db.Exec(c, "INSERT INTO preparation_pending(namespace,target_key,version) SELECT ?,target_key,version FROM preparation_targets ORDER BY target_key", ns.ID)
 		return e
 	}))
-	targets := []atlas.PreparationTarget{}
-	must(db.Each(c, "SELECT target_key,ssid,mac,version FROM preparation_targets ORDER BY target_key", nil, func(s *sqlite.Stmt) error {
-		targets = append(targets, atlas.PreparationTarget{Key: s.ColumnText(0), SSID: s.ColumnText(1), MAC: s.ColumnText(2), Version: s.ColumnInt64(3)})
-		return nil
-	}))
+	total, e := db.Scalar(c, "SELECT count(*) FROM preparation_targets")
+	must(e)
+	targetCount := db.Int(total)
+	_, e = db.Exec(c, "PRAGMA synchronous=NORMAL")
+	must(e)
+	catalog, e := db.OpenReadOnly(*metadata)
+	must(e)
+	defer catalog.Close()
 	readConn, e := store.DB.Conn(ctx)
 	must(e)
 	defer readConn.Close()
+	readSQL := `SELECT o.id,o.import_id,o.line,o.ssid,o.mac,o.band,o.band_source,o.radio_key,o.latitude,o.longitude,o.rssi_dbm,o.date FROM observations o JOIN wanted w ON o.ssid=w.ssid AND (o.ssid<>'' OR o.mac=w.mac) ORDER BY o.id`
+	if *ordered {
+		readSQL = `SELECT o.id,o.import_id,o.line,o.ssid,o.mac,o.band,o.band_source,o.radio_key,o.latitude,o.longitude,o.rssi_dbm,o.date FROM observations o JOIN wanted w ON o.target_key=w.target_key WHERE o.target_key>=? AND o.target_key<=? ORDER BY o.id`
+	}
+
 	_, e = readConn.ExecContext(ctx, "CREATE TEMP TABLE wanted(target_key VARCHAR,ssid VARCHAR,mac VARCHAR)")
 	must(e)
+	readQuery, e := readConn.PrepareContext(ctx, readSQL)
+	must(e)
+	defer readQuery.Close()
 	type job struct {
 		view *atlas.Atlas
 		t    atlas.PreparationTarget
@@ -135,10 +159,23 @@ func main() {
 	var batches int
 	go func() {
 		defer close(jobs)
-		for offset := 0; offset < len(targets); offset += *batchSize {
-			selected := targets[offset:min(offset+*batchSize, len(targets))]
+		after := ""
+		for {
+			selected := []atlas.PreparationTarget{}
+			e := db.Each(catalog, "SELECT target_key,ssid,mac,version FROM preparation_targets WHERE target_key>? ORDER BY target_key LIMIT ?", []any{after, *batchSize}, func(s *sqlite.Stmt) error {
+				selected = append(selected, atlas.PreparationTarget{Key: s.ColumnText(0), SSID: s.ColumnText(1), MAC: s.ColumnText(2), Version: s.ColumnInt64(3)})
+				return nil
+			})
+			if e != nil {
+				readErr <- e
+				return
+			}
+			if len(selected) == 0 {
+				break
+			}
+			after = selected[len(selected)-1].Key
 			t := time.Now()
-			view, e := readBatch(ctx, readConn, selected)
+			view, e := readBatch(ctx, readConn, readQuery, selected, *ordered)
 			readSeconds += time.Since(t).Seconds()
 			batches++
 			if e != nil {
@@ -200,7 +237,7 @@ func main() {
 			for _, write := range value.prepared.Writes {
 				pendingBytes += len(write.Key) + len(write.Text)
 			}
-			if len(pending) >= 64 || pendingBytes >= 2<<20 {
+			if len(pending) >= 512 || pendingBytes >= 2<<20 {
 				flush()
 			}
 		case <-tick.C:
@@ -214,7 +251,7 @@ func main() {
 	must(e)
 	remaining, e := db.Scalar(c, "SELECT count(*) FROM preparation_pending")
 	must(e)
-	if db.Int(remaining) != 0 || db.Int(stats["completed"]) != int64(len(targets)) {
+	if db.Int(remaining) != 0 || db.Int(stats["completed"]) != targetCount {
 		panic("incomplete sweep")
 	}
 	sum := sha256.New()
@@ -225,10 +262,10 @@ func main() {
 		}
 		return nil
 	}))
-	must(json.NewEncoder(os.Stdout).Encode(map[string]any{"schema": 1, "backend": "duckdb-batched", "solver": *solver, "threads": 8, "duckdb_threads": 8, "workers": *workers, "read_batch_targets": *batchSize, "rows": observationCount, "seconds": seconds, "targets_per_second": float64(len(targets)) / seconds, "fitted_per_second": float64(db.Int(stats["fitted"])) / seconds, "stats": stats, "read_seconds": readSeconds, "read_batches": batches, "compute_seconds": computeSeconds, "commit_seconds": commitSeconds, "commit_batches": commits, "estimates_sha256": hex.EncodeToString(sum.Sum(nil))}))
+	must(json.NewEncoder(os.Stdout).Encode(map[string]any{"schema": 1, "backend": "duckdb-batched", "streamed_target_catalog": true, "cache_durability": "WAL NORMAL; namespace seed FULL", "solver": *solver, "threads": *threads, "duckdb_threads": *duckThreads, "ordered": *ordered, "memory_limit": *memory, "gpu_requested": *gpu, "workers": *workers, "read_batch_targets": *batchSize, "rows": observationCount, "seconds": seconds, "targets_per_second": float64(targetCount) / seconds, "fitted_per_second": float64(db.Int(stats["fitted"])) / seconds, "stats": stats, "read_seconds": readSeconds, "read_batches": batches, "compute_seconds": computeSeconds, "commit_seconds": commitSeconds, "commit_batches": commits, "estimates_sha256": hex.EncodeToString(sum.Sum(nil))}))
 }
 
-func readBatch(ctx context.Context, connection *sql.Conn, targets []atlas.PreparationTarget) (*atlas.Atlas, error) {
+func readBatch(ctx context.Context, connection *sql.Conn, query *sql.Stmt, targets []atlas.PreparationTarget, ordered bool) (*atlas.Atlas, error) {
 	if _, e := connection.ExecContext(ctx, "DELETE FROM wanted"); e != nil {
 		return nil, e
 	}
@@ -241,7 +278,11 @@ func readBatch(ctx context.Context, connection *sql.Conn, targets []atlas.Prepar
 	if _, e := connection.ExecContext(ctx, "INSERT INTO wanted VALUES "+strings.Join(marks, ","), args...); e != nil {
 		return nil, e
 	}
-	rows, e := connection.QueryContext(ctx, `SELECT o.id,o.import_id,o.line,o.ssid,o.mac,o.band,o.band_source,o.radio_key,o.latitude,o.longitude,o.rssi_dbm,o.date FROM observations o JOIN wanted w ON o.ssid=w.ssid AND (o.ssid<>'' OR o.mac=w.mac) ORDER BY o.id`)
+	var argsRead []any
+	if ordered {
+		argsRead = []any{targets[0].Key, targets[len(targets)-1].Key}
+	}
+	rows, e := query.QueryContext(ctx, argsRead...)
 	if e != nil {
 		return nil, e
 	}
@@ -312,4 +353,30 @@ func buildCanonical(ctx context.Context, s *candidate.Store, source string) {
 		panic("canonical conversion count mismatch")
 	}
 	must(json.NewEncoder(os.Stdout).Encode(map[string]any{"rows": count, "conversion_seconds": time.Since(started).Seconds(), "note": "Unmeasured fixture setup; canonical source IDs, field values and row order are preserved."}))
+}
+
+// The only source connection is read-only. The fresh file keeps every canonical
+// column and original ID; target ordering is a physical layout, not sampling.
+func buildOrdered(ctx context.Context, path, source string, rowGroup, threads int, memory string) {
+	src, e := filepath.Abs(source)
+	must(e)
+	if !owned(filepath.Dir(src)) {
+		panic("owned canonical source required")
+	}
+	if rowGroup < 2048 || rowGroup%2048 != 0 {
+		panic("row group must be a multiple of 2048")
+	}
+	started := time.Now()
+	q, e := sql.Open("duckdb", "")
+	must(e)
+	defer q.Close()
+	q.SetMaxOpenConns(1)
+	literal := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
+	for _, sql := range []string{fmt.Sprintf("SET threads=%d", threads), "SET memory_limit=" + literal(memory), "SET preserve_insertion_order=false", "SET temp_directory=" + literal(path+".tmp"), "ATTACH " + literal(src) + " AS source (READ_ONLY)", fmt.Sprintf("ATTACH %s AS ordered (ROW_GROUP_SIZE %d)", literal(path), rowGroup), "CREATE TABLE ordered.atlas_meta AS SELECT 1 AS version", "CREATE TABLE ordered.observations AS SELECT *, CASE WHEN ssid<>'' THEN 'n:'||ssid ELSE 'h:'||upper(mac) END AS target_key FROM source.observations ORDER BY target_key,id", "CHECKPOINT ordered"} {
+		_, e = q.ExecContext(ctx, sql)
+		must(e)
+	}
+	var count int64
+	must(q.QueryRowContext(ctx, "SELECT count(*) FROM ordered.observations").Scan(&count))
+	must(json.NewEncoder(os.Stdout).Encode(map[string]any{"rows": count, "ordering_seconds": time.Since(started).Seconds(), "row_group_size": rowGroup, "source": src}))
 }

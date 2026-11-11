@@ -1,6 +1,7 @@
 package atlas
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -8,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -165,56 +167,76 @@ func (a *Atlas) buildMapIndex(ctx context.Context, c *sqlite.Conn, p py.Params) 
 			return nil, "", err
 		}
 		f.Compile(st, a.Obs.Dict)
-		type radio struct {
-			sid, mid, band uint32
-			n              int64
-		}
-		parts := ScanContext(ctx, f, func() map[uint32]*radio { return map[uint32]*radio{} }, func(rs map[uint32]*radio, _ uint32, s *obs.Segment, i int) {
-			r := rs[s.Radio[i]]
-			if r == nil {
-				r = &radio{sid: s.SSID[i], mid: s.MAC[i], band: s.Band[i]}
-				rs[s.Radio[i]] = r
-			}
-			r.n++
+		// Keep radio counts as values, then sort one compact slice by network
+		// (or MAC for hidden SSIDs). Constructing a map[string]any for every
+		// radio used gigabytes of temporary objects on sparse surveys.
+		parts := ScanContext(ctx, f, func() map[uint32]int64 { return map[uint32]int64{} }, func(rs map[uint32]int64, _ uint32, s *obs.Segment, i int) {
+			rs[s.Radio[i]]++
 		})
 		if err := ctx.Err(); err != nil {
 			return nil, "", err
 		}
-		all := map[uint32]*radio{}
+		all := map[uint32]int64{}
 		for _, rs := range parts {
-			for k, r := range rs {
-				if prev := all[k]; prev != nil {
-					prev.n += r.n
-				} else {
-					all[k] = r
+			for k, n := range rs {
+				all[k] += n
+			}
+		}
+		type radio struct {
+			sid, mid, band, key uint32
+			n                   int64
+		}
+		radios := make([]radio, 0, len(all))
+		for k, n := range all {
+			sg, i := st.Loc(st.ByRadio[k][0])
+			radios = append(radios, radio{sg.SSID[i], sg.MAC[i], sg.Band[i], k, n})
+		}
+		parts = nil
+		all = nil
+		slices.SortFunc(radios, func(a, b radio) int {
+			if v := cmp.Compare(a.sid, b.sid); v != 0 {
+				return v
+			}
+			if st.Str[a.sid] == "" {
+				if v := cmp.Compare(a.mid, b.mid); v != 0 {
+					return v
 				}
 			}
-		}
-		groups := map[string][]Group{}
-		for k, r := range all {
-			ssid, mac := st.Str[r.sid], st.Str[r.mid]
-			id := ssid
-			if ssid == "" {
-				id = "\x00" + mac
-			}
-			groups[id] = append(groups[id], Group{"radio_key": st.Str[k], "ssid": ssid, "mac": mac, "band": st.Str[r.band], "count": r.n})
-		}
+			return cmp.Compare(a.key, b.key)
+		})
 		targets := map[string]bool{}
-		for _, g := range groups {
+		for lo := 0; lo < len(radios); {
 			if err := ctx.Err(); err != nil {
 				return nil, "", err
 			}
-			sort.Slice(g, func(i, j int) bool { return gs(g[i], "radio_key") < gs(g[j], "radio_key") })
-			if individual {
-				for _, v := range IndependentGroups(g) {
-					targets[gs(v, "radio_key")] = true
+			first := radios[lo]
+			hi := lo + 1
+			for hi < len(radios) && radios[hi].sid == first.sid && (st.Str[first.sid] != "" || radios[hi].mid == first.mid) {
+				hi++
+			}
+			if hi == lo+1 {
+				// A single radio needs no aliasing or shared-group hashing.
+				if individual || shared && first.n >= 4 {
+					targets[st.Str[first.key]] = true
+				}
+			} else {
+				g := make([]Group, 0, hi-lo)
+				for _, r := range radios[lo:hi] {
+					g = append(g, Group{"radio_key": st.Str[r.key], "ssid": st.Str[r.sid], "mac": st.Str[r.mid], "band": st.Str[r.band], "count": r.n})
+				}
+				sort.Slice(g, func(i, j int) bool { return gs(g[i], "radio_key") < gs(g[j], "radio_key") })
+				if individual {
+					for _, v := range IndependentGroups(g) {
+						targets[gs(v, "radio_key")] = true
+					}
+				}
+				if shared {
+					for _, v := range EstimationGroups(g, py.Params{"shared": {"1"}, "individual": {"0"}}) {
+						targets[gs(v, "radio_key")] = true
+					}
 				}
 			}
-			if shared {
-				for _, v := range EstimationGroups(g, py.Params{"shared": {"1"}, "individual": {"0"}}) {
-					targets[gs(v, "radio_key")] = true
-				}
-			}
+			lo = hi
 		}
 		m.targets = targets
 		m.targetKey = tk
@@ -259,30 +281,17 @@ func (a *Atlas) buildMapIndex(ctx context.Context, c *sqlite.Conn, p py.Params) 
 		}
 		// A single statement gives a consistent committed snapshot. Full-input fits
 		// replace sampled fits of the same identity within the solver namespace.
-		query := `SELECT e.radio_key,e.result FROM estimates e WHERE e.scope_key IN (?,?)
-		AND json_extract(e.result,'$.status')='fitted' AND (e.scope_key=? OR NOT EXISTS
-		(SELECT 1 FROM estimates x WHERE x.radio_key=e.radio_key AND x.scope_key=? AND json_extract(x.result,'$.status')='fitted'))`
+		query := `SELECT e.radio_key,e.latitude,e.longitude,e.ssid,e.mac,e.band,e.shared,e.used,e.rms,e.edge FROM map_locations e WHERE e.scope_key IN (?,?) AND (e.scope_key=? OR NOT EXISTS(SELECT 1 FROM map_locations x WHERE x.radio_key=e.radio_key AND x.scope_key=?))`
 		args := []any{sample, exact, exact, exact}
 		if len(patchKeys) > 0 {
 			query += " AND e.radio_key IN (" + db.Marks(len(patchKeys)) + ")"
 			args = append(args, patchKeys...)
 		}
 		err := db.Each(c, query, args, func(s *sqlite.Stmt) error {
-			var r struct {
-				Latitude, Longitude *float64
-				SSID, MAC, Band     string
-				Shared              bool    `json:"co_location_assumed"`
-				Used                int64   `json:"used_observations"`
-				RMS                 float64 `json:"residual_rms_db"`
-				Edge                bool    `json:"boundary_limited"`
-			}
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			if json.Unmarshal([]byte(s.ColumnText(1)), &r) != nil || r.Latitude == nil || r.Longitude == nil || !validLocation(*r.Latitude, *r.Longitude) {
-				return nil
-			}
-			idx.rows = append(idx.rows, MapFit{ID: s.ColumnText(0), Lat: *r.Latitude, Lon: *r.Longitude, SSID: r.SSID, MAC: r.MAC, Band: r.Band, Shared: r.Shared, Used: r.Used, RMS: r.RMS, BoundaryLimited: r.Edge})
+			idx.rows = append(idx.rows, MapFit{ID: s.ColumnText(0), Lat: s.ColumnFloat(1), Lon: s.ColumnFloat(2), SSID: s.ColumnText(3), MAC: s.ColumnText(4), Band: s.ColumnText(5), Shared: s.ColumnBool(6), Used: s.ColumnInt64(7), RMS: s.ColumnFloat(8), BoundaryLimited: s.ColumnBool(9)})
 			return nil
 		})
 		if err != nil {
@@ -654,10 +663,7 @@ func (a *Atlas) MapSummary(c *sqlite.Conn) (MapSummary, error) {
 		m.observedState = st
 	}
 	out.ObservedSSIDs = m.observedCount
-	err = db.Each(c, `SELECT DISTINCT json_extract(result,'$.ssid') FROM estimates WHERE
-	json_extract(result,'$.status')='fitted' AND json_type(result,'$.latitude') IN ('integer','real')
-	AND json_type(result,'$.longitude') IN ('integer','real') AND json_extract(result,'$.latitude') BETWEEN -85.051129 AND 85.051129
-	AND json_extract(result,'$.longitude') BETWEEN -180 AND 180`, nil, func(s *sqlite.Stmt) error {
+	err = db.Each(c, `SELECT ssid FROM located_networks`, nil, func(s *sqlite.Stmt) error {
 		name := s.ColumnText(0)
 		if name != "" {
 			if id, ok := a.Obs.Dict.Lookup(name); ok && st.Net[id] != nil {

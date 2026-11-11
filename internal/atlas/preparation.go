@@ -37,7 +37,7 @@ type PreparationSettings struct {
 }
 
 func DefaultPreparationSettings() PreparationSettings {
-	return PreparationSettings{Version: 1, Enabled: true, FitMode: "sample", Grouping: "shared", Workers: max(1, min(4, runtime.GOMAXPROCS(0)/2)), MemoryMB: 256}
+	return PreparationSettings{Version: 1, Enabled: true, FitMode: "sample", Grouping: "shared", Workers: max(1, min(8, runtime.GOMAXPROCS(0)/2)), MemoryMB: 256}
 }
 func (p PreparationSettings) Validate() error {
 	if p.Version != 1 || (p.FitMode != "sample" && p.FitMode != "all") || (p.Grouping != "shared" && p.Grouping != "individual" && p.Grouping != "both") || p.Workers < 1 || p.Workers > 16 || p.MemoryMB < 64 || p.MemoryMB > 2048 {
@@ -195,7 +195,7 @@ func (a *Atlas) EnsurePreparationNamespace(ctx context.Context, ns PreparationNa
 		if _, err := db.Exec(c, "INSERT INTO preparation_namespaces(namespace,scope_key,grouping,total) SELECT ?,?,?,count(*) FROM preparation_targets", ns.ID, ns.ScopeKey, ns.Grouping); err != nil {
 			return err
 		}
-		_, err := db.Exec(c, "INSERT INTO preparation_pending(namespace,target_key,version) SELECT ?,target_key,version FROM preparation_targets", ns.ID)
+		_, err := db.Exec(c, "INSERT INTO preparation_pending(namespace,target_key,version) SELECT ?,target_key,version FROM preparation_targets ORDER BY target_key", ns.ID)
 		return err
 	})
 }
@@ -283,23 +283,41 @@ func (a *Atlas) computePreparationTarget(ctx context.Context, ns PreparationName
 	}
 	st := a.Obs.State()
 	sid, hasSSID := a.Obs.Dict.Lookup(t.SSID)
-	var rows int64
+	var rows, radios int64
 	if hasSSID {
 		if t.SSID != "" {
 			if n := st.Net[sid]; n != nil {
 				rows = n.Count
+				radios = n.Radios
 			}
 		} else if mid, ok := a.Obs.Dict.Lookup(t.MAC); ok {
 			if n := st.Trans[obs.Pair{sid, mid}]; n != nil {
 				rows = n.Count
+				radios = int64(len(n.Bands))
 			}
 		}
+	}
+	// Shared-only grouping emits no group for a single radio with fewer than
+	// four raw observations. Filters can only reduce that count. Multiple
+	// radios still take the normal path, including saved insufficient results.
+	if rows == 0 || ns.Grouping == "shared" && rows < 4 && radios == 1 {
+		result.Unavailable = 1
+		return prepared, nil
 	}
 	if ns.Grouping == "both" {
 		rows *= 2
 	}
 	// Includes grouping/sample scratch, not the already loaded column store.
 	needed := rows*256 + (1 << 20)
+	if ns.FitMode == "sample" {
+		groups := radios
+		if ns.Grouping == "shared" {
+			groups = min(groups, 21)
+		}
+		// The sampler holds at most 256 rows per radio. Shared grouping also
+		// stops once it sees a 21st eligible radio, without building huge groups.
+		needed = groups*1024 + min(rows, groups*256)*512 + (1 << 20)
+	}
 	if needed > budget {
 		prepared.BlockedBytes = needed
 		return prepared, nil
@@ -395,59 +413,92 @@ func (a *Atlas) CommitPreparationBatch(ctx context.Context, ns PreparationNamesp
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	c, put, err := a.Conn(ctx)
-	if err != nil {
-		return nil, err
+	if a.preparationClosed {
+		return nil, errors.New("preparation writer is closed")
 	}
-	defer put()
+	if a.preparationWriter == nil {
+		c, err := db.Open(a.MetaPath, true)
+		if err != nil {
+			return nil, err
+		}
+		// Only recomputable fit output uses NORMAL. The connection never enters
+		// the import/admin pool, whose FULL durability is left unchanged. WAL
+		// still commits estimates and checkpoints atomically and survives an
+		// application crash; power loss may require repeating recent cache work.
+		if _, err := db.Exec(c, "PRAGMA synchronous=NORMAL"); err != nil {
+			c.Close()
+			return nil, err
+		}
+		a.preparationWriter = c
+	}
+	c := a.preparationWriter
+	previous := c.SetInterrupt(ctx.Done())
+	defer c.SetInterrupt(previous)
 	return CommitPreparationResults(ctx, c, ns, batch)
 }
 
 // CommitPreparationResults is shared by the production single writer and the
 // benchmark observation adapters. The caller owns a dedicated connection and
 // serializes writes; the immediate transaction always validates input versions.
+// The staging table is connection-local and bounded by the writer batch. Validate
+// versions once with joins, then publish checkpoints and dequeue in sets. A
+// million sparse APs should not need four metadata queries each.
 func CommitPreparationResults(ctx context.Context, c *sqlite.Conn, ns PreparationNamespace, batch []PreparedTarget) ([]PreparedTarget, error) {
 	accepted := make([]PreparedTarget, 0, len(batch))
-	err := db.WriteTx(c, func() error {
-		for _, prepared := range batch {
+	if len(batch) == 0 {
+		return accepted, nil
+	}
+	staged := make([][6]any, len(batch))
+	for i, p := range batch {
+		staged[i] = [6]any{p.Target.Key, p.Target.Version, p.Result.Fitted, p.Result.Unavailable, p.BlockedBytes, i}
+	}
+	data, err := json.Marshal(staged)
+	if err != nil {
+		return nil, err
+	}
+	err = db.WriteTx(c, func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := db.Script(c, `CREATE TEMP TABLE IF NOT EXISTS preparation_batch(target_key TEXT NOT NULL,version INTEGER NOT NULL,fitted INTEGER NOT NULL,unavailable INTEGER NOT NULL,blocked_bytes INTEGER NOT NULL,position INTEGER PRIMARY KEY);
+CREATE INDEX IF NOT EXISTS temp.preparation_batch_key ON preparation_batch(target_key);
+DELETE FROM preparation_batch;`); err != nil {
+			return err
+		}
+		if _, err := db.CachedExec(c, `INSERT INTO preparation_batch SELECT json_extract(value,'$[0]'),json_extract(value,'$[1]'),json_extract(value,'$[2]'),json_extract(value,'$[3]'),json_extract(value,'$[4]'),json_extract(value,'$[5]') FROM json_each(?)`, string(data)); err != nil {
+			return err
+		}
+		if _, err := db.CachedExec(c, `DELETE FROM preparation_batch AS b WHERE NOT EXISTS(SELECT 1 FROM preparation_pending p JOIN preparation_targets t USING(target_key) WHERE p.namespace=? AND p.target_key=b.target_key AND p.version=b.version AND t.version=b.version)`, ns.ID); err != nil {
+			return err
+		}
+		// Match the per-target API's first accepted result if a caller sends
+		// the same target twice; a stale earlier result does not hide a valid one.
+		if _, err := db.CachedExec(c, `DELETE FROM preparation_batch WHERE position NOT IN (SELECT min(position) FROM preparation_batch GROUP BY target_key)`); err != nil {
+			return err
+		}
+		if err := db.Each(c, "SELECT position FROM preparation_batch ORDER BY position", nil, func(st *sqlite.Stmt) error { accepted = append(accepted, batch[st.ColumnInt(0)]); return nil }); err != nil {
+			return err
+		}
+		for _, p := range accepted {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			t := prepared.Target
-			version, err := db.CachedScalar(c, "SELECT version FROM preparation_targets WHERE target_key=?", t.Key)
-			if err != nil {
-				return err
-			}
-			if db.Int(version) != t.Version {
-				continue
-			}
-			pending, err := db.CachedScalar(c, "SELECT 1 FROM preparation_pending WHERE namespace=? AND target_key=? AND version=?", ns.ID, t.Key, t.Version)
-			if err != nil {
-				return err
-			}
-			if pending == nil {
-				continue
-			}
-			if prepared.BlockedBytes > 0 {
-				if _, err = db.CachedExec(c, "UPDATE preparation_pending SET blocked_bytes=? WHERE namespace=? AND target_key=? AND version=?", prepared.BlockedBytes, ns.ID, t.Key, t.Version); err != nil {
-					return err
-				}
-			} else {
-				for _, w := range prepared.Writes {
-					if _, err = db.CachedExec(c, "INSERT OR REPLACE INTO estimates VALUES(?,?,?)", w.Key, ns.ScopeKey, w.Text); err != nil {
+			if p.BlockedBytes == 0 {
+				for _, w := range p.Writes {
+					if _, err := db.CachedExec(c, "INSERT OR REPLACE INTO estimates VALUES(?,?,?)", w.Key, ns.ScopeKey, w.Text); err != nil {
 						return err
 					}
 				}
-				if _, err = db.CachedExec(c, "INSERT OR REPLACE INTO preparation_checkpoints VALUES(?,?,?,?,?,?)", ns.ID, t.Key, t.Version, prepared.Result.Fitted, prepared.Result.Unavailable, py.UTCNowISO()); err != nil {
-					return err
-				}
-				if _, err = db.CachedExec(c, "DELETE FROM preparation_pending WHERE namespace=? AND target_key=? AND version=?", ns.ID, t.Key, t.Version); err != nil {
-					return err
-				}
 			}
-			accepted = append(accepted, prepared)
 		}
-		return nil
+		if _, err := db.CachedExec(c, `UPDATE preparation_pending SET blocked_bytes=(SELECT b.blocked_bytes FROM preparation_batch b WHERE b.target_key=preparation_pending.target_key) WHERE (namespace,target_key) IN (SELECT ?,target_key FROM preparation_batch WHERE blocked_bytes>0)`, ns.ID); err != nil {
+			return err
+		}
+		if _, err := db.CachedExec(c, `INSERT OR REPLACE INTO preparation_checkpoints SELECT ?,target_key,version,fitted,unavailable,? FROM preparation_batch WHERE blocked_bytes=0`, ns.ID, py.UTCNowISO()); err != nil {
+			return err
+		}
+		_, err := db.CachedExec(c, `DELETE FROM preparation_pending WHERE (namespace,target_key) IN (SELECT ?,target_key FROM preparation_batch WHERE blocked_bytes=0)`, ns.ID)
+		return err
 	})
 	if err != nil {
 		return nil, fmt.Errorf("preparation commit (%s): %w", sqlite.ErrCode(err), err)

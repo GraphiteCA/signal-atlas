@@ -121,7 +121,12 @@ async function loadPoints(p,signal) {
 }
 function statusText(loading=false) {
   const parts=[];
-  if(fits)parts.push(`${fi(fits.loaded)} of ${fi(fits.total)} APs · ${fi(fits.features.length)} map symbols${loading?' · loading…':''}`);
+  if(fits && (fits.ready || fits.loaded || !loading)) {
+    const clusters=fits.clusterCount ?? fits.features.reduce((n,r)=>n+(r.count>1?1:0),0);
+    const individual=fits.features.length-clusters;
+    parts.push(fits.loaded<fits.total?`${fi(fits.loaded)} of ${fi(fits.total)} APs in view`:`${fi(fits.total)} ${fits.total===1?'AP':'APs'} in view`);
+    if(clusters)parts.push(`${fi(clusters)} ${clusters===1?'cluster':'clusters'} · ${fi(individual)} individual ${individual===1?'AP':'APs'}`);
+  }
   if(points)parts.push(`${fi(points.n)}${points.n<points.total?' of '+fi(points.total):''} sightings (point limit)`);
   if(pins.size)parts.push(`${fi(pins.size)} pinned`);
   $('status').textContent=parts.join(' · ') || (loading?'loading…':'No saved APs in this view. Fit every AP or adjust filters.');
@@ -131,15 +136,15 @@ async function load() {
   const my=++seq;clearTimeout(retryTimer);controller?.abort();controller=new AbortController();const signal=controller.signal,p=query();
   const visibility=new URLSearchParams(p);visibility.delete('bbox');visibility.delete('zoom');
   const viewKey=visibility.toString()+':'+observationRevision+':'+summarySolver;
-  $('status').textContent='loading…';
+  statusText(true);
   // Keep observation and AP work independent: APs appear without waiting for a
   // multi-million-point buffer. Both share cancellation and stale-response guards.
   const pointTask=loadPoints(p,signal).then(pt=>{if(my===seq){points=pt;draw();statusText(true);}return null;},e=>e);
   try {
-    const nextFits=$('showFits').checked?{count:0,total:0,loaded:0,features:[]}:null;
+    const nextFits=$('showFits').checked?{count:0,total:0,loaded:0,features:[],ready:false,clusterCount:0}:null;
     // Keep valid AP buffers during same-filter pan/live refreshes. Retire them
     // immediately when filters, observation state or solver provenance changes.
-    if(!nextFits||fitsViewKey!==viewKey){fits=nextFits;fitsViewKey=viewKey;draw();}
+    if(!nextFits||fitsViewKey!==viewKey){fits=nextFits;fitsViewKey=viewKey;draw();statusText(true);}
     if(nextFits) {
       let cursor='',revision='',lastDraw=-Infinity;
       do {
@@ -147,7 +152,8 @@ async function load() {
         const page=await json('/api/app/map/features?'+pp,{signal});if(my!==seq)return;
         if(revision && revision!==page.revision)throw new Error('Map changed; restart pagination');revision=page.revision;
         nextFits.features.push(...page.features);nextFits.total=page.total;nextFits.count=page.total;nextFits.loaded+=page.features.reduce((n,r)=>n+r.count,0);
-        fits=nextFits;fitsViewKey=viewKey;
+        nextFits.clusterCount+=page.features.reduce((n,r)=>n+(r.count>1?1:0),0);
+        nextFits.ready=true;fits=nextFits;fitsViewKey=viewKey;
         // Upload progressive buffers at most ten times a second. Re-uploading
         // the entire growing GPU buffer for each small page wastes most of the
         // loading time on dense unclustered surveys.

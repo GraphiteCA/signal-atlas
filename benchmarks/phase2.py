@@ -1,4 +1,5 @@
 """Phase 2 probes: never open the source fixture or modify input logs."""
+from contextlib import closing
 import argparse
 import json
 import os
@@ -17,7 +18,7 @@ def clone_workspace(source, dest):
                for p in [source, *list(source.parents)[:4]]):
         raise ValueError('Source must be an owned benchmark fixture')
     dest.mkdir(parents=True, exist_ok=False)
-    with sqlite3.connect(source.joinpath('atlas.sqlite3').as_uri()+'?mode=ro', uri=True) as original, sqlite3.connect(dest/'atlas.sqlite3') as copy:
+    with closing(sqlite3.connect(source.joinpath('atlas.sqlite3').as_uri()+'?mode=ro', uri=True)) as original, closing(sqlite3.connect(dest/'atlas.sqlite3')) as copy:
         original.backup(copy)
     (dest/'observations').mkdir()
     for file in (source/'observations').iterdir():

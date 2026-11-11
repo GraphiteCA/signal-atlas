@@ -1,5 +1,7 @@
 # Preparation performance and locking
 
+Follow-up: [actual-survey memory, preparation and tuned DuckDB results](memory-preparation.md) revise the storage recommendation and resource defaults below. These phase measurements remain historical.
+
 This follows Phase 4 commit `53c6d07`. Observation storage remains a measured
 choice; faster preparation is the primary objective. The reference solver
 remains the default, and existing survey settings and completed work are kept.

@@ -1,5 +1,7 @@
 # Phase 5: solver comparison and optional GPU scoring
 
+Follow-up: [actual-survey memory, preparation and tuned DuckDB results](memory-preparation.md) revise the storage recommendation and resource defaults below. These phase measurements remain historical.
+
 Base: `8af4acc`, after the complete native/DuckDB preparation comparison.
 Branch: `codex/fit-performance`. The production store remains immutable columns
 and SQLite metadata. Reference fitting remains the default; GPU acceleration and

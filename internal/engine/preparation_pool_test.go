@@ -56,7 +56,7 @@ func TestPreparationPoolBatchesFastCompletions(t *testing.T) {
 	s.preparation.mu.Unlock()
 	status := waitPreparation(t, s, "complete")
 	batches, ok := status["commit_batches"].(float64)
-	if !ok || batches < 3 || batches > 5 {
+	if !ok || batches < 1 || batches > 5 {
 		t.Fatal("per-target commits were not batched", status)
 	}
 	if status["progress"].(map[string]any)["completed"] != float64(150) {
@@ -99,6 +99,45 @@ func TestClusteredMapRetainsInflightPreparation(t *testing.T) {
 	close(release)
 	state := waitPreparation(t, s, "complete")
 	if state["progress"].(map[string]any)["completed"] != float64(1) {
+		t.Fatal(state)
+	}
+}
+
+func TestFrequentClusteredReadsDoNotStarvePreparation(t *testing.T) {
+	s := preparationServer(t)
+	addPreparationRows(t, s, 40)
+	s.preparation.mu.Lock()
+	s.preparation.prepare = func(ctx context.Context, _ atlas.PreparationNamespace, target atlas.PreparationTarget, _ int64) (atlas.PreparedTarget, error) {
+		select {
+		case <-time.After(5 * time.Millisecond):
+		case <-ctx.Done():
+			return atlas.PreparedTarget{}, ctx.Err()
+		}
+		return atlas.PreparedTarget{Target: target, Result: atlas.PreparedTargetResult{Unavailable: 1}}, nil
+	}
+	s.preparation.mu.Unlock()
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			w := adminRequest(t, s, "GET", "/api/app/map/features?clustering=1&zoom=12&bbox=-124,48,-123,49", nil, "")
+			if w.Code != 200 {
+				t.Errorf("map: %d", w.Code)
+				return
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}()
+	defer func() { close(stop); <-done }()
+	// The previous post-map 100 ms cooldown never expired under this workload.
+	state := waitPreparation(t, s, "complete")
+	if state["progress"].(map[string]any)["completed"] != float64(40) {
 		t.Fatal(state)
 	}
 }

@@ -2,9 +2,12 @@ package obs
 
 import (
 	"encoding/binary"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
+	"sync"
 	"testing"
 )
 
@@ -61,5 +64,62 @@ func TestReadSegmentRejectsMalformedHeadersWithoutPanic(t *testing.T) {
 		if _, err := readSegment(file); err == nil {
 			t.Fatal("accepted corrupt header", n)
 		}
+	}
+}
+
+func TestCompactDictionaryGrowthArenaAndConcurrentLookup(t *testing.T) {
+	dir := t.TempDir()
+	store, err := Open(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := []string{"", "Hello", "日本語", strings.Repeat("x", (1<<20)+7)}
+	for i := 0; i < 10000; i++ {
+		values = append(values, fmt.Sprintf("network-%d", i))
+	}
+	for i, s := range values {
+		if id := store.Dict.ID(s); id != uint32(i) {
+			t.Fatal(i, id)
+		}
+	}
+	snapshot := store.Dict.Snapshot()
+	if err := store.Commit(Change{}); err != nil {
+		t.Fatal(err)
+	}
+	re, err := Open(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	for worker := 0; worker < 4; worker++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i, s := range values {
+				if id, ok := re.Dict.Lookup(s); !ok || id != uint32(i) {
+					t.Errorf("lookup %d: %d %v", i, id, ok)
+				}
+			}
+		}()
+	}
+	for i := 0; i < 10000; i++ {
+		re.Dict.ID(fmt.Sprintf("new-%d", i))
+	}
+	wg.Wait()
+	if !reflect.DeepEqual(snapshot, re.Dict.Snapshot()[:len(snapshot)]) {
+		t.Fatal("growth changed prior IDs or arena bytes")
+	}
+	if _, ok := re.Dict.Lookup("absent"); ok {
+		t.Fatal("unknown value found")
+	}
+	if err := re.Commit(Change{}); err != nil {
+		t.Fatal(err)
+	}
+	again, err := Open(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(re.Dict.Snapshot(), again.Dict.Snapshot()) {
+		t.Fatal("append/reopen changed dictionary")
 	}
 }

@@ -37,6 +37,8 @@ type Atlas struct {
 	// WriteMu serialises the writers (imports, band assignments, the bridge); queries never wait.
 	WriteMu                 sync.Mutex
 	mapCache                mapCache
+	preparationWriter       *sqlite.Conn
+	preparationClosed       bool
 	beforePreparationCommit func() // optional deterministic commit-boundary diagnostics
 }
 
@@ -209,10 +211,16 @@ func openGenerationWith(root, dir string, columns *obs.Store) (*Atlas, error) {
 // Close closes the store.
 func (a *Atlas) Close() error {
 	a.closeOnce.Do(func() {
+		a.WriteMu.Lock()
+		a.preparationClosed = true
+		if a.preparationWriter != nil {
+			a.closeErr = errors.Join(a.closeErr, a.preparationWriter.Close())
+		}
+		a.WriteMu.Unlock()
 		a.sqlMu.Lock()
 		a.sqlClosed = true
 		if a.sqlVersion != nil {
-			a.closeErr = a.sqlVersion.Close()
+			a.closeErr = errors.Join(a.closeErr, a.sqlVersion.Close())
 		}
 		a.sqlMu.Unlock()
 		a.closeErr = errors.Join(a.closeErr, a.pool.Close())
@@ -261,6 +269,9 @@ func initialize(c *sqlite.Conn, path string) error {
 		}
 	}
 	if err := db.Script(c, schemaSQL+preparationSchema); err != nil {
+		return err
+	}
+	if err := initializeLocations(c); err != nil {
 		return err
 	}
 	cols, err := db.All(c, "PRAGMA table_info(imports)")

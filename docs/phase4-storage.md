@@ -1,5 +1,7 @@
 # Phase 4: storage evaluation, lower observation memory and SQL browser
 
+Follow-up: [actual-survey memory, preparation and tuned DuckDB results](memory-preparation.md) revise the storage recommendation and resource defaults below. These phase measurements remain historical.
+
 Phase 4 starts at `481057a` (Phase 3), on upstream
 `6d8833659906faa89b1677424caf5f5cd905c56d`. The production explorer continues
 to use immutable observation columns and SQLite metadata. The independent

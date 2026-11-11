@@ -49,7 +49,7 @@ test('new map loads cancel old pages and discard late responses',async()=>{
 test('individual pages accumulate all AP identities and expose loading progress',async()=>{
   const c=controller(),pages=[{features:[{id:'a',count:1}],total:2,next:'next',revision:'r'},{features:[{id:'b',count:1}],total:2,next:'',revision:'r'}];
   c.context.fetch=async()=>({ok:true,json:async()=>pages.shift()});await c.run('load()');
-  assert.equal(c.run('fits.loaded'),2);assert.equal(c.run('fits.features.length'),2);assert.match(c.node('status').textContent,/2 of 2 APs/);
+  assert.equal(c.run('fits.loaded'),2);assert.equal(c.run('fits.features.length'),2);assert.match(c.node('status').textContent,/2 APs in view/);
 });
 
 test('pan/live refreshes retain APs until a current page replaces them',async()=>{
@@ -84,4 +84,15 @@ test('camera redraws reuse observation and ring data objects on the GPU',()=>{
   assert.equal(c.run(`oldRingData===layers.find(l=>l.id==='rings').data`),true);
   c.run(`points={...points};delete points.data;renderDraw();`);
   assert.equal(c.run(`oldPointData===layers.find(l=>l.id==='obs').data`),false);
+});
+
+
+test('background preparation refresh keeps counts without flashing loading text',async()=>{
+  const c=controller();c.context.fetch=async()=>({ok:true,json:async()=>({features:[{id:'cluster',count:12},{id:'one',count:1}],total:13,next:'',revision:'1'})});await c.run('load()');
+  const stable=c.node('status').textContent;
+  assert.match(stable,/13 APs in view/);assert.match(stable,/1 cluster · 1 individual AP/);assert.doesNotMatch(stable,/symbols|loading/i);
+  let resolve;c.context.fetch=()=>new Promise(r=>{resolve=r;});const pending=c.run('load()');
+  await Promise.resolve();assert.equal(c.node('status').textContent,stable);
+  resolve({ok:true,json:async()=>({features:[{id:'cluster',count:14}],total:14,next:'',revision:'2'})});await pending;
+  assert.match(c.node('status').textContent,/14 APs in view/);assert.doesNotMatch(c.node('status').textContent,/loading/i);
 });

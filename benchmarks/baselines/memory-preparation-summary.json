@@ -1,0 +1,658 @@
+{
+  "schema": 1,
+  "base_commit": "0b73cab",
+  "branch": "codex/memory-and-preparation",
+  "private_records_committed": false,
+  "measurement": "User paused active preparation before quiet/release comparisons. App remains open. Process-cold; filesystem cache uncontrolled. Individual full sweeps, not replicated latency distributions.",
+  "machine": {
+    "cpu": "i7-10700K",
+    "physical_cores": 8,
+    "logical_cores": 16,
+    "ram_gib": 32,
+    "gpu": "RTX 2080 Ti",
+    "driver": "621.01",
+    "go": "1.27.3",
+    "duckdb": "2.0.0",
+    "duckdb_go": "v2.20000.0"
+  },
+  "input": {
+    "rows": 5753026,
+    "strings": 5649215,
+    "segments": 117,
+    "manifest_sha256": "49bb27b35507b937944883b585ceef4e1ba3a88697b77198cf35c452c3565777"
+  },
+  "runs": {
+    "quiet-baseline-live": {
+      "exit_code": 0,
+      "process_wall_seconds": 59.5795031000016,
+      "peak_engine_rss_bytes": 4725346304,
+      "rss_sample_interval_ms": 50,
+      "stopped_reason": null,
+      "probe_sha256": "8c99e3b7db3c1c3fe664b65515f6d84f86b3511dec5d9585865ca4fc8e35b993",
+      "probe": {
+        "seconds": 58.9123706,
+        "rows": 5753026,
+        "solver": "fast",
+        "workers": 8,
+        "threads": 8,
+        "stats": {
+          "completed": 97370,
+          "fitted": 11299,
+          "unavailable": 86071
+        },
+        "saved": 22584,
+        "targets_per_second": 1652.79378521563,
+        "fitted_per_second": 191.79333448856326,
+        "estimates_sha256": "0acf515409e7747b9263da653cc47ef01a8101ac0e38909a306c5dfef303af2f",
+        "acceleration": {
+          "available": true,
+          "calls": 11299,
+          "checked": true,
+          "device": "NVIDIA GeForce RTX 2080 Ti",
+          "fallbacks": 0,
+          "precision": "float64",
+          "reason": "",
+          "scratch_limit_mb": 64
+        },
+        "live_map": {
+          "p50_ms": 19.605600000000003,
+          "p95_ms": 48.4154,
+          "poll_ms": 400,
+          "requests": 109
+        },
+        "gpu_requested": true,
+        "verification_only": false,
+        "metrics": {
+          "compute_seconds": 64.13942730000045,
+          "commit_seconds": 26.845310299999987,
+          "commit_batches": 1737,
+          "targets_committed": 97370,
+          "locations_written": 22584
+        },
+        "first_completed_seconds": 14.8466605
+      }
+    },
+    "release-live400": {
+      "exit_code": 0,
+      "process_wall_seconds": 22.922733700001118,
+      "peak_engine_rss_bytes": 3100176384,
+      "rss_sample_interval_ms": 50,
+      "stopped_reason": null,
+      "probe_sha256": "d60e8855bf8f15cd71bae5114a71f4fe97b1a3fa3c782461f056ce765dceb7bb",
+      "probe": {
+        "seconds": 22.3386625,
+        "rows": 5753026,
+        "solver": "fast",
+        "workers": 8,
+        "threads": 8,
+        "stats": {
+          "completed": 97370,
+          "fitted": 11299,
+          "unavailable": 86071
+        },
+        "saved": 22584,
+        "targets_per_second": 4358.810649473754,
+        "fitted_per_second": 505.8046783239596,
+        "estimates_sha256": "0acf515409e7747b9263da653cc47ef01a8101ac0e38909a306c5dfef303af2f",
+        "acceleration": {
+          "available": true,
+          "calls": 11299,
+          "checked": true,
+          "device": "NVIDIA GeForce RTX 2080 Ti",
+          "fallbacks": 0,
+          "precision": "float64",
+          "reason": "",
+          "scratch_limit_mb": 64
+        },
+        "live_map": {
+          "p50_ms": 15.0153,
+          "p95_ms": 46.6366,
+          "poll_ms": 400,
+          "requests": 32
+        },
+        "gpu_requested": true,
+        "verification_only": false,
+        "metrics": {
+          "compute_seconds": 46.58305550000001,
+          "commit_seconds": 9.2027443,
+          "commit_batches": 262,
+          "targets_committed": 97370,
+          "locations_written": 22584
+        },
+        "first_completed_seconds": 7.2808718
+      }
+    },
+    "release-live50": {
+      "exit_code": 0,
+      "process_wall_seconds": 22.936212300002808,
+      "peak_engine_rss_bytes": 3077914624,
+      "rss_sample_interval_ms": 50,
+      "stopped_reason": null,
+      "probe_sha256": "d60e8855bf8f15cd71bae5114a71f4fe97b1a3fa3c782461f056ce765dceb7bb",
+      "probe": {
+        "seconds": 22.3894267,
+        "rows": 5753026,
+        "solver": "fast",
+        "workers": 8,
+        "threads": 8,
+        "stats": {
+          "completed": 97370,
+          "fitted": 11299,
+          "unavailable": 86071
+        },
+        "saved": 22584,
+        "targets_per_second": 4348.927790991629,
+        "fitted_per_second": 504.65785262826756,
+        "estimates_sha256": "0acf515409e7747b9263da653cc47ef01a8101ac0e38909a306c5dfef303af2f",
+        "acceleration": {
+          "available": true,
+          "calls": 11299,
+          "checked": true,
+          "device": "NVIDIA GeForce RTX 2080 Ti",
+          "fallbacks": 0,
+          "precision": "float64",
+          "reason": "",
+          "scratch_limit_mb": 64
+        },
+        "live_map": {
+          "p50_ms": 9.3819,
+          "p95_ms": 31.5044,
+          "poll_ms": 50,
+          "requests": 210
+        },
+        "gpu_requested": true,
+        "verification_only": false,
+        "metrics": {
+          "compute_seconds": 47.85510820000001,
+          "commit_seconds": 9.255376499999997,
+          "commit_batches": 271,
+          "targets_committed": 97370,
+          "locations_written": 22584
+        },
+        "first_completed_seconds": 7.3826939
+      }
+    },
+    "full-native": {
+      "exit_code": 0,
+      "process_wall_seconds": 577.2315689999996,
+      "peak_engine_rss_bytes": 3270660096,
+      "rss_sample_interval_ms": 50,
+      "stopped_reason": null,
+      "probe_sha256": "85e66df70675032e375b0260bcf35591692c1eb81d4cda8c5caf8c99d8dbd4c1",
+      "probe": {
+        "seconds": 572.62195,
+        "rows": 5753026,
+        "solver": "fast",
+        "workers": 8,
+        "threads": 8,
+        "stats": {
+          "completed": 1460561,
+          "fitted": 170765,
+          "unavailable": 1289796
+        },
+        "saved": 338826,
+        "targets_per_second": 2550.654930360249,
+        "fitted_per_second": 298.21595207798094,
+        "estimates_sha256": "ebe35e7920bce842a4119d49032416f26e07c289ffad6170ba2924413b7aa914",
+        "acceleration": {
+          "available": true,
+          "calls": 170765,
+          "checked": true,
+          "device": "NVIDIA GeForce RTX 2080 Ti",
+          "fallbacks": 0,
+          "precision": "float64",
+          "reason": "",
+          "scratch_limit_mb": 64
+        },
+        "gpu_requested": true,
+        "verification_only": false,
+        "metrics": {
+          "compute_seconds": 1009.9255000000031,
+          "commit_seconds": 379.67089670000024,
+          "commit_batches": 4764,
+          "targets_committed": 1460561,
+          "locations_written": 338826
+        },
+        "first_completed_seconds": 57.5471271
+      }
+    },
+    "full-duck": {
+      "exit_code": 0,
+      "process_wall_seconds": 626.7346959999995,
+      "peak_engine_rss_bytes": 865189888,
+      "rss_sample_interval_ms": 50,
+      "stopped_reason": null,
+      "probe_sha256": "07e5559d7a2b09c6f5d0d38e6cab4ad1149eafe530107fdb6f57506df59d34da",
+      "probe": {
+        "seconds": 622.0953089,
+        "rows": 5753026,
+        "solver": "fast",
+        "workers": 8,
+        "threads": 8,
+        "duckdb_threads": 2,
+        "memory_limit": "512MB",
+        "read_batch_targets": 512,
+        "stats": {
+          "completed": 1460561,
+          "fitted": 170765,
+          "unavailable": 1289796
+        },
+        "targets_per_second": 2347.809056111659,
+        "fitted_per_second": 274.49973911867255,
+        "read_seconds": 78.09443360000017,
+        "read_batches": 2853,
+        "compute_seconds": 803.6833931999903,
+        "commit_seconds": 390.3795094000003,
+        "commit_batches": 4711,
+        "estimates_sha256": "ebe35e7920bce842a4119d49032416f26e07c289ffad6170ba2924413b7aa914",
+        "gpu_requested": true
+      }
+    },
+    "release-full-native": {
+      "exit_code": 0,
+      "process_wall_seconds": 343.5027717000012,
+      "peak_engine_rss_bytes": 3258748928,
+      "rss_sample_interval_ms": 50,
+      "stopped_reason": null,
+      "probe_sha256": "d60e8855bf8f15cd71bae5114a71f4fe97b1a3fa3c782461f056ce765dceb7bb",
+      "probe": {
+        "seconds": 339.292224,
+        "rows": 5753026,
+        "solver": "fast",
+        "workers": 8,
+        "threads": 8,
+        "stats": {
+          "completed": 1460561,
+          "fitted": 170765,
+          "unavailable": 1289796
+        },
+        "saved": 338826,
+        "targets_per_second": 4304.728775629117,
+        "fitted_per_second": 503.29771188625887,
+        "estimates_sha256": "ebe35e7920bce842a4119d49032416f26e07c289ffad6170ba2924413b7aa914",
+        "acceleration": {
+          "available": true,
+          "calls": 170765,
+          "checked": true,
+          "device": "NVIDIA GeForce RTX 2080 Ti",
+          "fallbacks": 0,
+          "precision": "float64",
+          "reason": "",
+          "scratch_limit_mb": 64
+        },
+        "gpu_requested": true,
+        "verification_only": false,
+        "metrics": {
+          "compute_seconds": 915.0926770000091,
+          "commit_seconds": 190.84107510000013,
+          "commit_batches": 4253,
+          "targets_committed": 1460561,
+          "locations_written": 338826
+        },
+        "first_completed_seconds": 22.2334235
+      }
+    },
+    "release-full-duck": {
+      "exit_code": 0,
+      "process_wall_seconds": 370.4393753000004,
+      "peak_engine_rss_bytes": 507400192,
+      "rss_sample_interval_ms": 50,
+      "stopped_reason": null,
+      "probe_sha256": "6fcc415c7a12884a7ef85d2780d1238771441bbd9b35a028c5db1059823852c5",
+      "probe": {
+        "seconds": 366.215396,
+        "rows": 5753026,
+        "solver": "fast",
+        "workers": 8,
+        "threads": 8,
+        "duckdb_threads": 2,
+        "memory_limit": "256MB",
+        "read_batch_targets": 512,
+        "stats": {
+          "completed": 1460561,
+          "fitted": 170765,
+          "unavailable": 1289796
+        },
+        "targets_per_second": 3988.2566815951122,
+        "fitted_per_second": 466.296616322488,
+        "read_seconds": 75.96611929999985,
+        "read_batches": 2853,
+        "compute_seconds": 973.1546720999866,
+        "commit_seconds": 187.74124450000045,
+        "commit_batches": 4322,
+        "estimates_sha256": "ebe35e7920bce842a4119d49032416f26e07c289ffad6170ba2924413b7aa914",
+        "streamed_target_catalog": true,
+        "cache_durability": "WAL NORMAL; namespace seed FULL",
+        "gpu_requested": true
+      }
+    },
+    "release-duck-cohort": {
+      "exit_code": 0,
+      "process_wall_seconds": 20.381214900000487,
+      "peak_engine_rss_bytes": 467038208,
+      "rss_sample_interval_ms": 50,
+      "stopped_reason": null,
+      "probe_sha256": "6fcc415c7a12884a7ef85d2780d1238771441bbd9b35a028c5db1059823852c5",
+      "probe": {
+        "seconds": 19.8875282,
+        "rows": 5753026,
+        "solver": "fast",
+        "workers": 8,
+        "threads": 8,
+        "duckdb_threads": 2,
+        "memory_limit": "256MB",
+        "read_batch_targets": 512,
+        "stats": {
+          "completed": 97370,
+          "fitted": 11299,
+          "unavailable": 86071
+        },
+        "targets_per_second": 4896.033283814527,
+        "fitted_per_second": 568.1450146227826,
+        "read_seconds": 5.639352100000003,
+        "read_batches": 191,
+        "compute_seconds": 54.535325400000225,
+        "commit_seconds": 9.253810000000001,
+        "commit_batches": 286,
+        "estimates_sha256": "0acf515409e7747b9263da653cc47ef01a8101ac0e38909a306c5dfef303af2f",
+        "streamed_target_catalog": true,
+        "cache_durability": "WAL NORMAL; namespace seed FULL",
+        "gpu_requested": true
+      }
+    },
+    "release-reopen": {
+      "exit_code": 0,
+      "process_wall_seconds": 11.369120800001838,
+      "peak_engine_rss_bytes": 2509271040,
+      "rss_sample_interval_ms": 50,
+      "stopped_reason": null,
+      "probe_sha256": "d60e8855bf8f15cd71bae5114a71f4fe97b1a3fa3c782461f056ce765dceb7bb",
+      "probe": {
+        "seconds": 6.5034648,
+        "rows": 5753026,
+        "solver": "fast",
+        "workers": 8,
+        "threads": 8,
+        "stats": {
+          "completed": 1460561,
+          "fitted": 170765,
+          "unavailable": 1289796
+        },
+        "saved": 338826,
+        "targets_per_second": 224581.97974716494,
+        "fitted_per_second": 26257.541979776688,
+        "estimates_sha256": "ebe35e7920bce842a4119d49032416f26e07c289ffad6170ba2924413b7aa914",
+        "acceleration": {
+          "available": true,
+          "calls": 0,
+          "checked": true,
+          "device": "NVIDIA GeForce RTX 2080 Ti",
+          "fallbacks": 0,
+          "precision": "float64",
+          "reason": "",
+          "scratch_limit_mb": 64
+        },
+        "gpu_requested": true,
+        "verification_only": true,
+        "metrics": {},
+        "first_completed_seconds": 5.5023434
+      }
+    }
+  },
+  "sampler": {
+    "sampler-baseline": {
+      "rows": 200000,
+      "iterations": 20,
+      "seconds": 6.3693238,
+      "ms_per_fit": 318.46619,
+      "allocated_bytes_per_fit": 89230688,
+      "result_sha256": "b8508652ca007b8842961f2971730cf06d8fb653b78ecc3a8f0972c6c8514169"
+    },
+    "sampler-release": {
+      "rows": 200000,
+      "iterations": 20,
+      "seconds": 0.0973401,
+      "ms_per_fit": 4.867005,
+      "allocated_bytes_per_fit": 334724,
+      "result_sha256": "b8508652ca007b8842961f2971730cf06d8fb653b78ecc3a8f0972c6c8514169"
+    }
+  },
+  "memory_diagnostic": {
+    "memory-baseline2": {
+      "peak_engine_rss_bytes": 4267917312,
+      "stages": {
+        "open": {
+          "gc": 7,
+          "heap_alloc": 2108444992,
+          "heap_inuse": 2198437888,
+          "heap_objects": 12626350,
+          "heap_sys": 2205057024,
+          "seconds": 6.5508442,
+          "total_alloc": 2660310192
+        },
+        "open_live": {
+          "gc": 8,
+          "heap_alloc": 1741431016,
+          "heap_inuse": 1829158912,
+          "heap_objects": 9740049,
+          "heap_sys": 2205024256,
+          "seconds": 6.7036799,
+          "total_alloc": 2661336088
+        },
+        "map": {
+          "gc": 9,
+          "heap_alloc": 4015939320,
+          "heap_inuse": 4124106752,
+          "heap_objects": 46645828,
+          "heap_sys": 4130144256,
+          "seconds": 16.6362666,
+          "total_alloc": 5346567624
+        },
+        "map_live": {
+          "gc": 10,
+          "heap_alloc": 1811804624,
+          "heap_inuse": 1900994560,
+          "heap_objects": 10230691,
+          "heap_sys": 4130177024,
+          "seconds": 16.896008,
+          "total_alloc": 5347753888
+        }
+      },
+      "uncached_summary_ms": {
+        "median": 55.1322,
+        "p95": 56.901599999999995,
+        "trials": [
+          53.509,
+          54.027699999999996,
+          54.0949,
+          54.7725,
+          54.985600000000005,
+          55.1124,
+          55.1322,
+          55.2482,
+          56.0941,
+          56.3349,
+          56.641799999999996,
+          56.901599999999995
+        ]
+      }
+    },
+    "memory-final": {
+      "peak_engine_rss_bytes": 2796679168,
+      "stages": {
+        "open": {
+          "gc": 18,
+          "heap_alloc": 1825936736,
+          "heap_inuse": 1835425792,
+          "heap_objects": 6961843,
+          "heap_sys": 1840152576,
+          "seconds": 18.9502262,
+          "total_alloc": 2061366688
+        },
+        "open_live": {
+          "gc": 19,
+          "heap_alloc": 1509976240,
+          "heap_inuse": 1516273664,
+          "heap_objects": 4081017,
+          "heap_sys": 1844314112,
+          "seconds": 19.0533904,
+          "total_alloc": 2062461920
+        },
+        "map": {
+          "gc": 20,
+          "heap_alloc": 2187863848,
+          "heap_inuse": 2212446208,
+          "heap_objects": 13710030,
+          "heap_sys": 2708307968,
+          "seconds": 24.3597922,
+          "total_alloc": 3703211496
+        },
+        "map_live": {
+          "gc": 21,
+          "heap_alloc": 1581583936,
+          "heap_inuse": 1595383808,
+          "heap_objects": 4650633,
+          "heap_sys": 2708340736,
+          "seconds": 24.4786364,
+          "total_alloc": 3704494136
+        }
+      },
+      "uncached_summary_ms": {
+        "median": 28.690299999999997,
+        "p95": 32.7084,
+        "trials": [
+          28.1829,
+          28.412300000000002,
+          28.5026,
+          28.519099999999998,
+          28.537300000000002,
+          28.5701,
+          28.690299999999997,
+          28.994200000000003,
+          29.1785,
+          29.794500000000003,
+          30.2281,
+          32.7084
+        ]
+      }
+    }
+  },
+  "native": {
+    "report": {
+      "schema": 1,
+      "success": true,
+      "synthetic_saved_locations": false,
+      "auto_fetch_retained": true,
+      "native_events": 141,
+      "errors": [],
+      "gpu_enable_ms": 220.5,
+      "observations": 479407,
+      "sightings_in_populated_view": 317,
+      "observation_object_retained_before_pan": true,
+      "completed_before": 0,
+      "completed_after": 97370,
+      "visible_ap_total": 1,
+      "located_ssids": 3867,
+      "empty_ap_frames": 0,
+      "loading_frames": 0,
+      "frame_gaps": {
+        "count": 900,
+        "p50_ms": 16.69999999999891,
+        "p95_ms": 16.80000000000291,
+        "max_ms": 17.200000000000728
+      },
+      "pause_join_ms": 3.699999999254942,
+      "settled_ap_total": 1,
+      "acceleration": {
+        "available": true,
+        "calls": 11346,
+        "checked": true,
+        "device": "NVIDIA GeForce RTX 2080 Ti",
+        "fallbacks": 0,
+        "precision": "float64",
+        "reason": "",
+        "scratch_limit_mb": 64
+      }
+    },
+    "run": {
+      "exit_code": 0,
+      "process_wall_seconds": 27.46263650000037,
+      "peak_engine_rss_bytes": 3162316800,
+      "peak_family_working_set_bytes": 3656499200,
+      "peak_webview_children_working_set_bytes": 497090560,
+      "probe_sha256": "de84529105b7ce893343126c3256d7cc1860e418f41a74ab500c00bcf4ffa8d5"
+    },
+    "scene": "Initially 479407 sightings across survey; trace anchors an actual AP at z15, with 317 local sightings. Dense synthetic rendering remains covered by Phase 5."
+  },
+  "duck_inspection": {
+    "requests": 199,
+    "rows_returned": 374,
+    "point_ms": {
+      "max": 11.382700000000002,
+      "p50": 5.7192,
+      "p95": 8.200600000000001
+    },
+    "ordered_fingerprint": {
+      "all_columns_xor_hash": "3147428323507293781",
+      "rows": 5753026,
+      "sum_ids": 16728658685099
+    },
+    "canonical_fingerprint": {
+      "all_columns_xor_hash": "3147428323507293781",
+      "rows": 5753026,
+      "sum_ids": 16728658685099
+    },
+    "point_state": "Target-aware warm lookups of all 17 original columns; identity query precedes each timed read. Two threads, 512 MB buffer limit. Not a comparison against a newly measured native radio-query trace.",
+    "legacy_plan_has_blockwise_join": false,
+    "ordered_plan_has_target_filter": true
+  },
+  "cpu_gpu_numeric_parity": {
+    "normalization": "Only GPU provenance and solver token removed; numeric/identity/metadata fields retained.",
+    "normalized_sha256": "03684d137eea6378625df86dc760eaf2c70fe313df6fd92065fbe40b2aeb4970"
+  },
+  "exploratory": {
+    "worker_runs": "after4-gpu-w4/w8/w16 were before user pause; not primary timing evidence. Quiet CPU/GPU/core runs use the previous save policy.",
+    "unordered": "Stopped the verified owned process before its first batch completed; no complete timing or result hash claimed.",
+    "native_pilot": "Excluded native-release.json: fixed synthetic coordinates were nearly empty in this survey. Replaced by actual-AP anchored native-release-v2.json."
+  },
+  "sqlite_integrity": {
+    "release-full-native": {
+      "quick_check": "ok",
+      "pending": 0,
+      "stale_checkpoints": 0
+    },
+    "release-full-duck": {
+      "quick_check": "ok",
+      "pending": 0,
+      "stale_checkpoints": 0
+    }
+  },
+  "source_audit": {
+    "metadata_access": "read-only SQLite backup only; active pause was performed by the user",
+    "manifest_sha256_unchanged": "49bb27b35507b937944883b585ceef4e1ba3a88697b77198cf35c452c3565777",
+    "dictionary_sha256_matches_independent_snapshot": "28256a00d5c2284cf67e6e9832bbdf6580d555f861158a7fb7674fd4489a17a6",
+    "all_segment_mtimes_predate_snapshot": true,
+    "segment_count": 117
+  },
+  "verification": {
+    "go_test": "go test ./... passed, including active Python numerical parity (93.552 s)",
+    "go_vet": "passed",
+    "race": "obs, atlas and engine preparation/map/dictionary tests passed",
+    "javascript": "11 controller/display tests passed",
+    "benchmark_safety": "7 Python tests passed",
+    "duckdb_module": "go test ./... passed",
+    "cross_builds": [
+      "Linux amd64 core (CPU fallback)",
+      "macOS arm64 core (CPU fallback)"
+    ],
+    "desktop": {
+      "path": "build/SignalAtlas-memory.exe",
+      "sha256": "3e05d047aba23b8fd8dae04957e4d7f532f0db03508f9b137c2746c741985286"
+    }
+  },
+  "_publication": {
+    "private_paths_and_input_names": "replaced with portable placeholders",
+    "long_timing_and_progress_series": "summarized explicitly; raw evidence retained locally",
+    "commit_references": "mapped to equivalent published phase commits; artifact/source hashes identify the original measured builds"
+  }
+}

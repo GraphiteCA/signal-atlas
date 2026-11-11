@@ -78,36 +78,45 @@ func (a *Atlas) FitRadio(group Group, p py.Params, cancelled func() bool) (map[s
 		sampleLimit = int64(256 * len(keys))
 	}
 	result["status"], result["co_location_assumed"], result["sample_limit"], result["fit_mode"], result["observation_scope"] = "insufficient", shared, sampleLimit, mode, scope
-	// the matching rows of these radios, in id order
-	var rows []uint32
-	for _, k := range keys {
-		if id, ok := a.Obs.Dict.Lookup(k); ok {
-			rows = append(rows, st.ByRadio[id]...)
-		}
-	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i] < rows[j] })
-	match := rows[:0:0]
+	var match []uint32
+	var count int64
 	var dmin, dmax any
-	for n, g := range rows {
-		if n&4095 == 0 {
-			if err := check(); err != nil {
-				return nil, err
+	if mode == "sample" {
+		match, count, dmin, dmax, err = selectSampleRows(st, a.Obs.Dict, f, keys, cancelled)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// the matching rows of these radios, in id order
+		var rows []uint32
+		for _, k := range keys {
+			if id, ok := a.Obs.Dict.Lookup(k); ok {
+				rows = append(rows, st.ByRadio[id]...)
 			}
 		}
-		s, i := st.Loc(g)
-		if !f.Match(s, i) {
-			continue
+		sort.Slice(rows, func(i, j int) bool { return rows[i] < rows[j] })
+		match = rows[:0:0]
+		for n, g := range rows {
+			if n&4095 == 0 {
+				if err := check(); err != nil {
+					return nil, err
+				}
+			}
+			s, i := st.Loc(g)
+			if !f.Match(s, i) {
+				continue
+			}
+			match = append(match, g)
+			d := st.Str[s.Date[i]]
+			if dmin == nil || d < dmin.(string) {
+				dmin = d
+			}
+			if dmax == nil || d > dmax.(string) {
+				dmax = d
+			}
 		}
-		match = append(match, g)
-		d := st.Str[s.Date[i]]
-		if dmin == nil || d < dmin.(string) {
-			dmin = d
-		}
-		if dmax == nil || d > dmax.(string) {
-			dmax = d
-		}
+		count = int64(len(match))
 	}
-	count := int64(len(match))
 	result["count"], result["first_date"], result["last_date"] = count, dmin, dmax
 	if count < 4 {
 		result["reason"] = "Fewer than four observations within the selected dates and filters"
@@ -164,56 +173,10 @@ func (a *Atlas) FitRadio(group Group, p py.Params, cancelled func() bool) (map[s
 			sample = append(sample, smp{id: x.minID, radio: k.radio, mac: x.mac, lat: k.lat, lon: k.lon, rssi: t / float64(x.n), weight: float64(x.n), within: w})
 			weights, within = append(weights, float64(x.n)), append(within, w)
 		}
-	case count <= 256:
+	default:
 		for _, g := range match {
 			s, i := st.Loc(g)
 			sample = append(sample, smp{id: s.ID(i), radio: s.Radio[i], mac: s.MAC[i], lat: s.Lat[i], lon: s.Lon[i], rssi: s.RSSI[i]})
-		}
-	default:
-		for _, k := range keys {
-			if err := check(); err != nil {
-				return nil, err
-			}
-			kid, ok := a.Obs.Dict.Lookup(k)
-			if !ok {
-				continue
-			}
-			var mine []smp
-			for _, g := range match {
-				s, i := st.Loc(g)
-				if s.Radio[i] == kid {
-					mine = append(mine, smp{id: s.ID(i), radio: s.Radio[i], mac: s.MAC[i], lat: s.Lat[i], lon: s.Lon[i], rssi: s.RSSI[i]})
-				}
-			}
-			strongest := append([]smp(nil), mine...)
-			if err := fitSortStable(strongest, func(a, b int) bool {
-				if strongest[a].rssi != strongest[b].rssi {
-					return strongest[a].rssi > strongest[b].rssi
-				}
-				return strongest[a].id < strongest[b].id
-			}, cancelled); err != nil {
-				return nil, err
-			}
-			strongest = strongest[:min(32, len(strongest))]
-			spread := append([]smp(nil), mine...)
-			hash := func(id int64) int64 { return (id*1103515245 + 12345) % 2147483647 }
-			if err := fitSortStable(spread, func(a, b int) bool {
-				ha, hb := hash(spread[a].id), hash(spread[b].id)
-				if ha != hb {
-					return ha < hb
-				}
-				return spread[a].id < spread[b].id
-			}, cancelled); err != nil {
-				return nil, err
-			}
-			spread = spread[:min(224, len(spread))]
-			seen := map[int64]bool{}
-			for _, x := range append(strongest, spread...) {
-				if !seen[x.id] {
-					seen[x.id] = true
-					sample = append(sample, x)
-				}
-			}
 		}
 	}
 	var aliases map[string]string

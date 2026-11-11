@@ -59,3 +59,14 @@ Primary documentation:
 - [Go connection and configuration](https://duckdb.org/docs/current/clients/go/connecting)
 - [Memory settings and limitations](https://duckdb.org/docs/current/guides/performance/oom)
 - [Buffer manager limit](https://duckdb.org/docs/current/configuration/pragmas)
+
+
+The [actual-survey follow-up](../../docs/memory-preparation.md) adds `-order-from`,
+`-row-group`, `-ordered`, `-duck-threads`, `-memory`, `-threads`, `-gpu` and
+`-batch`. Canonical-to-ordered conversion requires a new owned file; source
+observations are attached read-only. Preparation streams catalog pages and uses
+bounded native fitting views. Both adapters use the same recomputable-cache
+writer policy, original IDs and full-result digest. `inspect/` records read-only
+query plans, all-column row fingerprints and target-aware point lookups.
+The old unordered path is retained for explicit diagnostics, not recommended as
+the default for a high-cardinality survey.
