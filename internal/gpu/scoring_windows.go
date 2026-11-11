@@ -26,6 +26,9 @@ type clDevice struct {
 	gate                                    chan struct{}
 	buffers                                 [11]uintptr
 	capacity                                [11]int
+	failedPins                              []*runtime.Pinner
+	grid                                    *CandidateGrid
+	failed                                  bool
 }
 
 func (d *clDevice) invoke(name string, args ...any) uintptr {
@@ -89,7 +92,7 @@ func open() (out device, name string, err error) {
 	if err != nil {
 		return nil, "", err
 	}
-	for _, n := range []string{"clGetPlatformIDs", "clGetDeviceIDs", "clGetDeviceInfo", "clCreateContext", "clCreateCommandQueue", "clCreateProgramWithSource", "clBuildProgram", "clGetProgramBuildInfo", "clCreateKernel", "clCreateBuffer", "clSetKernelArg", "clEnqueueWriteBuffer", "clEnqueueReadBuffer", "clEnqueueNDRangeKernel", "clReleaseMemObject", "clReleaseKernel", "clReleaseProgram", "clReleaseCommandQueue", "clReleaseContext"} {
+	for _, n := range []string{"clGetPlatformIDs", "clGetDeviceIDs", "clGetDeviceInfo", "clCreateContext", "clCreateCommandQueue", "clCreateProgramWithSource", "clBuildProgram", "clGetProgramBuildInfo", "clCreateKernel", "clCreateBuffer", "clSetKernelArg", "clEnqueueWriteBuffer", "clFinish", "clEnqueueReadBuffer", "clEnqueueNDRangeKernel", "clReleaseMemObject", "clReleaseKernel", "clReleaseProgram", "clReleaseCommandQueue", "clReleaseContext"} {
 		d.procs[n], err = d.lib.FindProc(n)
 		if err != nil {
 			return nil, "", err
@@ -193,7 +196,7 @@ func (d *clDevice) buffer(i, size int) error {
 	return e
 }
 func (d *clDevice) write(i int, p unsafe.Pointer, size int) error {
-	_, e := d.call("clEnqueueWriteBuffer", d.queue, d.buffers[i], 1, 0, uintptr(size), p, 0, 0, 0)
+	_, e := d.call("clEnqueueWriteBuffer", d.queue, d.buffers[i], 0, 0, uintptr(size), p, 0, 0, 0)
 	return e
 }
 func (d *clDevice) score(in Input, cancelled func() bool) (out []float64, err error) {
@@ -211,9 +214,31 @@ func (d *clDevice) score(in Input, cancelled func() bool) (out []float64, err er
 	}
 acquired:
 	defer func() { <-d.gate }()
+	if d.failed {
+		return nil, fmt.Errorf("GPU queue could not be synchronized; CPU fallback is active")
+	}
+	// Non-blocking writes retain pinned Go storage until the ordered queue
+	// finishes. Drain on every error path before releasing the pins or gate.
+	var transfers runtime.Pinner
+	finished := false
+	defer func() {
+		if !finished {
+			if _, e := d.call("clFinish", d.queue); e != nil {
+				// A failed driver fence must never expose movable/freed Go
+				// storage to a possibly outstanding DMA. Disable this queue
+				// and retain this bounded lease for the process lifetime.
+				d.failed = true
+				d.failedPins = append(d.failedPins, &transfers)
+				runtime.KeepAlive(in)
+				return
+			}
+		}
+		transfers.Unpin()
+		runtime.KeepAlive(in)
+	}()
 	n, k, p := len(in.X), len(in.WeightSums), len(in.CandidateX)
 	// Short dispatches let the display GPU schedule map rendering between tiles.
-	tile := min(p, (64<<20)/(8*(n+k)), max(1, (1<<20)/n))
+	tile := min(p, (64<<20)/(8*(n+k)), max(1, (4<<20)/n))
 	if max(d.capacity[8], tile*n*8)+max(d.capacity[9], tile*k*8) > 64<<20 {
 		for _, i := range []int{8, 9} {
 			if d.buffers[i] != 0 {
@@ -222,8 +247,15 @@ acquired:
 			}
 		}
 	}
+	cachedGrid := in.Grid != nil && in.Grid == d.grid
+	if !cachedGrid {
+		d.grid = nil
+	}
 	arrays := [][]float64{in.X, in.Y, in.RSSI, in.Weights, nil, in.WeightSums, in.CandidateX, in.CandidateY}
 	for i, a := range arrays {
+		if cachedGrid && i >= 6 {
+			continue
+		}
 		size := len(a) * 8
 		if i == 4 {
 			size = n * 4
@@ -233,14 +265,17 @@ acquired:
 		}
 		var e error
 		if i == 4 {
+			transfers.Pin(&in.Groups[0])
 			e = d.write(i, ptr(&in.Groups[0]), size)
 		} else {
+			transfers.Pin(&a[0])
 			e = d.write(i, ptr(&a[0]), size)
 		}
 		if e != nil {
 			return nil, e
 		}
 	}
+	d.grid = in.Grid
 	runtime.KeepAlive(in)
 	for i, size := range []int{tile * n * 8, tile * k * 8, p * 8} {
 		if e := d.buffer(i+8, size); e != nil {
@@ -268,9 +303,11 @@ acquired:
 		}
 	}
 	out = make([]float64, p)
+	transfers.Pin(&out[0])
 	if _, e := d.call("clEnqueueReadBuffer", d.queue, d.buffers[10], 1, 0, uintptr(p*8), ptr(&out[0]), 0, 0, 0); e != nil {
 		return nil, e
 	}
+	finished = true
 	runtime.KeepAlive(out)
 	if cancelled != nil && cancelled() {
 		return nil, ErrCancelled

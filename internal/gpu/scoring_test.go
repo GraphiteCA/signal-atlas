@@ -21,3 +21,21 @@ func TestUnsafeInputsFailBeforeDriverInitialization(t *testing.T) {
 		t.Fatal(e)
 	}
 }
+
+func TestImmutableCandidateGridValidatesAndCopies(t *testing.T) {
+	x, y := []float64{1, 2}, []float64{3, 4}
+	g, err := NewCandidateGrid(x, y)
+	if err != nil {
+		t.Fatal(err)
+	}
+	x[0] = 999
+	y[1] = 999
+	if g.x[0] != 1 || g.y[1] != 4 {
+		t.Fatal("grid aliases mutable caller arrays")
+	}
+	for _, tc := range []struct{ x, y []float64 }{{nil, nil}, {[]float64{1}, nil}, {[]float64{math.NaN()}, []float64{0}}, {[]float64{0}, []float64{math.Inf(1)}}} {
+		if _, err := NewCandidateGrid(tc.x, tc.y); !errors.Is(err, ErrUnsupported) {
+			t.Fatal(err)
+		}
+	}
+}

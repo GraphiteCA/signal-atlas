@@ -12,7 +12,24 @@ import (
 var ErrCancelled = errors.New("GPU scoring cancelled")
 var ErrUnsupported = errors.New("GPU input exceeds supported bounds")
 
+// CandidateGrid owns a validated immutable copy, reusable across APs. Callers
+// cannot mutate its coordinates while asynchronous transfers are in flight.
+type CandidateGrid struct{ x, y []float64 }
+
+func NewCandidateGrid(x, y []float64) (*CandidateGrid, error) {
+	if len(x) < 1 || len(x) > 16384 || len(x) != len(y) {
+		return nil, ErrUnsupported
+	}
+	for i, v := range x {
+		if math.IsNaN(v) || math.IsInf(v, 0) || math.IsNaN(y[i]) || math.IsInf(y[i], 0) {
+			return nil, ErrUnsupported
+		}
+	}
+	return &CandidateGrid{x: append([]float64(nil), x...), y: append([]float64(nil), y...)}, nil
+}
+
 type Input struct {
+	Grid                            *CandidateGrid
 	X, Y, RSSI, Weights, WeightSums []float64
 	Groups                          []int32
 	CandidateX, CandidateY          []float64
@@ -60,6 +77,9 @@ func Score(in Input, cancelled func() bool) ([]float64, error) {
 	if cancelled != nil && cancelled() {
 		return nil, ErrCancelled
 	}
+	if in.Grid != nil {
+		in.CandidateX, in.CandidateY = in.Grid.x, in.Grid.y
+	}
 	if !supported(in) {
 		manager.fallbacks.Add(1)
 		return nil, ErrUnsupported
@@ -89,7 +109,11 @@ func supported(in Input) bool {
 	if n < 1 || n > 4096 || p < 1 || p > 16384 || len(in.Y) != n || len(in.RSSI) != n || len(in.Weights) != n || len(in.Groups) != n || len(in.CandidateY) != p || len(in.WeightSums) < 1 || len(in.WeightSums) > n {
 		return false
 	}
-	for _, a := range [][]float64{in.X, in.Y, in.RSSI, in.Weights, in.WeightSums, in.CandidateX, in.CandidateY, {in.Floor, in.Factor, in.Within}} {
+	arrays := [][]float64{in.X, in.Y, in.RSSI, in.Weights, in.WeightSums, {in.Floor, in.Factor, in.Within}}
+	if in.Grid == nil {
+		arrays = append(arrays, in.CandidateX, in.CandidateY)
+	}
+	for _, a := range arrays {
 		for _, v := range a {
 			if math.IsNaN(v) || math.IsInf(v, 0) {
 				return false

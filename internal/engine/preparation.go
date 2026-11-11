@@ -29,6 +29,10 @@ type preparationRunner struct {
 	workCancel   context.CancelFunc
 	workDone     chan struct{}
 	state        map[string]any
+	viewBounds   [4]float64
+	viewRevision uint64
+	viewClient   string
+	viewSerial   uint64
 	foreground   atomic.Int64
 	mapReaders   atomic.Int64
 	closed       atomic.Bool
@@ -44,6 +48,44 @@ func newPreparation(s *Server) *preparationRunner {
 	go p.loop()
 	return p
 }
+
+// A changed camera changes scheduling, not solver scope or completed results.
+func (p *preparationRunner) setViewport(b [4]float64) { p.setViewportRequest(b, "", 0) }
+func (p *preparationRunner) setViewportRequest(b [4]float64, client string, serial uint64) {
+	p.mu.Lock()
+	if client != "" && client == p.viewClient && serial < p.viewSerial {
+		p.mu.Unlock()
+		return
+	}
+	if client != "" {
+		p.viewClient = client
+		p.viewSerial = serial
+	}
+	changed := p.viewRevision == 0 || p.viewBounds != b
+	if changed {
+		p.viewBounds = b
+		p.viewRevision++
+	}
+	p.mu.Unlock()
+	if changed {
+		p.signal()
+	}
+}
+func (p *preparationRunner) viewport() ([4]float64, uint64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.viewBounds, p.viewRevision
+}
+func withoutPreparationKey(q []atlas.PreparationTarget, key string) []atlas.PreparationTarget {
+	out := q[:0]
+	for _, t := range q {
+		if t.Key != key {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
 func (p *preparationRunner) signal() {
 	select {
 	case p.wake <- struct{}{}:
@@ -182,7 +224,7 @@ func (p *preparationRunner) step() {
 	}
 	p.update(map[string]any{"status": "running", "settings": settings, "namespace": ns, "progress": progress, "error": "", "reason": ""})
 	if progress.Pending == 0 {
-		p.update(map[string]any{"status": "complete"})
+		p.update(map[string]any{"status": "complete", "view_priority": false})
 		return
 	}
 	p.runPool(ctx, cancel, ns, settings, perWorker, prepare)
@@ -228,7 +270,11 @@ func (p *preparationRunner) runPool(ctx context.Context, cancel context.CancelFu
 	priority := time.NewTicker(20 * time.Millisecond)
 	defer priority.Stop()
 	claimed := map[string]bool{}
-	var queue []atlas.PreparationTarget
+	var queue, viewQueue []atlas.PreparationTarget
+	var view *atlas.PreparationView
+	var viewRevision uint64
+	var nextViewCheck time.Time
+	var dispatched, nearDispatched int
 	exhausted := false
 	var batch []atlas.PreparedTarget
 	batchBytes := 0
@@ -268,13 +314,52 @@ func (p *preparationRunner) runPool(ctx context.Context, cancel context.CancelFu
 		if len(targets) > 0 {
 			p.s.events.publish(JobEvent{Kind: "fits-committed", SurveyID: p.surveyID, JobID: p.id, Namespace: ns.ID, Solver: ns.Solver, FitMode: ns.FitMode, Grouping: ns.Grouping, Targets: targets, Written: count, CommittedAtMS: time.Now().UnixMilli()})
 		}
-		p.update(map[string]any{"compute_seconds": computeSeconds, "commit_seconds": commitSeconds, "commit_batches": transactions, "targets_committed": committed, "locations_written": written})
+		p.update(map[string]any{"compute_seconds": computeSeconds, "commit_seconds": commitSeconds, "commit_batches": transactions, "targets_committed": committed, "locations_written": written, "viewport_targets_dispatched": nearDispatched, "view_priority": !view.Done() || len(viewQueue) > 0})
 		batch = nil
 		batchBytes = 0
 		exhausted = false
 		return true
 	}
 	for ctx.Err() == nil {
+		bounds, revision := p.viewport()
+		if revision != viewRevision || view != nil && !view.Current(p.a) {
+			viewRevision = revision
+			view = nil
+			if revision > 0 {
+				view = p.a.NewPreparationView(bounds)
+			}
+			// Unclaimed work remains in the database. Running fits finish;
+			// newly available workers can immediately take the new viewport.
+			viewQueue = nil
+			queue = nil
+			exhausted = false
+			nextViewCheck = time.Time{}
+		}
+		if len(viewQueue) == 0 && !view.Done() && !time.Now().Before(nextViewCheck) {
+			targets, err := p.a.NextViewportPreparationTargets(ctx, ns.ID, budget, view, 512)
+			if err != nil {
+				if errors.Is(err, atlas.ErrStaleInput) {
+					view = nil
+					viewRevision = 0
+					continue
+				}
+				fail(err)
+				return
+			}
+			for _, t := range targets {
+				if !claimed[t.Key] {
+					viewQueue = append(viewQueue, t)
+				}
+			}
+			nextViewCheck = time.Now().Add(50 * time.Millisecond)
+			p.update(map[string]any{"view_priority": !view.Done() || len(viewQueue) > 0})
+		}
+		for len(queue) > 0 && claimed[queue[0].Key] {
+			queue = queue[1:]
+		}
+		for len(viewQueue) > 0 && claimed[viewQueue[0].Key] {
+			viewQueue = viewQueue[1:]
+		}
 		if len(queue) == 0 && !exhausted {
 			// Pending includes work already in flight and awaiting commit. Read
 			// past those claims rather than repeatedly fetching the same head.
@@ -290,7 +375,7 @@ func (p *preparationRunner) runPool(ctx context.Context, cancel context.CancelFu
 			}
 			exhausted = len(queue) == 0
 		}
-		if len(queue) == 0 && len(claimed) == 0 {
+		if len(queue) == 0 && len(viewQueue) == 0 && len(claimed) == 0 {
 			progress, err := p.a.PreparationProgress(ctx, ns.ID, budget)
 			if err != nil {
 				fail(err)
@@ -300,21 +385,35 @@ func (p *preparationRunner) runPool(ctx context.Context, cancel context.CancelFu
 			if progress.Pending > 0 {
 				status = "limited"
 			}
-			p.update(map[string]any{"status": status, "progress": progress})
+			p.update(map[string]any{"status": status, "progress": progress, "view_priority": false})
 			return
 		}
 		var send chan atlas.PreparationTarget
 		var next atlas.PreparationTarget
-		if len(queue) > 0 && !p.busy() {
-			send = jobs
-			next = queue[0]
+		near := len(viewQueue) > 0 && (dispatched%4 != 3 || len(queue) == 0)
+		if !p.busy() {
+			if near {
+				send = jobs
+				next = viewQueue[0]
+			} else if len(queue) > 0 {
+				send = jobs
+				next = queue[0]
+			}
 		}
 		select {
 		case <-ctx.Done():
 			return
 		case send <- next:
 			claimed[next.Key] = true
-			queue = queue[1:]
+			dispatched++
+			if near {
+				nearDispatched++
+				viewQueue = viewQueue[1:]
+				queue = withoutPreparationKey(queue, next.Key)
+			} else {
+				queue = queue[1:]
+				viewQueue = withoutPreparationKey(viewQueue, next.Key)
+			}
 		case result := <-results:
 			if result.err != nil {
 				if !errors.Is(result.err, context.Canceled) && !errors.Is(result.err, atlas.ErrCancelled) && !errors.Is(result.err, atlas.ErrStaleInput) {

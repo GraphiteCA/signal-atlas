@@ -8,6 +8,7 @@ let seq = 0, timer = null, controller = null, detailController = null, detailSeq
 let display = {...MapDisplay.defaults}, prefRevision = 0, prefLoaded = false, prefSaving = false, prefTimer;
 let summaryRevision = '', observationRevision='', pointKey = '', pointData = null, initialized = false, retryTimer;
 let summarySolver='reference',fitsViewKey='';
+const priorityClient=Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
 const incoming = new URLSearchParams(location.search);
 let inheritedBands = incoming.getAll('band'), inheritedDates = incoming.getAll('date');
 const textCanvas = document.createElement('canvas'), textContext = textCanvas.getContext('2d'), textWidths = new Map();
@@ -148,7 +149,7 @@ async function load() {
     if(nextFits) {
       let cursor='',revision='',lastDraw=-Infinity;
       do {
-        const pp=new URLSearchParams(p);if(cursor)pp.set('cursor',cursor);
+        const pp=new URLSearchParams(p);pp.set('priority_client',priorityClient);pp.set('priority_seq',String(my));if(cursor)pp.set('cursor',cursor);
         const page=await json('/api/app/map/features?'+pp,{signal});if(my!==seq)return;
         if(revision && revision!==page.revision)throw new Error('Map changed; restart pagination');revision=page.revision;
         nextFits.features.push(...page.features);nextFits.total=page.total;nextFits.count=page.total;nextFits.loaded+=page.features.reduce((n,r)=>n+r.count,0);
@@ -199,7 +200,7 @@ function pick(r){
 async function showList(cluster=null) {
   detailController?.abort();detailController=new AbortController();const signal=detailController.signal,my=++detailSeq;
   const p=query();p.set('clustering','0');p.set('limit','20');if(cluster){if(cluster.coincident)p.set('bbox',cluster.bounds.join(','));else p.set('cell',cluster.id);}
-  $('details').hidden=false;$('detailBody').innerHTML='<h2>'+ (cluster?fi(cluster.count)+' nearby APs':'APs in view')+'</h2>'+(cluster?'<button id="zoomCluster">Zoom to cluster</button>':'')+'<p id="listProgress">Loading…</p><div id="apList"></div><button id="moreAPs" hidden>Load more APs</button>';
+  $('details').hidden=false;$('detailBody').innerHTML='<h2>'+ (cluster?fi(cluster.count)+' APs in this cluster':'APs in view')+'</h2>'+(cluster?'<button id="zoomCluster">Zoom to cluster</button>':'')+'<p id="listProgress">Loading…</p><div id="apList"></div><button id="moreAPs" hidden>Load more APs</button>';
   if(cluster)$('zoomCluster').onclick=()=>{
     const b=cluster.bounds,z=Math.min(22,map.getZoom()+2);
     if(b[0]===b[2]&&b[1]===b[3]){if(isFallback)map.setView([b[1],b[0]],z);else map.easeTo({center:[b[0],b[1]],zoom:z});}
@@ -276,7 +277,7 @@ async function pollJob(){
 let preparationState=null,preparationRefresh=null;
 async function refreshPreparation(){
   try{const s=await json('/api/app/preparation/status');preparationState=s;const p=s.progress||{},solver=s.namespace?.solver,name=solver==='opencl64-reference-v1'?'GPU reference':solver==='opencl64-fast-v1'?'GPU fast':solver==='fast'?'Fast':'Reference';
-    $('preparation').textContent=s.status==='complete'?`Locations ready · ${fi(p.completed)} networks`:s.status==='running'?`Preparing locations · ${fi(p.completed)} / ${fi(p.total)} · ${name}`:s.status==='failed'?`Preparation: ${s.error}`:s.status==='limited'?`Preparation waiting · ${fi(p.blocked)} networks exceed memory budget`:`Background: ${s.status}`;
+    $('preparation').textContent=s.status==='complete'?`Locations ready · ${fi(p.completed)} networks`:s.status==='running'?`Preparing locations · ${fi(p.completed)} / ${fi(p.total)} · ${name}${s.view_priority?' · current view first':''}`:s.status==='failed'?`Preparation: ${s.error}`:s.status==='limited'?`Preparation waiting · ${fi(p.blocked)} networks exceed memory budget`:`Background: ${s.status}`;
     $('pausePreparation').textContent=s.settings?.paused?'Resume background':'Pause background';$('pausePreparation').disabled=!s.settings?.enabled;
   }catch(e){$('preparation').textContent=e.message;}
 }

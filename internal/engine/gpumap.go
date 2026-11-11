@@ -67,7 +67,25 @@ func (s *Server) mapGet(w http.ResponseWriter, r *http.Request, p string, params
 			summary.Solver = params.First("solver", "reference")
 			v = summary
 		case "/api/app/map/features":
-			v, err = s.Atlas.MapFeatures(r.Context(), c, params.With("_survey", []string{s.surveyID}))
+			// Scheduling metadata must never enter scope/cache keys or point
+			// buffer keys. A late response from an earlier pan cannot steal
+			// priority from a newer accepted request in the same map session.
+			clean := py.Params{}
+			for key, value := range params {
+				if key != "priority_client" && key != "priority_seq" {
+					clean[key] = value
+				}
+			}
+			v, err = s.Atlas.MapFeatures(r.Context(), c, clean.With("_survey", []string{s.surveyID}))
+			if err == nil && r.Context().Err() == nil && clean.Has("bbox") && !clean.Has("cursor") {
+				if bounds, e := atlas.Bbox(clean.First("bbox", "")); e == nil {
+					serial, e := strconv.ParseUint(params.First("priority_seq", "0"), 10, 64)
+					client := params.First("priority_client", "")
+					if e == nil && len(client) <= 80 {
+						s.preparation.setViewportRequest(bounds, client, serial)
+					}
+				}
+			}
 		case "/api/app/map/detail":
 			v, err = s.Atlas.MapDetail(r.Context(), c, params)
 		}

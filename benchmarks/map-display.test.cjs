@@ -96,3 +96,30 @@ test('background preparation refresh keeps counts without flashing loading text'
   resolve({ok:true,json:async()=>({features:[{id:'cluster',count:14}],total:14,next:'',revision:'2'})});await pending;
   assert.match(c.node('status').textContent,/14 APs in view/);assert.doesNotMatch(c.node('status').textContent,/loading/i);
 });
+
+test('map legend contains no fake nearby-AP count',()=>{
+  const html=fs.readFileSync('ui/map.html','utf8');
+  assert.doesNotMatch(html,/cluster-key|Individual AP|12<\/span> nearby/);
+  assert.match(html,/Planning radius is not a confidence interval/);
+});
+
+test('viewport scheduling hints advance without changing observation requests',async()=>{
+  const c=controller(),requests=[];
+  c.node('showObs').checked=true;
+  c.context.fetch=async url=>{
+    requests.push(new URL(url,'http://map.local'));
+    if(url.startsWith('/api/app/map/points'))return {ok:true,headers:{get:()=> '0'},arrayBuffer:async()=>new ArrayBuffer(0)};
+    return {ok:true,json:async()=>({features:[],total:0,next:'',revision:'1'})};
+  };
+  await c.run('load()');await c.run('load()');
+  const features=requests.filter(u=>u.pathname.endsWith('/features'));
+  assert.equal(features.length,2);
+  assert.ok(features[0].searchParams.get('priority_client'));
+  assert.equal(features[0].searchParams.get('priority_client'),features[1].searchParams.get('priority_client'));
+  assert.ok(Number(features[1].searchParams.get('priority_seq'))>Number(features[0].searchParams.get('priority_seq')));
+  assert.equal(requests.filter(u=>u.pathname.endsWith('/points')).length,1);
+  for(const url of requests.filter(u=>!u.pathname.endsWith('/features'))){
+    assert.equal(url.searchParams.has('priority_seq'),false);
+    assert.equal(url.searchParams.has('priority_client'),false);
+  }
+});

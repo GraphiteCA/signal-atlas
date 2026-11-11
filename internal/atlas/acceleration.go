@@ -3,6 +3,7 @@ package atlas
 import (
 	"errors"
 	"math"
+	"sync"
 
 	"signal-atlas/internal/gpu"
 	"signal-atlas/internal/py"
@@ -26,6 +27,16 @@ func SolverName(fast, accelerated bool) string {
 func validSolver(s string) bool {
 	return s == "reference" || s == "fast" || s == GPUReference || s == GPUFast
 }
+
+var surveyGPUGrid = sync.OnceValue(func() *gpu.CandidateGrid {
+	x, y := surveyCoarseGrid()
+	g, err := gpu.NewCandidateGrid(x, y)
+	if err != nil {
+		panic(err)
+	}
+	return g
+})
+
 func (m *LocationModel) scoreGrid(x, y []float64, s *subset, exponent float64, out []float64, coarse bool, separation float64) ([]float64, error) {
 	if !m.accelerated || len(x) < 512 {
 		return m.sse(x, y, s, exponent, out)
@@ -34,7 +45,14 @@ func (m *LocationModel) scoreGrid(x, y []float64, s *subset, exponent float64, o
 	for i, g := range s.g {
 		groups[i] = int32(g)
 	}
-	v, e := gpu.Score(gpu.Input{X: s.x, Y: s.y, RSSI: s.r, Weights: s.w, WeightSums: s.sw, Groups: groups, CandidateX: x, CandidateY: y, Floor: m.floor, Factor: 10 * exponent, Within: s.within}, m.cancelled)
+	var grid *gpu.CandidateGrid
+	if coarse {
+		sx, sy := surveyCoarseGrid()
+		if len(x) == len(sx) && len(y) == len(sy) && &x[0] == &sx[0] && &y[0] == &sy[0] {
+			grid = surveyGPUGrid()
+		}
+	}
+	v, e := gpu.Score(gpu.Input{Grid: grid, X: s.x, Y: s.y, RSSI: s.r, Weights: s.w, WeightSums: s.sw, Groups: groups, CandidateX: x, CandidateY: y, Floor: m.floor, Factor: 10 * exponent, Within: s.within}, m.cancelled)
 	if errors.Is(e, gpu.ErrCancelled) {
 		return nil, ErrCancelled
 	}

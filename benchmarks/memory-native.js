@@ -14,6 +14,8 @@
     window.runtime.EventsOn('signal-atlas:job',e=>{if(e.kind==='fits-committed')report.native_events++;});
     await wait(()=>typeof initialized!=='undefined'&&initialized&&fits&&fits.loaded===fits.total);
     if(isFallback)throw new Error('GPU map renderer unavailable');
+    report.fake_nearby_legend_removed=!/Individual AP|nearby APs/.test($('legend').textContent);
+    if(!report.fake_nearby_legend_removed)throw new Error('Static nearby-AP example still appears as a count');
     $('showObs').checked=true;$('max').value='500000';await load();
     await wait(()=>points?.n>0&&fits.loaded===fits.total);
     report.observations=points.n;
@@ -40,6 +42,7 @@
     }
     const state=await json('/api/app/preparation/status');
     report.completed_before=before;report.completed_after=state.progress.completed;
+    report.viewport_targets_dispatched=state.viewport_targets_dispatched||0;
     report.visible_ap_total=fits.total;report.located_ssids=Number($('located').textContent.replaceAll(',',''));
     report.empty_ap_frames=emptyFrames;report.loading_frames=loadingFrames;report.status_text=$('status').textContent;
     const sorted=[...gaps].sort((a,b)=>a-b);report.frame_gaps={count:gaps.length,p50_ms:sorted[Math.ceil(sorted.length*.5)-1],p95_ms:sorted[Math.ceil(sorted.length*.95)-1],max_ms:sorted.at(-1)};
