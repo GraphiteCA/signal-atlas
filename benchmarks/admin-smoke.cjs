@@ -41,7 +41,7 @@ const pause=ms=>new Promise(r=>setTimeout(r,ms));
     const fresh=path.join(out,'new-survey.atlas');
     await evaluate(`document.getElementById('adminWorkspacePath').value=${JSON.stringify(fresh)};document.getElementById('adminNewPath').click()`);await done();
     assert.equal((await api('status')).database.observations,0);
-    await evaluate(`document.getElementById('adminRecent').value=${JSON.stringify(original)};document.getElementById('adminRecentOpen').click()`);await done();
+    await evaluate(`document.getElementById('adminRecent').value=${JSON.stringify(original)};document.getElementById('adminRecent').dispatchEvent(new Event('change'));document.getElementById('adminRecentOpen').click()`);await done();
     assert.equal((await api('status')).database.observations,before-preview.rows+1);checks.push('New survey isolation and recent-survey switching');
     await cmd('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:false});await navigate('?tab=maintenance');await screenshot('admin-mobile');
     assert.ok(await evaluate('document.documentElement.scrollWidth<=innerWidth'));checks.push('390px responsive layout without horizontal page overflow');

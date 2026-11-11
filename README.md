@@ -52,6 +52,9 @@ system's Save dialog. Each tool has a **Home** link back to the start page.
 separate survey workspace; **Open database** and recent surveys switch between existing workspaces.
 The last survey opens next time. Switching safely stops its survey job while keeping Compare and
 the independent Drive database open. Native file and folder dialogs handle paths in the desktop app.
+**Refresh list** rechecks recent workspace folders; missing folders disappear automatically.
+**Remove from list** forgets the selected workspace without deleting its files or closing it.
+A forgotten workspace can be added again with **Open database**.
 
 **Import scans** accepts multiple CSV logs, WiGLE backups, logger/WarHog databases and saved survey
 SQLite files. Importing a saved database adds its scans; **Convert a saved SQLite survey** creates a

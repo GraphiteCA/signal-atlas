@@ -139,6 +139,10 @@ func (s *Server) adminGet(w http.ResponseWriter, r *http.Request, action string)
 	}
 	switch action {
 	case "status":
+		recent, err := s.set.recentSurveys("")
+		if err != nil {
+			return err
+		}
 		c, put, err := s.Atlas.Conn(r.Context())
 		if err != nil {
 			return err
@@ -152,7 +156,7 @@ func (s *Server) adminGet(w http.ResponseWriter, r *http.Request, action string)
 		if err != nil {
 			return err
 		}
-		sendGoJSON(w, map[string]any{"survey_id": s.surveyID, "path": s.Atlas.Root, "generation": pointer.Active, "recovery_available": pointer.Previous != "", "database": info, "job": s.Jobs.Snapshot(), "operation": s.admin.snapshot(), "recent": s.set.get().RecentSurveys, "dialogs": s.o.Host != nil, "warning": s.startupWarning, "capabilities": map[string]bool{"workspace_snapshot": true, "portable_sqlite": true, "full_observation_sql": true}}, 200)
+		sendGoJSON(w, map[string]any{"survey_id": s.surveyID, "path": s.Atlas.Root, "generation": pointer.Active, "recovery_available": pointer.Previous != "", "database": info, "job": s.Jobs.Snapshot(), "operation": s.admin.snapshot(), "recent": recent, "dialogs": s.o.Host != nil, "warning": s.startupWarning, "capabilities": map[string]bool{"workspace_snapshot": true, "portable_sqlite": true, "full_observation_sql": true}}, 200)
 		return nil
 	case "imports":
 		offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
@@ -200,6 +204,18 @@ func (s *Server) adminPost(w http.ResponseWriter, r *http.Request, action string
 		id, _ := body["id"].(string)
 		s.admin.requestCancel(id)
 		sendGoJSON(w, s.admin.snapshot(), 200)
+		return nil
+	}
+	if action == "forget" {
+		path, _ := body["path"].(string)
+		if strings.TrimSpace(path) == "" {
+			return herr(400, "Choose a workspace to remove from the recent list")
+		}
+		recent, err := s.set.recentSurveys(path)
+		if err != nil {
+			return err
+		}
+		sendGoJSON(w, map[string]any{"recent": recent}, 200)
 		return nil
 	}
 	s.surveyMu.RLock()

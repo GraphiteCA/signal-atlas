@@ -57,6 +57,11 @@
     $('adminWigleBackoff').hidden=!retry;
     if(retry){const seconds=Math.max(0,Math.ceil((retry-Date.now())/1000));$('adminWigleBackoff').textContent=`${operation.retry_reason}. ${seconds?`Retrying in ${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`:'Retrying…'}`;}
   }
+  function recentButtons(){
+    const selected=!!$('adminRecent').value;
+    $('adminRecentOpen').disabled=!selected||operation?.status==='running';
+    $('adminRecentForget').disabled=!selected;
+  }
   async function refresh(){
     if(refreshing)return;refreshing=true;
     try{
@@ -71,7 +76,7 @@
       $('adminSurveyJob').hidden=!surveyBusy;$('adminJobText').textContent=surveyBusy?`${s.job.kind}: ${fi(s.job.completed)} / ${fi(s.job.total)} · finish or cancel before snapshots, imports or maintenance.`:'';
       $('adminSnapshotPathField').hidden=native;$('adminConvertFields').hidden=native;$('adminPaths').open=!native;
       if(s.warning){$('adminNotice').textContent=s.warning;$('adminNotice').hidden=false;}
-      renderOperation(s.operation);
+      renderOperation(s.operation);recentButtons();
       await refreshPreparationAdmin();
     }catch(e){error(e.message);}finally{refreshing=false;}
   }
@@ -99,6 +104,12 @@
     $('adminNew').onclick=()=>native?run('new'):($('adminPaths').open=true,$('adminWorkspacePath').focus());
     $('adminOpen').onclick=()=>native?run('open'):($('adminPaths').open=true,$('adminWorkspacePath').focus());
     $('adminNewPath').onclick=()=>run('new',{path:$('adminWorkspacePath').value.trim()});$('adminOpenPath').onclick=()=>run('open',{path:$('adminWorkspacePath').value.trim()});
+    $('adminRecent').onchange=recentButtons;
+    $('adminRecentRefresh').onclick=refresh;
+    $('adminRecentForget').onclick=async()=>{
+      const path=$('adminRecent').value;if(!path)return;
+      try{error('');await request('forget',{path});$('adminRecent').value='';recentButtons();await refresh();$('adminNotice').textContent='Workspace removed from the recent list. Its files are unchanged.';$('adminNotice').hidden=false;}catch(e){error(e.message);}
+    };
     $('adminRecentOpen').onclick=()=>{const path=$('adminRecent').value;if(path)run('open',{path});};
     $('adminSave').onclick=()=>run('snapshot',{format:$('adminSnapshotFormat').value,path:$('adminSnapshotPath').value.trim()});
     $('adminConvert').onclick=()=>run('convert',{path:$('adminConvertTarget').value.trim(),source:$('adminConvertSource').value.trim()});
