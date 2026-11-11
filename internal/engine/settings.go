@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"signal-atlas/internal/atlas"
 	"signal-atlas/internal/py"
 )
 
@@ -25,6 +26,8 @@ import (
 
 // Settings are the app's own preferences.
 type Settings struct {
+	LastSurvey    string   `json:"last_survey,omitempty"`
+	RecentSurveys []string `json:"recent_surveys,omitempty"`
 	// FastFits fits with the fast solver (atlas.FitFast) instead of the exact grid search.
 	FastFits bool `json:"fast_fits"`
 	// UpdateChecks is "ask" (until the user answers), "on" (once a day) or "off".
@@ -59,9 +62,13 @@ func (st *settingsStore) get() Settings {
 func (st *settingsStore) set(change func(*Settings)) error {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	change(&st.s)
-	b, _ := json.MarshalIndent(st.s, "", "  ")
-	return os.WriteFile(st.path, b, 0o644)
+	next := st.s
+	change(&next)
+	if err := atlas.WriteJSONAtomic(st.path, next); err != nil {
+		return err
+	}
+	st.s = next
+	return nil
 }
 
 // releasesURL replaces GitHub's address in tests.

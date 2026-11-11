@@ -455,10 +455,11 @@ func (h *csvHeader) fields(rec []string) Fields {
 }
 
 type parsedRow struct {
-	obs     *Observation
-	line    int64
-	nonWifi bool
-	err     error
+	zeroPair bool
+	obs      *Observation
+	line     int64
+	nonWifi  bool
+	err      error
 }
 
 // parallelRows runs produce (one goroutine, emitting records in order), parses them on every core

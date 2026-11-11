@@ -8,8 +8,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"signal-atlas/internal/db"
+	"signal-atlas/internal/geo"
 	"signal-atlas/internal/obs"
 	"signal-atlas/internal/py"
 
@@ -21,10 +23,12 @@ import (
 // band assignments, the basemap, in Graphite's schema; its observations table stays empty) and
 // observations/ (the column store with every observation).
 type Atlas struct {
-	Dir      string
-	MetaPath string
-	Obs      *obs.Store
-	pool     *sqlitex.Pool
+	Root      string // logical workspace, including a generation pointer after maintenance
+	Recovered bool
+	Dir       string
+	MetaPath  string
+	Obs       *obs.Store
+	pool      *sqlitex.Pool
 	// WriteMu serialises the writers (imports, band assignments, the bridge); queries never wait.
 	WriteMu  sync.Mutex
 	mapCache mapCache
@@ -88,10 +92,61 @@ func prepareConn(c *sqlite.Conn) error {
 
 // Open opens (or creates) the store in dir.
 func Open(dir string) (*Atlas, error) {
+	root := dir
+	var err error
+	if dir, err = WorkspaceDir(root); err != nil {
+		return nil, err
+	}
+	var a *Atlas
+	var openErr error
+	// A published generation must already exist. Never turn a missing revision
+	// into an empty database while attempting recovery.
+	if _, err := os.Stat(filepath.Join(root, pointerFile)); err == nil {
+		_, openErr = os.Stat(filepath.Join(dir, "atlas.sqlite3"))
+	}
+	if openErr == nil {
+		a, openErr = openGeneration(root, dir)
+	}
+	if openErr == nil {
+		return a, nil
+	}
+	p, err := ReadWorkspacePointer(root)
+	if err != nil || p.Previous == "" || p.Previous == p.Active {
+		return nil, openErr
+	}
+	previous, err := OpenGeneration(root, p.Previous)
+	if err != nil {
+		return nil, openErr
+	}
+	if err := previous.Validate(context.Background()); err != nil {
+		previous.Close()
+		return nil, openErr
+	}
+	if err := PublishWorkspace(root, p.Previous, p.Active); err != nil {
+		previous.Close()
+		return nil, openErr
+	}
+	previous.Recovered = true
+	return previous, nil
+}
+func OpenGeneration(root, relative string) (*Atlas, error) {
+	dir, err := workspaceChild(root, relative)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(filepath.Join(dir, "atlas.sqlite3")); err != nil {
+		return nil, err
+	}
+	return openGeneration(root, dir)
+}
+func openGeneration(root, dir string) (*Atlas, error) {
+	return openGenerationWith(root, dir, nil)
+}
+func openGenerationWith(root, dir string, columns *obs.Store) (*Atlas, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
-	a := &Atlas{Dir: dir, MetaPath: filepath.Join(dir, "atlas.sqlite3")}
+	a := &Atlas{Root: root, Dir: dir, MetaPath: filepath.Join(dir, "atlas.sqlite3")}
 	c, err := db.Open(a.MetaPath, true)
 	if err != nil {
 		return nil, err
@@ -100,26 +155,29 @@ func Open(dir string) (*Atlas, error) {
 	if err := initialize(c, a.MetaPath); err != nil {
 		return nil, err
 	}
-	committed := map[int64]bool{}
-	rows, err := db.All(c, "SELECT id,valid_rows FROM imports")
+	committed := map[int64]int64{}
+	rows, err := db.All(c, "SELECT id,active_rows FROM imports")
 	if err != nil {
 		return nil, err
 	}
 	for _, r := range rows {
-		committed[db.Int(r["id"])] = true
+		committed[db.Int(r["id"])] = db.Int(r["active_rows"])
 	}
-	if a.Obs, err = obs.Open(filepath.Join(dir, "observations"), func(id int64) bool { return committed[id] }); err != nil {
-		return nil, err
+	if columns != nil {
+		a.Obs = columns
+	} else {
+		if a.Obs, err = obs.Open(filepath.Join(dir, "observations"), committed); err != nil {
+			return nil, err
+		}
 	}
-	// an import committed in the metadata whose rows never reached the column store (a crash
-	// between the two) is removed, so it can be imported again
-	have := map[int64]bool{}
+	// Missing committed data is an error; never silently discard source history.
+	have := map[int64]int64{}
 	for _, s := range a.Obs.State().Segs {
-		have[s.ImportID] = true
+		have[s.ImportID] += int64(s.N)
 	}
 	for _, r := range rows {
-		if id := db.Int(r["id"]); db.Int(r["valid_rows"]) > 0 && !have[id] {
-			db.Exec(c, "DELETE FROM imports WHERE id=?", id)
+		if id := db.Int(r["id"]); db.Int(r["active_rows"]) != have[id] {
+			return nil, py.Errorf("Workspace is incomplete: import %d has committed rows but its observation segments are missing", id)
 		}
 	}
 	a.pool, err = sqlitex.NewPool(a.MetaPath, sqlitex.PoolOptions{PoolSize: 16, PrepareConn: prepareConn})
@@ -182,6 +240,21 @@ func initialize(c *sqlite.Conn, path string) error {
 		if _, err := db.Exec(c, "ALTER TABLE imports ADD COLUMN non_wifi_rows INTEGER NOT NULL DEFAULT 0"); err != nil {
 			return err
 		}
+	}
+	for _, column := range []string{"zero_excluded_rows INTEGER NOT NULL DEFAULT 0", "zero_removed_rows INTEGER NOT NULL DEFAULT 0", "active_rows INTEGER NOT NULL DEFAULT -1"} {
+		name := strings.Fields(column)[0]
+		found := false
+		for _, r := range cols {
+			found = found || db.Str(r["name"]) == name
+		}
+		if !found {
+			if _, err := db.Exec(c, "ALTER TABLE imports ADD COLUMN "+column); err != nil {
+				return err
+			}
+		}
+	}
+	if _, err := db.Exec(c, "UPDATE imports SET active_rows=valid_rows WHERE active_rows<0"); err != nil {
+		return err
 	}
 	if _, err := db.Exec(c, "PRAGMA user_version=5"); err != nil {
 		return err
@@ -329,7 +402,7 @@ func (a *Atlas) ImportCSV(path string, skipInvalid bool, progress Progress, file
 		return nil, err
 	}
 	if existing != nil {
-		return map[string]any{"duplicate": true, "valid_rows": existing["valid_rows"], "invalid_rows": existing["invalid_rows"], "non_wifi_rows": existing["non_wifi_rows"]}, nil
+		return map[string]any{"duplicate": true, "valid_rows": existing["valid_rows"], "invalid_rows": existing["invalid_rows"], "non_wifi_rows": existing["non_wifi_rows"], "zero_excluded_rows": existing["zero_excluded_rows"], "added_rows": int64(0)}, nil
 	}
 	importID, err := nextImportID(c)
 	if err != nil {
@@ -341,7 +414,8 @@ func (a *Atlas) ImportCSV(path string, skipInvalid bool, progress Progress, file
 	}
 	seg := obs.NewSegment(importID, a.Obs.NextBase(nil), int(min(size/100+16, 1<<26)))
 	in := a.Obs.Dict.NewInterner()
-	var valid, invalid, nonWifi, read int64
+	var valid, invalid, nonWifi, zero, processed int64
+	var read atomic.Int64
 	examples := []string{}
 	var hdr csvHeader
 	var line int64
@@ -359,15 +433,28 @@ func (a *Atlas) ImportCSV(path string, skipInvalid bool, progress Progress, file
 			}
 			line++
 			return emit(rec, line)
-		}, func(r, _ int64) { read = r })
+		}, func(r, _ int64) { read.Store(r) })
 	}, func(rec []string, line int64) parsedRow {
 		f := hdr.fields(rec)
 		if !IsWifi(f["Type"]) {
 			return parsedRow{nonWifi: true}
 		}
+		if f["CurrentLatitude"] != nil && f["CurrentLongitude"] != nil && geo.ZeroPairText(*f["CurrentLatitude"], *f["CurrentLongitude"]) {
+			return parsedRow{zeroPair: true}
+		}
 		o, err := ParseObservation(f, line)
 		return parsedRow{obs: o, line: line, err: err}
 	}, func(r parsedRow) error {
+		processed++
+		if processed%5000 == 0 && progress != nil {
+			if err := progress(valid, invalid, read.Load(), size); err != nil {
+				return err
+			}
+		}
+		if r.zeroPair {
+			zero++
+			return nil
+		}
 		if r.nonWifi {
 			nonWifi++
 			return nil
@@ -390,7 +477,7 @@ func (a *Atlas) ImportCSV(path string, skipInvalid bool, progress Progress, file
 		seg.Append(&row)
 		valid++
 		if valid%5000 == 0 && progress != nil {
-			return progress(valid, invalid, read, size)
+			return progress(valid, invalid, read.Load(), size)
 		}
 		return nil
 	})
@@ -405,18 +492,20 @@ func (a *Atlas) ImportCSV(path string, skipInvalid bool, progress Progress, file
 			return nil, err
 		}
 	}
-	if valid == 0 {
+	if valid == 0 && zero == 0 {
 		return nil, py.Errorf("CSV contains no valid observations")
 	}
 	if say != nil {
 		say("Saving and indexing")
 	}
-	if err := a.Obs.Commit(obs.Change{Add: []*obs.Segment{seg}}); err != nil {
-		return nil, err
+	if valid > 0 {
+		if err := a.Obs.Commit(obs.Change{Add: []*obs.Segment{seg}}); err != nil {
+			return nil, err
+		}
 	}
 	err = db.Tx(c, func() error {
-		if _, err := db.Exec(c, "INSERT INTO imports(id,filename,sha256,imported_utc,valid_rows,invalid_rows,non_wifi_rows) VALUES(?,?,?,?,?,?,?)",
-			importID, filename, h.sum, py.UTCNowISO(), valid, invalid, nonWifi); err != nil {
+		if _, err := db.Exec(c, "INSERT INTO imports(id,filename,sha256,imported_utc,valid_rows,invalid_rows,non_wifi_rows,zero_excluded_rows,active_rows) VALUES(?,?,?,?,?,?,?,?,?)",
+			importID, filename, h.sum, py.UTCNowISO(), valid, invalid, nonWifi, zero, valid); err != nil {
 			return err
 		}
 		// New sightings can move a network's fitted location: its fits are dropped, so they are
@@ -427,21 +516,25 @@ func (a *Atlas) ImportCSV(path string, skipInvalid bool, progress Progress, file
 		a.Obs.Commit(obs.Change{Drop: map[int64]bool{importID: true}})
 		return nil, err
 	}
-	return map[string]any{"duplicate": false, "valid_rows": valid, "invalid_rows": invalid, "non_wifi_rows": nonWifi, "invalid_examples": examples}, nil
+	return map[string]any{"duplicate": false, "valid_rows": valid, "invalid_rows": invalid, "non_wifi_rows": nonWifi, "zero_excluded_rows": zero, "empty": valid == 0, "invalid_examples": examples}, nil
 }
 
 // DropStaleEstimates deletes the saved fits of every network that has sightings in seg: named
 // networks by SSID (shared and single-radio fits alike), hidden ones by MAC. Fits of networks seg
 // doesn't touch stay, so adding a drive only refits what it changed.
 func DropStaleEstimates(c *sqlite.Conn, st *obs.State, seg *obs.Segment) error {
-	ssids, macs := map[uint32]bool{}, map[uint32]bool{}
+	ssids, macs := map[string]bool{}, map[string]bool{}
 	for i := 0; i < seg.N; i++ {
 		if st.Str[seg.SSID[i]] == "" {
-			macs[seg.MAC[i]] = true
+			macs[st.Str[seg.MAC[i]]] = true
 		} else {
-			ssids[seg.SSID[i]] = true
+			ssids[st.Str[seg.SSID[i]]] = true
 		}
 	}
+	return dropChangedFits(c, ssids, macs)
+}
+
+func dropChangedFits(c *sqlite.Conn, ssids, macs map[string]bool) error {
 	if _, err := db.Exec(c, "CREATE TEMP TABLE IF NOT EXISTS stale_ssid(v TEXT PRIMARY KEY)"); err != nil {
 		return err
 	}
@@ -451,18 +544,18 @@ func DropStaleEstimates(c *sqlite.Conn, st *obs.State, seg *obs.Segment) error {
 	db.Exec(c, "DELETE FROM stale_ssid")
 	db.Exec(c, "DELETE FROM stale_mac")
 	for id := range ssids {
-		if _, err := db.Exec(c, "INSERT OR IGNORE INTO stale_ssid VALUES(?)", st.Str[id]); err != nil {
+		if _, err := db.Exec(c, "INSERT OR IGNORE INTO stale_ssid VALUES(?)", id); err != nil {
 			return err
 		}
 	}
 	for id := range macs {
-		if _, err := db.Exec(c, "INSERT OR IGNORE INTO stale_mac VALUES(?)", st.Str[id]); err != nil {
+		if _, err := db.Exec(c, "INSERT OR IGNORE INTO stale_mac VALUES(?)", id); err != nil {
 			return err
 		}
 	}
 	_, err := db.Exec(c, `DELETE FROM estimates WHERE
 		(coalesce(json_extract(result,'$.ssid'),'') <> '' AND json_extract(result,'$.ssid') IN (SELECT v FROM stale_ssid))
-		OR (coalesce(json_extract(result,'$.ssid'),'') = '' AND upper(json_extract(result,'$.mac')) IN (SELECT v FROM stale_mac))`)
+		OR (coalesce(json_extract(result,'$.ssid'),'') = '' AND (upper(json_extract(result,'$.mac')) IN (SELECT v FROM stale_mac) OR EXISTS (SELECT 1 FROM json_each(result,'$.members') m WHERE upper(json_extract(m.value,'$.mac')) IN (SELECT v FROM stale_mac))))`)
 	db.Exec(c, "DELETE FROM stale_ssid")
 	db.Exec(c, "DELETE FROM stale_mac")
 	return err

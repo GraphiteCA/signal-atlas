@@ -13,6 +13,7 @@ package drivedb
 
 import (
 	"bufio"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -28,6 +29,7 @@ import (
 	"time"
 
 	"signal-atlas/internal/db"
+	"signal-atlas/internal/geo"
 	"signal-atlas/internal/pycsv"
 
 	"zombiezen.com/go/sqlite"
@@ -67,7 +69,7 @@ CREATE TABLE IF NOT EXISTS drive_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)
 CREATE TABLE IF NOT EXISTS drive_sources(id INTEGER PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL,
   size INTEGER NOT NULL, sha256 TEXT NOT NULL UNIQUE, kind TEXT NOT NULL, added_utc TEXT NOT NULL,
   rows_read INTEGER NOT NULL, rows_added INTEGER NOT NULL, duplicates INTEGER NOT NULL, skipped INTEGER NOT NULL,
-  first_seen TEXT, last_seen TEXT);
+  first_seen TEXT, last_seen TEXT, zero_excluded_rows INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS sightings(MAC TEXT, SSID TEXT, AuthMode TEXT, FirstSeen TEXT, Channel TEXT,
   Frequency TEXT, RSSI TEXT, CurrentLatitude TEXT, CurrentLongitude TEXT, AltitudeMeters TEXT,
   AccuracyMeters TEXT, RCOIs TEXT, MfgrId TEXT, Type TEXT, Node TEXT, source INTEGER NOT NULL);
@@ -124,6 +126,21 @@ func Open(path string) (*DB, error) {
 		c.Close()
 		return nil, err
 	}
+	cols, err := db.All(c, "PRAGMA table_info(drive_sources)")
+	if err != nil {
+		c.Close()
+		return nil, err
+	}
+	found := false
+	for _, r := range cols {
+		found = found || db.Str(r["name"]) == "zero_excluded_rows"
+	}
+	if !found {
+		if _, err := db.Exec(c, "ALTER TABLE drive_sources ADD COLUMN zero_excluded_rows INTEGER NOT NULL DEFAULT 0"); err != nil {
+			c.Close()
+			return nil, err
+		}
+	}
 	return &DB{Path: path, c: c}, nil
 }
 
@@ -147,7 +164,7 @@ func (d *DB) Info() (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	src, err := db.All(d.c, "SELECT id,name,path,size,kind,added_utc,rows_read,rows_added,duplicates,skipped,first_seen,last_seen FROM drive_sources ORDER BY id DESC")
+	src, err := db.All(d.c, "SELECT id,name,path,size,kind,added_utc,rows_read,rows_added,duplicates,skipped,zero_excluded_rows,first_seen,last_seen FROM drive_sources ORDER BY id DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -166,14 +183,15 @@ type Progress func(file string, rows, done, total int64)
 
 // Result is what adding one file did.
 type Result struct {
-	Name       string `json:"name"`
-	Kind       string `json:"kind"`
-	RowsRead   int64  `json:"rows_read"`
-	RowsAdded  int64  `json:"rows_added"`
-	Duplicates int64  `json:"duplicates"`
-	Skipped    int64  `json:"skipped"`
-	Already    bool   `json:"already_added,omitempty"`
-	Error      string `json:"error,omitempty"`
+	ZeroExcluded int64  `json:"zero_excluded_rows"`
+	Name         string `json:"name"`
+	Kind         string `json:"kind"`
+	RowsRead     int64  `json:"rows_read"`
+	RowsAdded    int64  `json:"rows_added"`
+	Duplicates   int64  `json:"duplicates"`
+	Skipped      int64  `json:"skipped"`
+	Already      bool   `json:"already_added,omitempty"`
+	Error        string `json:"error,omitempty"`
 }
 
 // ErrCancelled is returned when cancelled() turned true; nothing of the file is kept.
@@ -236,9 +254,10 @@ func (d *DB) Add(path string, progress Progress, cancelled func() bool) (Result,
 		return res, err
 	}
 	res.RowsRead, res.RowsAdded, res.Duplicates, res.Skipped = w.read, w.added, w.dups, w.skipped
-	if _, err := db.Exec(d.c, `INSERT INTO drive_sources(id,name,path,size,sha256,kind,added_utc,rows_read,rows_added,duplicates,skipped,first_seen,last_seen)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, w.source, res.Name, path, st.Size(), sum, kind, nowUTC(),
-		w.read, w.added, w.dups, w.skipped, nullStr(w.first), nullStr(w.last)); err != nil {
+	res.ZeroExcluded = w.zero
+	if _, err := db.Exec(d.c, `INSERT INTO drive_sources(id,name,path,size,sha256,kind,added_utc,rows_read,rows_added,duplicates,skipped,first_seen,last_seen,zero_excluded_rows)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, w.source, res.Name, path, st.Size(), sum, kind, nowUTC(),
+		w.read, w.added, w.dups, w.skipped, nullStr(w.first), nullStr(w.last), w.zero); err != nil {
 		w.rollback()
 		return res, err
 	}
@@ -273,6 +292,7 @@ func fileSHA256(path string) (string, error) {
 // Reading and parsing (the caller of add) run alongside the database writes (consume): full
 // batches go over a channel, so the two halves overlap.
 type writer struct {
+	zero      int64
 	d         *DB
 	cancelled func() bool
 	source    int64
@@ -338,11 +358,18 @@ func (w *writer) rollback() { db.Exec(w.d.c, "ROLLBACK") }
 // add takes one row; rows without a MAC are skipped.
 func (w *writer) add(r *Row) error {
 	w.read++
+	if w.read&4095 == 0 && w.cancelled != nil && w.cancelled() {
+		return ErrCancelled
+	}
 	for i := range r {
 		r[i] = strings.TrimSpace(r[i])
 	}
 	if r[cMAC] == "" {
 		w.skipped++
+		return nil
+	}
+	if geo.ZeroPairText(r[cLat], r[cLon]) {
+		w.zero++
 		return nil
 	}
 	w.cur.rows = append(w.cur.rows, *r)
@@ -985,6 +1012,7 @@ func (d *DB) ExportCopy(dest string) error {
 
 // csvSink writes rows as WiGLE CSV.
 type csvSink struct {
+	ctx           context.Context
 	b             *bufio.Writer
 	n, kept, gone int64
 	positionsOnly bool
@@ -994,6 +1022,11 @@ type csvSink struct {
 func (c *csvSink) rows() int64 { return c.n }
 
 func (c *csvSink) add(r *Row) error {
+	if c.ctx != nil && c.n&4095 == 0 {
+		if err := c.ctx.Err(); err != nil {
+			return err
+		}
+	}
 	c.n++
 	for i := range r {
 		r[i] = strings.TrimSpace(r[i])
@@ -1035,6 +1068,9 @@ func IsDatabase(path string) bool {
 // positionsOnly leaves out rows without a GPS position. It returns the kind of file, the rows
 // written, and the rows left out.
 func ToCSV(path, dest, version string, positionsOnly bool, progress func(rows, done, total int64)) (string, int64, int64, error) {
+	return ToCSVContext(context.Background(), path, dest, version, positionsOnly, progress)
+}
+func ToCSVContext(ctx context.Context, path, dest, version string, positionsOnly bool, progress func(rows, done, total int64)) (string, int64, int64, error) {
 	clean := func(s string) string { return strings.NewReplacer(",", " ", "=", " ", "\n", " ", "\r", " ").Replace(s) }
 	kind, err := Detect(path)
 	if err != nil {
@@ -1065,7 +1101,7 @@ func ToCSV(path, dest, version string, positionsOnly bool, progress func(rows, d
 		}
 	}
 	writeRow(b, Columns[:cols])
-	c := &csvSink{b: b, positionsOnly: positionsOnly, cols: cols}
+	c := &csvSink{b: b, positionsOnly: positionsOnly, cols: cols, ctx: ctx}
 	report := func(rows, done, total int64) {
 		if progress != nil {
 			progress(rows, done, total)

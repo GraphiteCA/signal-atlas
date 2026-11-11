@@ -19,6 +19,14 @@
   const enc = encodeURIComponent;
   const info = { version: '', data: '', window: false };
   const ready = fetch('/api/app/info', { cache: 'no-store' }).then(json).then((j) => Object.assign(info, j)).catch(() => info);
+  const localFetch=window.fetch.bind(window);
+  window.fetch=function(input,options={}){
+    const url=new URL(typeof input==='string'?input:input.url,location.href);
+    if(url.origin===location.origin&&url.pathname.startsWith('/api/')&&info.survey_id&&!['/api/app/info','/api/app/admin/status','/api/app/admin/operation'].includes(url.pathname)){
+      const headers=new Headers(input instanceof Request?input.headers:undefined);new Headers(options.headers||{}).forEach((v,k)=>headers.set(k,v));headers.set('X-Survey-ID',info.survey_id);options={...options,headers};
+    }
+    return localFetch(input,options);
+  };
   const picked = new Map();   // name -> path, for files chosen in a native dialog
 
   async function pathOf(file) {
@@ -155,7 +163,7 @@
 
     // the map opens on where the user is (or where they left it, or the whole world); never on a
     // fixed place. The view is remembered between visits.
-    const VIEW = 'signal-atlas.explorer.view';
+    const viewKey = () => 'signal-atlas.explorer.view.'+(info.survey_path||info.data);
     const hookMap = (L) => {
       if (!L || !L.Map || L.Map.__saView) return;
       L.Map.__saView = true;
@@ -165,11 +173,11 @@
         let touched = false;
         setTimeout(() => {   // after the page's own setView
           try {
-            const v = JSON.parse(localStorage.getItem(VIEW) || 'null');
+            const v = JSON.parse(localStorage.getItem(viewKey()) || 'null');
             if (v && isFinite(v.lat) && isFinite(v.lng)) m.setView([v.lat, v.lng], v.zoom || 15, { animate: false });
           } catch (e) { /* no saved view */ }
           m.on('dragstart zoomstart', () => { touched = true; });
-          m.on('moveend', () => { const c = m.getCenter(); localStorage.setItem(VIEW, JSON.stringify({ lat: c.lat, lng: c.lng, zoom: m.getZoom() })); });
+          m.on('moveend', () => { const c = m.getCenter(); localStorage.setItem(viewKey(), JSON.stringify({ lat: c.lat, lng: c.lng, zoom: m.getZoom() })); });
           if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition((p) => {
               if (!touched) m.setView([p.coords.latitude, p.coords.longitude], 16);
@@ -190,7 +198,7 @@
                      'Use "Save SQLite database" first if you want to keep them.')) return;
         const skip = !!(document.getElementById('skip-invalid') || {}).checked;
         await post('/api/app/open-database', { path, skip_invalid: skip });
-        if (typeof window.pollJob === 'function') window.pollJob();
+        location.href='/admin';
       } catch (err) { alert("Couldn't open the database: " + err.message); }
     }
     const addControls = () => {
@@ -223,6 +231,7 @@
         const g = document.createElement('a');
         g.className = 'sa-home'; g.href = '/map'; g.textContent = 'GPU map'; g.style.marginLeft = '14px';
         g.title = 'Every sighting and fitted AP in view, drawn on the GPU';
+        const admin=document.createElement('a');admin.className='sa-home';admin.href='/admin';admin.textContent='Database administration';admin.style.marginLeft='14px';
 		g.onclick = (event) => {
 		  if (typeof window.areaQuery !== 'function') return;
 		  event.preventDefault();
@@ -230,8 +239,9 @@
 		  if (m) {const c = m.getCenter();q.set('lng',c.lng);q.set('lat',c.lat);}
 		  location.href = '/map?' + q;
 		};
-        a.after(g);
+        a.after(g);g.after(admin);
       }
+      const csvLabel=document.querySelector('label[for=csv-file]');if(csvLabel){csvLabel.hidden=true;document.getElementById('skip-invalid')?.closest('label')?.setAttribute('hidden','');if(!document.getElementById('sa-admin-import')){const link=document.createElement('a');link.id='sa-admin-import';link.className='button';link.href='/admin?tab=imports';link.textContent='Import scans…';csvLabel.after(link);}}
       const save = document.getElementById('save-database');
       if (save && !document.querySelector('.sa-db-actions')) {
         const box = document.createElement('div');
@@ -256,10 +266,7 @@
         });
         if (info.window) {
           button('sa-open-db', 'Open database…', 'Open a Signal Atlas database (replaces what is here), or add a logger database (WiGLE columns) or a WiGLE app backup')
-            .addEventListener('click', async () => {
-              const list = await window.SignalAtlasApp.pickFiles({ title: 'Open an SQLite database', exts: ['sqlite3', 'sqlite', 'db'], multiple: false }).catch(() => []);
-              if (list.length) openDatabase(list[0].path);
-            });
+            .addEventListener('click', () => { location.href='/admin'; });
         }
         box.appendChild(save);
       }
@@ -340,6 +347,7 @@
     XMLHttpRequest.prototype.open = function (method, url) { this.__sa = { method: String(method).toUpperCase(), url: String(url) }; return open.apply(this, arguments); };
     XMLHttpRequest.prototype.send = function (body) {
       const w = this.__sa;
+      if(w&&info.survey_id&&new URL(w.url,location.href).pathname.startsWith('/api/'))setHeader.call(this,'X-Survey-ID',info.survey_id);
       if (!(w && w.method === 'POST' && new URL(w.url, location.href).pathname === '/api/import' && body instanceof File)) return send.apply(this, arguments);
       pathOf(body).then(async (p) => {
         if (p) { setHeader.call(this, 'X-App-Path', enc(p)); send.call(this, null); }
@@ -361,14 +369,7 @@
         return;
       }
       const save = e.target.closest('#save-database');
-      if (save) {
-        e.preventDefault();
-        const label = save.textContent;
-        save.textContent = 'Saving…';
-        try { const r = await post('/api/app/save-atlas'); save.textContent = r.saved ? 'Saved ✓' : label; }
-        catch (err) { alert("Couldn't save the database: " + err.message); save.textContent = label; }
-        setTimeout(() => { save.textContent = label; }, 4000);
-      }
+      if (save) {e.preventDefault();location.href='/admin?tab=survey';}
     }, true);
   }
 })();

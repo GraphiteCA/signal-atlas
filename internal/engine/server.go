@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"signal-atlas/internal/atlas"
 	"signal-atlas/internal/db"
@@ -55,17 +56,28 @@ type Options struct {
 
 // Server is the engine.
 type Server struct {
-	o         Options
-	Atlas     *atlas.Atlas
-	Jobs      *Jobs
-	cmp       *compareSessions
-	drops     *dropRegistry
-	drv       *drives
-	set       *settingsStore
-	mapPoints mapPointsCache
-	hostsMu   sync.RWMutex
-	hosts     map[string]bool
-	origins   map[string]bool
+	o              Options
+	Atlas          *atlas.Atlas
+	Jobs           *Jobs
+	cmp            *compareSessions
+	drops          *dropRegistry
+	drv            *drives
+	set            *settingsStore
+	surveyMu       sync.RWMutex
+	surveyID       string
+	handoff        atomic.Bool
+	surveyLock     *os.File
+	appLock        *os.File
+	admin          adminOperations
+	adminGate      sync.Mutex
+	uploadMu       sync.Mutex
+	uploads        map[string]string
+	closed         atomic.Bool
+	startupWarning string
+	mapPoints      mapPointsCache
+	hostsMu        sync.RWMutex
+	hosts          map[string]bool
+	origins        map[string]bool
 	// OpenURL opens a link in the user's browser (the window sets it).
 	OpenURL func(string)
 }
@@ -75,12 +87,65 @@ func New(o Options) (*Server, error) {
 	if err := os.MkdirAll(o.Data, 0o755); err != nil {
 		return nil, err
 	}
-	a, err := atlas.Open(filepath.Join(o.Data, "store"))
+	appLock, err := acquireSurveyLock(o.Data)
 	if err != nil {
-		return nil, fmt.Errorf("Signal Atlas could not open its store: %w", err)
+		return nil, fmt.Errorf("Application data directory is already in use: %w", err)
+	}
+	opened := false
+	defer func() {
+		if !opened {
+			appLock.Close()
+		}
+	}()
+	settings := newSettings(o.Data)
+	root := settings.get().LastSurvey
+	warning := ""
+	if root != "" && !atlas.IsWorkspace(root) {
+		warning = "The last workspace is unavailable; opened the default survey instead."
+		root = ""
+	}
+	if root == "" {
+		root = filepath.Join(o.Data, "store")
+		if err := os.MkdirAll(root, 0755); err != nil {
+			return nil, err
+		}
+	}
+	root, err = filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
+	lock, err := acquireSurveyLock(root)
+	if err != nil {
+		return nil, err
+	}
+	a, err := atlas.Open(root)
+	if err != nil {
+		lock.Close()
+		failedRoot := root
+		fallback, _ := filepath.Abs(filepath.Join(o.Data, "store"))
+		if strings.EqualFold(root, fallback) {
+			fallback, _ = filepath.Abs(filepath.Join(o.Data, "recovery-store"))
+		}
+		if e := os.MkdirAll(fallback, 0755); e != nil {
+			return nil, fmt.Errorf("Signal Atlas could not open %s: %w", failedRoot, err)
+		}
+		lock, err = acquireSurveyLock(fallback)
+		if err != nil {
+			return nil, err
+		}
+		a, err = atlas.Open(fallback)
+		if err != nil {
+			lock.Close()
+			return nil, err
+		}
+		root = fallback
+		warning = "Could not open " + failedRoot + ". Using " + fallback + "; the unavailable workspace was kept unchanged."
+	}
+	if a.Recovered {
+		warning = "Recovered the previous complete survey revision after an incomplete generation."
 	}
 	os.RemoveAll(filepath.Join(o.Data, "exports")) // leftovers of an earlier run
-	s := &Server{o: o, Atlas: a, Jobs: newJobs(a), drops: newDropRegistry(), hosts: map[string]bool{}, origins: map[string]bool{}}
+	s := &Server{o: o, Atlas: a, Jobs: newJobs(a), drops: newDropRegistry(), hosts: map[string]bool{}, origins: map[string]bool{}, surveyID: newHex(), surveyLock: lock, appLock: appLock, startupWarning: warning}
 	s.cmp = newCompareSessions(filepath.Join(o.Data, "exports"))
 	for _, org := range o.Origins {
 		s.origins[org] = true
@@ -88,9 +153,15 @@ func New(o Options) (*Server, error) {
 	for _, h := range o.Hosts {
 		s.AllowHost(h)
 	}
-	s.set = newSettings(o.Data)
+	s.set = settings
+	if warning == "" {
+		if err := s.rememberSurvey(root); err != nil {
+			s.startupWarning = "Could not remember this workspace: " + err.Error()
+		}
+	}
 	go s.autoCheck()
 	s.drv = newDrives(s)
+	opened = true
 	return s, nil
 }
 
@@ -106,7 +177,29 @@ func (s *Server) AllowHost(h string) {
 func (s *Server) RecordDrop(paths []string) { s.drops.add(paths) }
 
 // Close closes the store.
-func (s *Server) Close() { s.cmp.closeAll(); s.drv.close(); s.Atlas.Close() }
+func (s *Server) Close() {
+	s.adminGate.Lock()
+	if !s.closed.CompareAndSwap(false, true) {
+		s.adminGate.Unlock()
+		return
+	}
+	s.adminGate.Unlock()
+	s.admin.stop()
+	s.releaseUploads(nil)
+	s.surveyMu.Lock()
+	defer s.surveyMu.Unlock()
+	s.Jobs.Retire()
+	s.Jobs.Wait(context.Background())
+	s.cmp.closeAll()
+	s.drv.close()
+	s.Atlas.Close()
+	if s.surveyLock != nil {
+		s.surveyLock.Close()
+	}
+	if s.appLock != nil {
+		s.appLock.Close()
+	}
+}
 
 type httpError struct {
 	status int
@@ -168,6 +261,10 @@ var explorerAssets = map[string]bool{"/explorer.js": true, "/explorer.css": true
 
 // ServeHTTP routes a request.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if s.closed.Load() {
+		sendErr(w, herr(503, "The application is closing"))
+		return
+	}
 	defer func() {
 		if p := recover(); p != nil {
 			buf := make([]byte, 4096)
@@ -179,6 +276,23 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !s.allowed(r) {
 		sendJSON(w, map[string]any{"error": "not allowed"}, 403)
 		return
+	}
+	if surveyRequest(r.URL.Path) {
+		if s.handoff.Load() {
+			sendErr(w, herr(503, "Survey handoff in progress; retry shortly"))
+			return
+		}
+		s.surveyMu.RLock()
+		defer s.surveyMu.RUnlock()
+		w.Header().Set("X-Survey-ID", s.surveyID)
+		if expected := r.Header.Get("X-Survey-ID"); expected != "" && expected != s.surveyID {
+			sendErr(w, herr(409, "The active survey changed; reload this page"))
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path != "/api/cancel" && s.admin.busy.Load() {
+			sendErr(w, herr(409, "Survey administration is running; wait or cancel it first"))
+			return
+		}
 	}
 	if err := s.route(w, r); err != nil {
 		sendErr(w, err)
@@ -200,12 +314,16 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			return s.serveFS(w, s.o.UI, "bridge.js", false)
 		case strings.HasPrefix(p, "/app/map/"):
 			return s.serveFS(w, s.o.UI, "map/"+strings.TrimPrefix(p, "/app/map/"), false)
+		case p == "/app/admin.js" || p == "/app/admin.css":
+			return s.serveFS(w, s.o.UI, strings.TrimPrefix(p, "/app/"), false)
 		case strings.HasPrefix(p, "/app/vendor/"):
 			return s.serveFS(w, s.o.UI, "vendor/"+strings.TrimPrefix(p, "/app/vendor/"), false)
 		case p == "/compare.html" || p == "/compare":
 			return s.serveFS(w, s.o.Compare, "compare.html", true)
 		case p == "/map" || p == "/map.html":
 			return s.serveFS(w, s.o.UI, "map.html", true)
+		case p == "/admin" || p == "/admin.html":
+			return s.serveFS(w, s.o.UI, "admin.html", true)
 		case p == "/database" || p == "/database.html":
 			return s.serveFS(w, s.o.UI, "database.html", true)
 		case p == "/atlas" || p == "/atlas/":
@@ -219,7 +337,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 			sendJSON(w, s.Jobs.Snapshot(), 200)
 			return nil
 		case p == "/api/database/download":
-			return s.downloadStore(w)
+			return s.downloadStore(w, r.Context())
 		case tilePath.MatchString(p):
 			return s.tile(w, r, tilePath.FindStringSubmatch(p))
 		case strings.HasPrefix(p, "/api/app/"):
@@ -500,14 +618,18 @@ func saveBody(r *http.Request, dest string, length int64) error {
 
 // downloadStore streams a Graphite-format snapshot of the store (browser use; the app's window
 // saves it straight to a chosen file instead).
-func (s *Server) downloadStore(w http.ResponseWriter) error {
+func (s *Server) downloadStore(w http.ResponseWriter, ctx context.Context) error {
+	if s.admin.busy.Load() || !s.Jobs.suspendIdle() {
+		return herr(409, "Finish the current operation, then save a snapshot from Admin")
+	}
+	defer s.Jobs.Resume()
 	dir, err := os.MkdirTemp(s.o.Data, "snapshot-")
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(dir)
+	defer removeOwnedCandidate(dir, s.o.Data)
 	file := filepath.Join(dir, "survey.sqlite3")
-	if err := s.Atlas.ExportSQLite(file, nil); err != nil {
+	if err := s.Atlas.ExportSQLiteContext(ctx, file, nil, nil); err != nil {
 		return err
 	}
 	f, err := os.Open(file)

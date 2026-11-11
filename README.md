@@ -48,17 +48,23 @@ Files are read where they are on disk. Drop logs on the window, or use **Choose 
 **Import CSV**, which open the system's file dialog. Exports and saved databases go through the
 system's Save dialog. Each tool has a **Home** link back to the start page.
 
-**SQLite databases.** In the explorer, **Open database…** (or dropping the file on the window)
-takes three kinds of file:
+**Database administration.** Open **Admin** from the map or home page. **New database** creates a
+separate survey workspace; **Open database** and recent surveys switch between existing workspaces.
+The last survey opens next time. Switching safely stops its survey job while keeping Compare and
+the independent Drive database open. Native file and folder dialogs handle paths in the desktop app.
 
-- **A Signal Atlas database**, the file **Save SQLite database** writes, or one made by Graphite's
-  Python. It replaces what the explorer holds, with its saved estimates and comparisons, after
-  asking first.
-- **A WiGLE Android app database backup.** Its Wi-Fi sightings are added like
-  a CSV import. Bluetooth and cell sightings are left out, and rows recorded before a GPS fix count
-  as invalid.
-- **A WarHog database file**, or any SQLite file with WiGLE's columns (a Drive database too). Its
-  Wi-Fi sightings with a GPS position are added like a CSV import.
+**Import scans** accepts multiple CSV logs, WiGLE backups, logger/WarHog databases and saved survey
+SQLite files. Importing a saved database adds its scans; **Convert a saved SQLite survey** creates a
+new workspace with its saved locations and comparisons. Original files stay unchanged. Rows whose
+latitude and longitude are both numeric zero are excluded automatically and counted separately.
+Valid equator or prime-meridian readings with only one zero coordinate stay. The survey takes Wi-Fi
+sightings; the independent Drive archive also retains other capture types.
+
+**Save snapshot** offers a fast, complete workspace copy or a portable SQLite file containing all
+observations and metadata. **Maintenance → Preview 0,0 rows** finds old zero pairs before explicit
+cleanup. Cleanup retains a previous revision for recovery, preserves surviving IDs and source
+history, and invalidates only affected saved locations. Validation, lookup rebuilding and metadata
+maintenance are available alongside it. See [Phase 2 administration](docs/phase2-admin.md).
 
 **Drive database.** Make a new Drive database (one `.sqlite3` file wherever you choose) or open one,
 then add files with **Add logs and databases…** or by dropping them on the window. It takes WiGLE

@@ -18,6 +18,8 @@ import (
 // added to it (internal/drivedb), with its own background job so it never waits on the explorer ----
 
 type drives struct {
+	done      chan struct{}
+	closed    bool
 	s         *Server
 	mu        sync.Mutex // the open database and the job state
 	d         *drivedb.DB
@@ -43,6 +45,8 @@ func newDrives(s *Server) *drives {
 }
 
 func (v *drives) remember() {
+	v.mu.Lock()
+	defer v.mu.Unlock()
 	path := ""
 	if v.d != nil {
 		path = v.d.Path
@@ -52,6 +56,14 @@ func (v *drives) remember() {
 }
 
 func (v *drives) close() {
+	v.mu.Lock()
+	v.closed = true
+	v.cancelled.Store(true)
+	done := v.done
+	v.mu.Unlock()
+	if done != nil {
+		<-done
+	}
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	if v.d != nil {
@@ -90,14 +102,20 @@ func (v *drives) update(kv map[string]any) {
 
 // start runs work as the Drive database's one job.
 func (v *drives) start(kind string, work func() (any, error)) error {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.closed {
+		return py.Errorf("The Drive database is closing")
+	}
 	if !v.running.CompareAndSwap(false, true) {
 		return py.Errorf("The Drive database is busy; wait for it or cancel")
 	}
 	v.cancelled.Store(false)
-	v.mu.Lock()
 	v.job = map[string]any{"status": "running", "kind": kind}
-	v.mu.Unlock()
+	done := make(chan struct{})
+	v.done = done
 	go func() {
+		defer close(done)
 		r, err := work()
 		v.mu.Lock()
 		switch {
@@ -126,6 +144,13 @@ func (v *drives) need() (*drivedb.DB, error) {
 
 func (v *drives) set(d *drivedb.DB) {
 	v.mu.Lock()
+	if v.closed {
+		if d != nil {
+			d.Close()
+		}
+		v.mu.Unlock()
+		return
+	}
 	if v.d != nil {
 		v.d.Close()
 	}

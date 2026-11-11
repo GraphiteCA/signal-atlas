@@ -278,7 +278,7 @@ async function start(){
     $('basemap').onchange=()=>{const dark=$('basemap').value==='dark';map.setPaintProperty('osm','raster-brightness-min',dark?1:0);map.setPaintProperty('osm','raster-brightness-max',dark?.12:1);map.setPaintProperty('osm','raster-hue-rotate',dark?180:0);};
   }catch(e){window.mapFallbackReason=String(e.stack || e);if(map?.remove)map.remove();makeFallback();$('fallback').title=e.message;}
   // View storage is scoped to this survey directory, rather than a global map.
-  const info=await json('/api/app/info');const viewKey='signal-atlas.map.view:'+info.data;
+  const info=await json('/api/app/info');const viewKey='signal-atlas.map.view:'+(info.survey_path||info.data);
   map.on('moveend',()=>{draw();const c=map.getCenter();try{localStorage.setItem(viewKey,JSON.stringify({lng:c.lng,lat:c.lat,zoom:map.getZoom()}));}catch(e){}soon();});
   if(!isFallback)map.on('zoomend',draw);
   let view;try{view=JSON.parse(localStorage.getItem(viewKey)||'null');}catch(e){}

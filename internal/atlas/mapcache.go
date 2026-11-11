@@ -24,6 +24,21 @@ import (
 // not retained. Observation buffers have a separate 64 MiB retention budget.
 const mapIndexBudget = 128 << 20
 
+// RebuildCaches preserves saved computations and replaces only derived lookups.
+func (a *Atlas) RebuildCaches() {
+	a.Obs.Reindex()
+	m := &a.mapCache
+	m.mu.Lock()
+	m.state = nil
+	m.raw = nil
+	m.visible = nil
+	m.targets = nil
+	m.summary = nil
+	m.view = nil
+	m.viewMembers = nil
+	m.mu.Unlock()
+}
+
 type mapIndex struct {
 	rows      []MapFit // longitude order for binary-search viewport queries
 	byID      map[string]int
@@ -623,6 +638,15 @@ func (a *Atlas) MapDisplay(c *sqlite.Conn) (MapDisplay, error) {
 		return d, err
 	}
 	if v != nil {
+		var version struct {
+			Version int `json:"version"`
+		}
+		if err = json.Unmarshal([]byte(db.Str(v)), &version); err != nil {
+			return d, err
+		}
+		if version.Version > 1 || version.Version < 0 {
+			return d, py.Errorf("Unsupported map display preferences version")
+		}
 		if err = json.Unmarshal([]byte(db.Str(v)), &d); err != nil {
 			return d, err
 		}
@@ -633,7 +657,10 @@ func (a *Atlas) SaveMapDisplay(c *sqlite.Conn, d MapDisplay) error {
 	if err := d.Validate(); err != nil {
 		return err
 	}
-	b, _ := json.Marshal(d)
+	b, _ := json.Marshal(struct {
+		Version int `json:"version"`
+		MapDisplay
+	}{1, d})
 	_, err := db.Exec(c, "INSERT OR REPLACE INTO map_assets(name,payload) VALUES('map_display',?)", string(b))
 	return err
 }

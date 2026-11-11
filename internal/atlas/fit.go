@@ -227,6 +227,8 @@ func (a *Atlas) FitAndStore(c *sqlite.Conn, group Group, p py.Params, scopeKey s
 	if err != nil {
 		return "", err
 	}
+	a.WriteMu.Lock()
+	defer a.WriteMu.Unlock()
 	if _, err := db.Exec(c, "INSERT OR REPLACE INTO estimates(radio_key,scope_key,result) VALUES(?,?,?)", gs(group, "radio_key"), scopeKey, text); err != nil {
 		return "", err
 	}

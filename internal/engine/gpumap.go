@@ -60,9 +60,12 @@ func (s *Server) mapGet(w http.ResponseWriter, r *http.Request, p string, params
 		case "/api/app/map/display":
 			v, err = s.Atlas.MapDisplay(c)
 		case "/api/app/map/summary":
-			v, err = s.Atlas.MapSummary(c)
+			var summary atlas.MapSummary
+			summary, err = s.Atlas.MapSummary(c)
+			summary.Revision = s.surveyID + ":" + summary.Revision
+			v = summary
 		case "/api/app/map/features":
-			v, err = s.Atlas.MapFeatures(r.Context(), c, params)
+			v, err = s.Atlas.MapFeatures(r.Context(), c, params.With("_survey", []string{s.surveyID}))
 		case "/api/app/map/detail":
 			v, err = s.Atlas.MapDetail(r.Context(), c, params)
 		}

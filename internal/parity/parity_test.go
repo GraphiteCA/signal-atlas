@@ -45,6 +45,27 @@ func TestMatchesGraphitesPython(t *testing.T) {
 	if err := json.Unmarshal([]byte(got), &b); err != nil {
 		t.Fatal(err)
 	}
+	// Phase 2 adds import accounting without changing this fixture's accepted
+	// rows. Assert those new fields before comparing the unchanged Python API.
+	goResult := b.(map[string]any)
+	for _, key := range []string{"import", "import_dup"} {
+		row := goResult[key].(map[string]any)
+		if row["zero_excluded_rows"] != float64(0) {
+			t.Fatalf("%s unexpectedly excluded rows: %v", key, row)
+		}
+		delete(row, "zero_excluded_rows")
+		if key == "import" {
+			if row["empty"] != false {
+				t.Fatalf("nonempty fixture: %v", row)
+			}
+			delete(row, "empty")
+		} else {
+			if row["added_rows"] != float64(0) {
+				t.Fatalf("duplicate added rows: %v", row)
+			}
+			delete(row, "added_rows")
+		}
+	}
 	var diffs []string
 	compare(a, b, "", &diffs)
 	if len(diffs) > 0 {

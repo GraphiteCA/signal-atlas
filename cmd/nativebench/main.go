@@ -95,7 +95,7 @@ func main() {
 	data := flag.String("data", "", "owned benchmark data (contains store/)")
 	repo := flag.String("repo", ".", "upstream checkout")
 	donor := flag.String("donor", "..", "donor source copy")
-	page := flag.String("page", "gpu", "gpu, explorer or donor")
+	page := flag.String("page", "gpu", "gpu, canvas, admin, explorer or donor")
 	output := flag.String("output", "", "new JSON output path")
 	count := flag.Int("seed-fits", 0, "seed synthetic saved locations for rendering only")
 	driver := flag.String("driver", "native.js", "diagnostic script name inside benchmarks/")
@@ -157,10 +157,13 @@ func main() {
 			if *page == "explorer" {
 				path = "/atlas/"
 			}
+			if *page == "admin" {
+				path = "/admin"
+			}
 			http.Redirect(w, r, path, http.StatusFound)
 			return
 		}
-		if r.URL.Path == "/map" || r.URL.Path == "/atlas/" {
+		if r.URL.Path == "/map" || r.URL.Path == "/atlas/" || r.URL.Path == "/admin" {
 			out := httptest.NewRecorder()
 			s.ServeHTTP(out, r)
 			body := bytes.Replace(out.Body.Bytes(), []byte("</body>"), []byte(`<script src="/__bench/native.js"></script></body>`), 1)
@@ -178,7 +181,7 @@ func main() {
 		}
 		s.ServeHTTP(w, r)
 	})
-	must(wails.Run(&options.App{Title: "Signal Atlas baseline benchmark", Width: 1400, Height: 950, AssetServer: &assetserver.Options{Handler: h}, OnStartup: func(c context.Context) { ctx = c }, Windows: &windows.Options{Theme: windows.Dark, WebviewUserDataPath: filepath.Join(*data, "webview-benchmark-"+*page)}}))
+	must(wails.Run(&options.App{Title: "Signal Atlas baseline benchmark", StartHidden: *page == "admin", Width: 1400, Height: 950, AssetServer: &assetserver.Options{Handler: h}, OnStartup: func(c context.Context) { ctx = c }, Windows: &windows.Options{Theme: windows.Dark, WebviewUserDataPath: filepath.Join(*data, "webview-benchmark-"+*page)}}))
 }
 
 const donorHTML = `<!doctype html><html><head><title>Donor canvas baseline</title><link rel="stylesheet" href="/__bench/donor/leaflet.css"><style>html,body,#map{height:100%;margin:0;background:#13212a}#bench-status{position:absolute;top:10px;left:60px;z-index:1000;color:white;background:#13212a;padding:8px}</style></head><body><div id="map"></div><div id="bench-status">Benchmarking donor canvas</div><script src="/__bench/donor/leaflet.js"></script><script src="/__bench/donor/nearby_canvas.js"></script><script>let map=L.map('map',{minZoom:2,maxZoom:22}).setView([48.401,-123.399],15);window.__donor=true;</script><script src="/__bench/native.js"></script></body></html>`

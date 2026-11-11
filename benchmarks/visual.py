@@ -1,4 +1,4 @@
-"""Run the Phase 1 browser smoke test against an owned benchmark survey only."""
+"""Run a browser smoke test against an owned benchmark survey only."""
 import argparse
 import json
 import socket
@@ -31,6 +31,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--data', required=True)
     parser.add_argument('--app', default='build/SignalAtlas-phase1.exe')
+    parser.add_argument('--driver', choices=['map-smoke.cjs','admin-smoke.cjs'], default='map-smoke.cjs')
     parser.add_argument('--chrome', default=r'C:\Program Files\Google\Chrome\Application\chrome.exe')
     args = parser.parse_args()
     data = Path(args.data).resolve(strict=True)
@@ -53,7 +54,7 @@ def main():
                                        f'--user-data-dir={folder / "chrome-profile"}', f'--remote-debugging-port={debug_port}',
                                        '--window-size=1384,911', 'about:blank'], stdout=chrome_log, stderr=chrome_log)
             ready(f'http://127.0.0.1:{debug_port}/json/version')
-            result = subprocess.run(['node', str(ROOT / 'benchmarks' / 'map-smoke.cjs'), str(debug_port),
+            result = subprocess.run(['node', str(ROOT / 'benchmarks' / args.driver), str(debug_port),
                                      f'http://127.0.0.1:{app_port}', str(folder)], capture_output=True, timeout=120)
             (folder / 'smoke.json').write_bytes(result.stdout)
             (folder / 'smoke.log').write_bytes(result.stderr)

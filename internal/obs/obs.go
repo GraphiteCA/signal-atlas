@@ -111,6 +111,14 @@ func (s *Segment) Clone() *Segment {
 	return &c
 }
 
+// Range keeps consecutive original IDs without copying immutable column data.
+// The new segment is written under a new filename at the next commit.
+func (s *Segment) Range(lo, hi int) *Segment {
+	return &Segment{ImportID: s.ImportID, Base: s.Base + int64(lo), N: hi - lo,
+		SSID: s.SSID[lo:hi], MAC: s.MAC[lo:hi], Band: s.Band[lo:hi], BandSrc: s.BandSrc[lo:hi], Radio: s.Radio[lo:hi], Date: s.Date[lo:hi], Channel: s.Channel[lo:hi], First: s.First[lo:hi],
+		Lat: s.Lat[lo:hi], Lon: s.Lon[lo:hi], RSSI: s.RSSI[lo:hi], Acc: s.Acc[lo:hi], Freq: s.Freq[lo:hi], Line: s.Line[lo:hi], RecKind: s.RecKind[lo:hi], RecVal: s.RecVal[lo:hi]}
+}
+
 // ---------------------------------------------------------------------------
 // the string dictionary
 
@@ -362,9 +370,10 @@ type segEntry struct {
 	N        int    `json:"n"`
 }
 
-// Open opens (or creates) the store in dir. keep says which import ids are committed in the
-// metadata database; segments of other imports (an interrupted commit) are dropped.
-func Open(dir string, keep func(importID int64) bool) (*Store, error) {
+// Open checks committed import row counts before publishing or sweeping files.
+// Segments of uncommitted imports (an interrupted commit) are dropped.
+func Open(dir string, committed map[int64]int64) (*Store, error) {
+	keep := func(id int64) bool { _, ok := committed[id]; return committed == nil || ok }
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
@@ -377,6 +386,39 @@ func Open(dir string, keep func(importID int64) bool) (*Store, error) {
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
+	} else {
+		// A lost manifest must not make committed segment files look like garbage.
+		// Uncommitted first-import files may still be discarded using metadata IDs.
+		entries, e := os.ReadDir(dir)
+		if e != nil {
+			return nil, e
+		}
+		for _, entry := range entries {
+			if strings.HasPrefix(entry.Name(), "seg-") && strings.HasSuffix(entry.Name(), ".bin") {
+				f, e := os.Open(filepath.Join(dir, entry.Name()))
+				if e != nil {
+					return nil, e
+				}
+				header := make([]byte, 16)
+				_, e = io.ReadFull(f, header)
+				if e != nil || string(header[:8]) != segMagic {
+					f.Close()
+					return nil, errors.New("observation manifest missing; preserved segment files")
+				}
+				n := binary.LittleEndian.Uint32(header[8:])
+				if n > 4096 {
+					f.Close()
+					return nil, errors.New("invalid observation segment header")
+				}
+				b := make([]byte, n)
+				_, e = io.ReadFull(f, b)
+				f.Close()
+				var h segHeader
+				if e != nil || json.Unmarshal(b, &h) != nil || keep(h.ImportID) {
+					return nil, errors.New("observation manifest missing; preserved committed segment files")
+				}
+			}
+		}
 	}
 	if err := s.loadStrings(m.Strings); err != nil {
 		return nil, err
@@ -403,11 +445,20 @@ func Open(dir string, keep func(importID int64) bool) (*Store, error) {
 		if errs[i] != nil {
 			return nil, fmt.Errorf("observation segment %s: %w", m.Segments[i].File, errs[i])
 		}
-		if keep != nil && !keep(sg.ImportID) {
+		if !keep(sg.ImportID) {
 			dropped = true
 			continue
 		}
 		kept = append(kept, sg)
+	}
+	counts := map[int64]int64{}
+	for _, sg := range kept {
+		counts[sg.ImportID] += int64(sg.N)
+	}
+	for id, n := range committed {
+		if counts[id] != n {
+			return nil, fmt.Errorf("observation store incomplete: import %d expects %d rows, found %d; preserved segment files", id, n, counts[id])
+		}
 	}
 	st := &State{Segs: kept, Str: s.Dict.Snapshot()}
 	st.index()
@@ -423,6 +474,27 @@ func Open(dir string, keep func(importID int64) bool) (*Store, error) {
 
 // State is the current published view.
 func (s *Store) State() *State { return s.state.Load() }
+
+// ForkTo is for a quiescent staged workspace copy. Columns/indexes are immutable
+// and can be shared until candidate publication; future writes use dir only.
+// The source must stay quiescent until the fork is closed or replaces it.
+func (s *Store) ForkTo(dir string) *Store {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	fork := &Store{dir: dir, Dict: s.Dict, saved: s.saved, gen: s.gen}
+	fork.state.Store(s.State())
+	return fork
+}
+
+// Reindex publishes fresh derived indexes without changing observation files.
+func (s *Store) Reindex() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	old := s.State()
+	st := &State{Segs: old.Segs, Str: old.Str}
+	st.index()
+	s.state.Store(st)
+}
 
 func (s *Store) loadStrings(n int) error {
 	f, err := os.Open(filepath.Join(s.dir, "strings.bin"))
@@ -532,9 +604,10 @@ func (s *Store) sweep(segs []*Segment) {
 
 // Change is one commit: segments to add, import ids to drop, segments to replace.
 type Change struct {
-	Add     []*Segment
-	Drop    map[int64]bool // import ids whose segments go
-	Replace map[*Segment]*Segment
+	Segments []*Segment // non-nil replaces the full segment set (staged maintenance)
+	Add      []*Segment
+	Drop     map[int64]bool // import ids whose segments go
+	Replace  map[*Segment]*Segment
 }
 
 // Commit writes a change and publishes the new State. It is all or nothing on disk.
@@ -551,6 +624,9 @@ func (s *Store) Commit(ch Change) error {
 			sg = r
 		}
 		segs = append(segs, sg)
+	}
+	if ch.Segments != nil {
+		segs = ch.Segments
 	}
 	s.gen++
 	for _, sg := range segs {
