@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"sync"
@@ -33,13 +34,13 @@ type preparationRunner struct {
 	mapUntil     atomic.Int64
 	closed       atomic.Bool
 	// Optional deterministic calculation seam for lifecycle tests.
-	prepare func(context.Context, atlas.PreparationNamespace, atlas.PreparationTarget, int64) (atlas.PreparedTargetResult, error)
+	prepare func(context.Context, atlas.PreparationNamespace, atlas.PreparationTarget, int64) (atlas.PreparedTarget, error)
 }
 
 func newPreparation(s *Server) *preparationRunner {
 	ctx, cancel := context.WithCancel(context.Background())
 	p := &preparationRunner{a: s.Atlas, s: s, jobs: s.Jobs, surveyID: s.surveyID, id: newHex(), ctx: ctx, cancel: cancel, done: make(chan struct{}), wake: make(chan struct{}, 1), state: map[string]any{"status": "starting"}}
-	p.prepare = p.a.PrepareTarget
+	p.prepare = p.a.ComputePreparationTarget
 	s.bindFitEvents(p.jobs, p.surveyID)
 	go p.loop()
 	return p
@@ -184,58 +185,165 @@ func (p *preparationRunner) step() {
 		p.update(map[string]any{"status": "complete"})
 		return
 	}
-	targets, err := p.a.NextPreparationTargets(ctx, ns.ID, perWorker, settings.Workers)
-	if err != nil {
-		fail(err)
-		return
+	p.runPool(ctx, cancel, ns, settings, perWorker, prepare)
+}
+
+// Continuous bounded workers feed a single batch writer. A slow target cannot
+// hold up the next wave. Progress/events are published only after a commit.
+func (p *preparationRunner) runPool(ctx context.Context, cancel context.CancelFunc, ns atlas.PreparationNamespace, settings atlas.PreparationSettings, budget int64, prepare func(context.Context, atlas.PreparationNamespace, atlas.PreparationTarget, int64) (atlas.PreparedTarget, error)) {
+	type outcome struct {
+		value   atlas.PreparedTarget
+		err     error
+		seconds float64
 	}
-	if len(targets) == 0 {
-		p.update(map[string]any{"status": "limited", "reason": "Remaining networks exceed the background memory budget"})
-		return
-	}
+	jobs := make(chan atlas.PreparationTarget)
+	results := make(chan outcome, settings.Workers*2)
 	var wg sync.WaitGroup
-	for _, t := range targets {
+	for range settings.Workers {
 		wg.Add(1)
-		go func(t atlas.PreparationTarget) {
+		go func() {
 			defer wg.Done()
-			// Cancellation also observes foreground jobs started through legacy APIs.
-			watchDone := make(chan struct{})
-			go func() {
-				tick := time.NewTicker(20 * time.Millisecond)
-				defer tick.Stop()
-				for {
-					select {
-					case <-watchDone:
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case t, ok := <-jobs:
+					if !ok {
 						return
+					}
+					start := time.Now()
+					value, err := prepare(ctx, ns, t, budget)
+					select {
+					case results <- outcome{value, err, time.Since(start).Seconds()}:
 					case <-ctx.Done():
 						return
-					case <-tick.C:
-						if p.busy() {
-							cancel()
-							return
-						}
 					}
 				}
-			}()
-			result, err := prepare(ctx, ns, t, perWorker)
-			close(watchDone)
+			}
+		}()
+	}
+	defer func() { cancel(); close(jobs); wg.Wait() }()
+	flushTick := time.NewTicker(100 * time.Millisecond)
+	defer flushTick.Stop()
+	priority := time.NewTicker(20 * time.Millisecond)
+	defer priority.Stop()
+	claimed := map[string]bool{}
+	var queue []atlas.PreparationTarget
+	var batch []atlas.PreparedTarget
+	batchBytes := 0
+	var computeSeconds, commitSeconds float64
+	var committed, written, transactions int
+	fail := func(err error) {
+		if ctx.Err() == nil {
+			p.fail(err)
+		}
+		cancel()
+	}
+	flush := func() bool {
+		if len(batch) == 0 {
+			return true
+		}
+		start := time.Now()
+		accepted, err := p.a.CommitPreparationBatch(ctx, ns, batch)
+		commitSeconds += time.Since(start).Seconds()
+		if err != nil {
+			fail(err)
+			return false
+		}
+		transactions++
+		for _, item := range batch {
+			delete(claimed, item.Target.Key)
+		}
+		targets := make([]atlas.PreparationTarget, 0, len(accepted))
+		count := 0
+		for _, item := range accepted {
+			if item.BlockedBytes == 0 {
+				committed++
+				written += item.Result.Written
+				count += item.Result.Written
+				targets = append(targets, item.Target)
+			}
+		}
+		if len(targets) > 0 {
+			p.s.events.publish(JobEvent{Kind: "fits-committed", SurveyID: p.surveyID, JobID: p.id, Namespace: ns.ID, Solver: ns.Solver, FitMode: ns.FitMode, Grouping: ns.Grouping, Targets: targets, Written: count, CommittedAtMS: time.Now().UnixMilli()})
+		}
+		p.update(map[string]any{"compute_seconds": computeSeconds, "commit_seconds": commitSeconds, "commit_batches": transactions, "targets_committed": committed, "locations_written": written})
+		batch = nil
+		batchBytes = 0
+		return true
+	}
+	for ctx.Err() == nil {
+		if len(queue) == 0 {
+			targets, err := p.a.NextPreparationTargets(ctx, ns.ID, budget, 256)
 			if err != nil {
-				if !errors.Is(err, atlas.ErrStaleInput) && !errors.Is(err, atlas.ErrPreparationBudget) && !errors.Is(err, context.Canceled) && !errors.Is(err, atlas.ErrCancelled) {
+				fail(err)
+				return
+			}
+			for _, t := range targets {
+				if !claimed[t.Key] {
+					queue = append(queue, t)
+				}
+			}
+			if len(queue) == 0 && len(claimed) == 0 {
+				progress, err := p.a.PreparationProgress(ctx, ns.ID, budget)
+				if err != nil {
 					fail(err)
-					cancel()
+					return
+				}
+				status := "complete"
+				if progress.Pending > 0 {
+					status = "limited"
+				}
+				p.update(map[string]any{"status": status, "progress": progress})
+				return
+			}
+		}
+		var send chan atlas.PreparationTarget
+		var next atlas.PreparationTarget
+		if len(queue) > 0 && !p.busy() {
+			send = jobs
+			next = queue[0]
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case send <- next:
+			claimed[next.Key] = true
+			queue = queue[1:]
+		case result := <-results:
+			if result.err != nil {
+				if !errors.Is(result.err, context.Canceled) && !errors.Is(result.err, atlas.ErrCancelled) && !errors.Is(result.err, atlas.ErrStaleInput) {
+					fail(result.err)
 				}
 				return
 			}
-			p.s.events.publish(JobEvent{Kind: "fits-committed", SurveyID: p.surveyID, JobID: p.id, Namespace: ns.ID, Solver: ns.Solver, FitMode: ns.FitMode, Grouping: ns.Grouping, Targets: []atlas.PreparationTarget{t}, Written: result.Written, CommittedAtMS: time.Now().UnixMilli()})
-		}(t)
-	}
-	wg.Wait()
-	if ctx.Err() == nil && !p.busy() {
-		p.signal()
+			computeSeconds += result.seconds
+			batch = append(batch, result.value)
+			for _, write := range result.value.Writes {
+				batchBytes += len(write.Key) + len(write.Text)
+			}
+			if (len(batch) >= 64 || batchBytes >= 2<<20) && !flush() {
+				return
+			}
+		case <-flushTick.C:
+			if !flush() {
+				return
+			}
+		case <-priority.C:
+			// Explicit foreground writes, paginated maps, switch and shutdown cancel
+			// and join. Ordinary clustered map reads only pause dispatch briefly, so
+			// frequent live refreshes do not repeatedly throw away calculations.
+			if p.closed.Load() || p.foreground.Load() > 0 || p.jobs.Running() || p.jobs.Retired() || p.s.admin.busy.Load() {
+				cancel()
+				return
+			}
+		}
 	}
 }
+
 func (p *preparationRunner) fail(err error) {
 	if !errors.Is(err, context.Canceled) {
+		log.Printf("preparation: %v", err)
 		p.update(map[string]any{"status": "failed", "error": err.Error()})
 	}
 }

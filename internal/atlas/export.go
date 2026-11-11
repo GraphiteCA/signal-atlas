@@ -49,7 +49,7 @@ func (a *Atlas) ExportSQLiteContext(ctx context.Context, dest string, say func(s
 	}
 	st := a.Obs.State()
 	var done int64
-	err = db.Tx(out, func() error {
+	err = db.WriteTx(out, func() error {
 		if err := db.Script(out, drop); err != nil {
 			return err
 		}

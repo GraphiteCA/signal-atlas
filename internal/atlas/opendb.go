@@ -194,7 +194,7 @@ func (a *Atlas) OpenDatabase(path string, progress func(done int64) error, say f
 	for _, s := range a.Obs.State().Segs {
 		drop[s.ImportID] = true
 	}
-	err = db.Tx(c, func() error {
+	err = db.WriteTx(c, func() error {
 		for _, t := range tables {
 			if _, err := db.Exec(c, "DELETE FROM "+t); err != nil {
 				return err
@@ -383,7 +383,7 @@ func (a *Atlas) ImportWiGLE(path string, skipInvalid bool, progress func(valid, 
 			return nil, err
 		}
 	}
-	err = db.Tx(c, func() error {
+	err = db.WriteTx(c, func() error {
 		if _, err := db.Exec(c, "INSERT INTO imports(id,filename,sha256,imported_utc,valid_rows,invalid_rows,non_wifi_rows,zero_excluded_rows,active_rows) VALUES(?,?,?,?,?,?,?,?,?)",
 			importID, filepath.Base(path), sum, py.UTCNowISO(), valid, invalid, nonWifi, zero, valid); err != nil {
 			return err

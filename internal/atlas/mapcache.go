@@ -711,6 +711,8 @@ func (a *Atlas) MapDisplay(c *sqlite.Conn) (MapDisplay, error) {
 	return d, d.Validate()
 }
 func (a *Atlas) SaveMapDisplay(c *sqlite.Conn, d MapDisplay) error {
+	a.WriteMu.Lock()
+	defer a.WriteMu.Unlock()
 	if err := d.Validate(); err != nil {
 		return err
 	}

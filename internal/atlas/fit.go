@@ -146,7 +146,7 @@ func (a *Atlas) FitRadio(group Group, p py.Params, cancelled func() bool) (map[s
 			k := gk{s.Radio[i], s.Lat[i], s.Lon[i]}
 			x := m[k]
 			if x == nil {
-				x = &agg{minID: s.Base + int64(i), mac: s.MAC[i]}
+				x = &agg{minID: s.ID(i), mac: s.MAC[i]}
 				m[k] = x
 				order = append(order, k)
 			}
@@ -167,7 +167,7 @@ func (a *Atlas) FitRadio(group Group, p py.Params, cancelled func() bool) (map[s
 	case count <= 256:
 		for _, g := range match {
 			s, i := st.Loc(g)
-			sample = append(sample, smp{id: s.Base + int64(i), radio: s.Radio[i], mac: s.MAC[i], lat: s.Lat[i], lon: s.Lon[i], rssi: s.RSSI[i]})
+			sample = append(sample, smp{id: s.ID(i), radio: s.Radio[i], mac: s.MAC[i], lat: s.Lat[i], lon: s.Lon[i], rssi: s.RSSI[i]})
 		}
 	default:
 		for _, k := range keys {
@@ -182,7 +182,7 @@ func (a *Atlas) FitRadio(group Group, p py.Params, cancelled func() bool) (map[s
 			for _, g := range match {
 				s, i := st.Loc(g)
 				if s.Radio[i] == kid {
-					mine = append(mine, smp{id: s.Base + int64(i), radio: s.Radio[i], mac: s.MAC[i], lat: s.Lat[i], lon: s.Lon[i], rssi: s.RSSI[i]})
+					mine = append(mine, smp{id: s.ID(i), radio: s.Radio[i], mac: s.MAC[i], lat: s.Lat[i], lon: s.Lon[i], rssi: s.RSSI[i]})
 				}
 			}
 			strongest := append([]smp(nil), mine...)

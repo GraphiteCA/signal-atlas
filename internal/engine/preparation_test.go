@@ -106,7 +106,7 @@ func TestAutomaticPreparationCompletesAndReopensWithoutTargetWalk(t *testing.T) 
 	var calculated atomic.Int64
 	reopened.preparation.mu.Lock()
 	real := reopened.preparation.prepare
-	reopened.preparation.prepare = func(ctx context.Context, n atlas.PreparationNamespace, target atlas.PreparationTarget, b int64) (atlas.PreparedTargetResult, error) {
+	reopened.preparation.prepare = func(ctx context.Context, n atlas.PreparationNamespace, target atlas.PreparationTarget, b int64) (atlas.PreparedTarget, error) {
 		calculated.Add(1)
 		return real(ctx, n, target, b)
 	}
@@ -146,10 +146,10 @@ func TestPreparationYieldsToForegroundAndJoinsOnSwitch(t *testing.T) {
 	started := make(chan struct{})
 	var once sync.Once
 	s.preparation.mu.Lock()
-	s.preparation.prepare = func(ctx context.Context, _ atlas.PreparationNamespace, _ atlas.PreparationTarget, _ int64) (atlas.PreparedTargetResult, error) {
+	s.preparation.prepare = func(ctx context.Context, _ atlas.PreparationNamespace, _ atlas.PreparationTarget, _ int64) (atlas.PreparedTarget, error) {
 		once.Do(func() { close(started) })
 		<-ctx.Done()
-		return atlas.PreparedTargetResult{}, fmt.Errorf("sqlite: step: interrupted")
+		return atlas.PreparedTarget{}, fmt.Errorf("sqlite: step: interrupted")
 	}
 	s.preparation.mu.Unlock()
 	select {

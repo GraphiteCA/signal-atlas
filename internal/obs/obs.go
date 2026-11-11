@@ -59,6 +59,30 @@ type Segment struct {
 	RecKind                                               []uint8
 	RecVal                                                []int64
 	file                                                  string
+	// OriginalIDs is only for bounded read-only fitting views; never persisted.
+	OriginalIDs []int64
+}
+
+// ID preserves source identity in bounded views whose rows are not contiguous.
+func (s *Segment) ID(i int) int64 {
+	if s.OriginalIDs != nil {
+		return s.OriginalIDs[i]
+	}
+	return s.Base + int64(i)
+}
+
+// NewDictionary builds a dictionary for a bounded external read view.
+func NewDictionary() *Dict { return newDict() }
+
+// NewReadView creates an immutable fitting snapshot without opening or copying
+// a persistent observation store. Rows must be ordered by original ID.
+// Commits are forbidden on this view.
+func NewReadView(segments []*Segment, dict *Dict) *Store {
+	s := &Store{Dict: dict, readOnly: true}
+	st := &State{Segs: segments, Str: dict.Snapshot()}
+	st.index()
+	s.state.Store(st)
+	return s
 }
 
 // NewSegment makes an empty segment to append to.
@@ -115,9 +139,13 @@ func (s *Segment) Clone() *Segment {
 // Range keeps consecutive original IDs without copying immutable column data.
 // The new segment is written under a new filename at the next commit.
 func (s *Segment) Range(lo, hi int) *Segment {
-	return &Segment{ImportID: s.ImportID, Base: s.Base + int64(lo), N: hi - lo,
+	result := &Segment{ImportID: s.ImportID, Base: s.Base + int64(lo), N: hi - lo,
 		SSID: s.SSID[lo:hi], MAC: s.MAC[lo:hi], Band: s.Band[lo:hi], BandSrc: s.BandSrc[lo:hi], Radio: s.Radio[lo:hi], Date: s.Date[lo:hi], Channel: s.Channel[lo:hi], First: s.First[lo:hi],
 		Lat: s.Lat[lo:hi], Lon: s.Lon[lo:hi], RSSI: s.RSSI[lo:hi], Acc: s.Acc[lo:hi], Freq: s.Freq[lo:hi], Line: s.Line[lo:hi], RecKind: s.RecKind[lo:hi], RecVal: s.RecVal[lo:hi]}
+	if s.OriginalIDs != nil {
+		result.OriginalIDs = s.OriginalIDs[lo:hi]
+	}
+	return result
 }
 
 // ---------------------------------------------------------------------------
@@ -229,7 +257,7 @@ func (st *State) Loc(g uint32) (*Segment, int) {
 }
 
 // ID is the observation id of global row g.
-func (st *State) ID(g uint32) int64 { s, i := st.Loc(g); return s.Base + int64(i) }
+func (st *State) ID(g uint32) int64 { s, i := st.Loc(g); return s.ID(i) }
 
 // S is the string with id.
 func (st *State) S(id uint32) string { return st.Str[id] }
@@ -251,8 +279,8 @@ func (st *State) shape() {
 	for i, s := range st.Segs {
 		st.start[i] = n
 		n += s.N
-		if s.N > 0 && s.Base+int64(s.N)-1 > st.MaxID {
-			st.MaxID = s.Base + int64(s.N) - 1
+		if s.N > 0 && s.ID(s.N-1) > st.MaxID {
+			st.MaxID = s.ID(s.N - 1)
 		}
 	}
 	st.N = n
@@ -369,12 +397,13 @@ func postings[K comparable](st *State, key func(*Segment, int) K) map[K][]uint32
 
 // Store is a folder of segments plus the published State.
 type Store struct {
-	dir   string
-	Dict  *Dict
-	state atomic.Pointer[State]
-	mu    sync.Mutex // one writer at a time
-	saved int        // strings persisted
-	gen   int64
+	dir      string
+	Dict     *Dict
+	state    atomic.Pointer[State]
+	mu       sync.Mutex // one writer at a time
+	saved    int        // strings persisted
+	gen      int64
+	readOnly bool
 }
 
 type manifest struct {
@@ -502,7 +531,7 @@ func (s *Store) State() *State { return s.state.Load() }
 func (s *Store) ForkTo(dir string) *Store {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	fork := &Store{dir: dir, Dict: s.Dict, saved: s.saved, gen: s.gen}
+	fork := &Store{dir: dir, Dict: s.Dict, saved: s.saved, gen: s.gen, readOnly: s.readOnly}
 	fork.state.Store(s.State())
 	return fork
 }
@@ -633,6 +662,9 @@ type Change struct {
 
 // Commit writes a change and publishes the new State. It is all or nothing on disk.
 func (s *Store) Commit(ch Change) error {
+	if s.readOnly {
+		return errors.New("read-only fitting view cannot be committed")
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	old := s.State()
@@ -735,6 +767,9 @@ func (sg *Segment) columns() [][]byte {
 }
 
 func writeSegment(path string, sg *Segment) error {
+	if sg.OriginalIDs != nil {
+		return errors.New("source-ID views cannot be persisted as segments")
+	}
 	tmp := path + ".tmp"
 	f, err := os.Create(tmp)
 	if err != nil {

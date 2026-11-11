@@ -596,7 +596,7 @@ func (a *Atlas) AssignBand(c *sqlite.Conn, ssid, mac, band any) (map[string]any,
 		c2.Band[i], c2.BandSrc[i], c2.Radio[i] = bandID, srcID, radioID
 		n++
 	}
-	err := db.Tx(c, func() error {
+	err := db.WriteTx(c, func() error {
 		var err error
 		if b != "" {
 			_, err = db.Exec(c, "INSERT OR REPLACE INTO band_assignments VALUES(?,?,?,?)", s, m, b, py.UTCNowISO())

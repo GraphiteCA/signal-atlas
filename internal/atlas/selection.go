@@ -357,6 +357,8 @@ func Comparisons(c *sqlite.Conn) (map[string]any, error) {
 
 // SaveComparison is save_comparison(database, params, name, fitted_estimates).
 func (a *Atlas) SaveComparison(c *sqlite.Conn, p py.Params, name any) (string, error) {
+	a.WriteMu.Lock()
+	defer a.WriteMu.Unlock()
 	n := ""
 	if name != nil {
 		n = py.Strip(py.Str(name))
@@ -393,7 +395,7 @@ func (a *Atlas) SaveComparison(c *sqlite.Conn, p py.Params, name any) (string, e
 	if err != nil {
 		return "", err
 	}
-	err = db.Tx(c, func() error {
+	err = db.WriteTx(c, func() error {
 		v, err := db.Scalar(c, "SELECT count(*) FROM comparisons")
 		if err != nil {
 			return err

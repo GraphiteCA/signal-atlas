@@ -102,9 +102,7 @@ const schemaSQL = `
 `
 
 func prepareConn(c *sqlite.Conn) error {
-	if err := sqlitex.ExecuteTransient(c, "PRAGMA busy_timeout=30000", nil); err != nil {
-		return err
-	}
+	c.SetBlockOnBusy()
 	return sqlitex.ExecuteTransient(c, "PRAGMA foreign_keys=ON", nil)
 }
 
@@ -540,7 +538,7 @@ func (a *Atlas) ImportCSV(path string, skipInvalid bool, progress Progress, file
 			return nil, err
 		}
 	}
-	err = db.Tx(c, func() error {
+	err = db.WriteTx(c, func() error {
 		if _, err := db.Exec(c, "INSERT INTO imports(id,filename,sha256,imported_utc,valid_rows,invalid_rows,non_wifi_rows,zero_excluded_rows,active_rows) VALUES(?,?,?,?,?,?,?,?,?)",
 			importID, filename, h.sum, py.UTCNowISO(), valid, invalid, nonWifi, zero, valid); err != nil {
 			return err

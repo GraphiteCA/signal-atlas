@@ -57,7 +57,7 @@ func main() {
 		return w.Body.Bytes(), ms
 	}
 	base := "bbox=-123.401,48.399,-123.390,48.410&zoom=15&min_rssi=-150"
-	result := map[string]any{"schema": 1, "fixture": path, "requests": *count, "threads": 8, "notes": "Fresh process; filesystem cache uncontrolled. Rendering locations are synthetic Phase 0 fixtures. Cold requests excluded from warm traces."}
+	result := map[string]any{"schema": 1, "fixture": path, "requests": *count, "threads": 8, "notes": "Fresh process; filesystem cache uncontrolled. Fixture provenance is recorded by the orchestrating benchmark. Cold requests excluded from warm traces."}
 	for _, tc := range []struct{ name, path string }{{"clusters", "/api/app/map/features?" + base}, {"individuals", "/api/app/map/features?" + base + "&clustering=0"}, {"columns_compatibility", "/api/app/map/fits?" + base}, {"summary", "/api/app/map/summary"}, {"points_500k", "/api/app/map/points?" + base + "&max=500000"}} {
 		b, cold := request(tc.path)
 		var values []float64

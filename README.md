@@ -95,7 +95,10 @@ shared APs or individual radios, and background resource limits. The reference s
 default; the app's fast-solver switch also applies to preparation. Completed and unavailable results
 survive pauses, snapshots and restarts. Imports, cleanup and band edits queue only affected networks;
 imports and selected calculations take priority over background work. Turning automatic preparation
-off keeps calculated locations and restores manual fitting. See [Phase 3 preparation](docs/phase3-preparation.md).
+off keeps calculated locations and restores manual fitting. Preparation now uses a continuous
+worker pool and batched saves; Admin supports up to 16 workers while preserving
+existing limits. See the [preparation benchmarks](docs/preparation-performance.md)
+and [Phase 3 implementation](docs/phase3-preparation.md).
 
 Administration also opens a **read-only SQL browser** for the active survey.
 It queries the real observation columns and a matching metadata snapshot, with

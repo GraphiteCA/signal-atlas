@@ -336,7 +336,7 @@ func (a *Atlas) PrepareCleanup(ctx context.Context, dest string, progress func(i
 	if err != nil {
 		return fail(err)
 	}
-	err = db.Tx(c, func() error {
+	err = db.WriteTx(c, func() error {
 		for id, n := range counts {
 			if _, err := db.Exec(c, "UPDATE imports SET active_rows=active_rows-?,zero_removed_rows=zero_removed_rows+? WHERE id=?", n, n, id); err != nil {
 				return err

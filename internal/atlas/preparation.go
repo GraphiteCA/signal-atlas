@@ -37,11 +37,11 @@ type PreparationSettings struct {
 }
 
 func DefaultPreparationSettings() PreparationSettings {
-	return PreparationSettings{Version: 1, Enabled: true, FitMode: "sample", Grouping: "shared", Workers: max(1, min(2, runtime.NumCPU()/4)), MemoryMB: 256}
+	return PreparationSettings{Version: 1, Enabled: true, FitMode: "sample", Grouping: "shared", Workers: max(1, min(4, runtime.GOMAXPROCS(0)/2)), MemoryMB: 256}
 }
 func (p PreparationSettings) Validate() error {
-	if p.Version != 1 || (p.FitMode != "sample" && p.FitMode != "all") || (p.Grouping != "shared" && p.Grouping != "individual" && p.Grouping != "both") || p.Workers < 1 || p.Workers > 4 || p.MemoryMB < 64 || p.MemoryMB > 2048 {
-		return py.Errorf("Choose a supported preparation mode, 1–4 calculations and 64–2048 MB working memory")
+	if p.Version != 1 || (p.FitMode != "sample" && p.FitMode != "all") || (p.Grouping != "shared" && p.Grouping != "individual" && p.Grouping != "both") || p.Workers < 1 || p.Workers > 16 || p.MemoryMB < 64 || p.MemoryMB > 2048 {
+		return py.Errorf("Choose a supported preparation mode, 1–16 calculations and 64–2048 MB working memory")
 	}
 	return nil
 }
@@ -106,7 +106,7 @@ func (a *Atlas) initializePreparationCatalog(c *sqlite.Conn) error {
 	if err != nil || v != nil {
 		return err
 	}
-	return db.Tx(c, func() error {
+	return db.WriteTx(c, func() error {
 		insert, err := c.Prepare("INSERT OR IGNORE INTO preparation_targets VALUES(?,?,?,1)")
 		if err != nil {
 			return err
@@ -194,7 +194,7 @@ func (a *Atlas) EnsurePreparationNamespace(ctx context.Context, ns PreparationNa
 	if err != nil || v != nil {
 		return err
 	}
-	return db.Tx(c, func() error {
+	return db.WriteTx(c, func() error {
 		if _, err := db.Exec(c, "INSERT INTO preparation_namespaces(namespace,scope_key,grouping,total) SELECT ?,?,?,count(*) FROM preparation_targets", ns.ID, ns.ScopeKey, ns.Grouping); err != nil {
 			return err
 		}
@@ -257,12 +257,32 @@ type PreparedTargetResult struct {
 	Written     int `json:"written"`
 }
 
-// Fit one target without holding the writer lock. Results and its durable
-// checkpoint become visible in one transaction only if its input version matches.
-func (a *Atlas) PrepareTarget(ctx context.Context, ns PreparationNamespace, t PreparationTarget, budget int64) (PreparedTargetResult, error) {
-	var result PreparedTargetResult
-	if ctx.Err() != nil {
-		return result, ctx.Err()
+// PreparedTarget contains bounded calculation output, not a database lease.
+// A result can only be published after its input version is rechecked by the
+// single batch writer. Blocked targets retain pending work rather than a checkpoint.
+type PreparedEstimate struct{ Key, Text string }
+type PreparedTarget struct {
+	Target       PreparationTarget
+	Result       PreparedTargetResult
+	Writes       []PreparedEstimate
+	BlockedBytes int64
+}
+
+func (a *Atlas) ComputePreparationTarget(ctx context.Context, ns PreparationNamespace, t PreparationTarget, budget int64) (PreparedTarget, error) {
+	return a.computePreparationTarget(ctx, ns, t, budget, true)
+}
+
+// ComputeUncachedPreparationTarget shares the exact grouping, sampling and Go
+// solver with the native store for bounded external observation snapshots.
+// Only use it for fresh work; normal preparation preserves existing fit caches.
+func (a *Atlas) ComputeUncachedPreparationTarget(ctx context.Context, ns PreparationNamespace, t PreparationTarget, budget int64) (PreparedTarget, error) {
+	return a.computePreparationTarget(ctx, ns, t, budget, false)
+}
+func (a *Atlas) computePreparationTarget(ctx context.Context, ns PreparationNamespace, t PreparationTarget, budget int64, useCache bool) (PreparedTarget, error) {
+	prepared := PreparedTarget{Target: t}
+	result := &prepared.Result
+	if err := ctx.Err(); err != nil {
+		return prepared, err
 	}
 	st := a.Obs.State()
 	sid, hasSSID := a.Obs.Dict.Lookup(t.SSID)
@@ -284,66 +304,46 @@ func (a *Atlas) PrepareTarget(ctx context.Context, ns PreparationNamespace, t Pr
 	// Includes grouping/sample scratch, not the already loaded column store.
 	needed := rows*256 + (1 << 20)
 	if needed > budget {
-		a.WriteMu.Lock()
-		defer a.WriteMu.Unlock()
-		c, put, err := a.Conn(ctx)
-		if err != nil {
-			return result, err
-		}
-		defer put()
-		_, err = db.Exec(c, "UPDATE preparation_pending SET blocked_bytes=? WHERE namespace=? AND target_key=? AND version=?", needed, ns.ID, t.Key, t.Version)
-		if err != nil {
-			return result, err
-		}
-		return result, ErrPreparationBudget
+		prepared.BlockedBytes = needed
+		return prepared, nil
 	}
 	tm, err := a.overviewTargetsContext(ctx, ns.Params, t.SSID, t.MAC, ns.Grouping != "shared", ns.Grouping != "individual")
 	if err != nil {
-		return result, err
+		return prepared, err
 	}
-	c, put, err := a.Conn(ctx)
-	if err != nil {
-		return result, err
+	var cached map[string]string
+	if useCache {
+		cached, err = a.preparationCache(ctx, ns, tm.keys)
+		if err != nil {
+			return prepared, err
+		}
 	}
-	defer put()
-	type saved struct{ key, text string }
-	var writes []saved
+	var writes []PreparedEstimate
 	if len(tm.keys) == 0 {
 		result.Unavailable = 1
 	} // no group meets eligibility for these inputs
 	for _, k := range tm.keys {
 		if ctx.Err() != nil {
-			return result, ctx.Err()
+			return prepared, ctx.Err()
 		}
 		g := tm.m[k]
-		q := `SELECT result FROM estimates WHERE radio_key=? AND scope_key=?`
-		v, err := db.Scalar(c, q, k, ns.ScopeKey)
-		if err != nil {
-			return result, err
-		}
-		if v == nil && ns.FitMode == "sample" {
-			_, exact, _ := EstimateScope(ns.Params.With("fit_mode", []string{"all"}))
-			v, err = db.Scalar(c, q+` AND json_extract(result,'$.status')='fitted'`, k, exact)
-			if err != nil {
-				return result, err
-			}
-		}
+		v := cached[k]
 		var fit map[string]any
-		if v != nil {
-			if err := json.Unmarshal([]byte(db.Str(v)), &fit); err != nil {
-				return result, err
+		if v != "" {
+			if err := json.Unmarshal([]byte(v), &fit); err != nil {
+				return prepared, err
 			}
 			result.Reused++
 		} else {
 			fit, err = a.FitRadio(g, ns.Params, func() bool { return ctx.Err() != nil })
 			if err != nil {
-				return result, err
+				return prepared, err
 			}
 			text, err := py.Dumps(fit, py.DumpOpts{})
 			if err != nil {
-				return result, err
+				return prepared, err
 			}
-			writes = append(writes, saved{k, text})
+			writes = append(writes, PreparedEstimate{k, text})
 			result.Written++
 		}
 		if fit["status"] == "fitted" {
@@ -352,34 +352,130 @@ func (a *Atlas) PrepareTarget(ctx context.Context, ns PreparationNamespace, t Pr
 			result.Unavailable++
 		}
 	}
+
+	prepared.Writes = writes
+	return prepared, nil
+}
+
+// Release the metadata lease before the CPU solver. Worker counts can exceed
+// idle pooled connections without starving map/status reads or the batch writer.
+func (a *Atlas) preparationCache(ctx context.Context, ns PreparationNamespace, keys []string) (map[string]string, error) {
+	c, put, err := a.Conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer put()
+	cache := make(map[string]string, len(keys))
+	for _, key := range keys {
+		q := "SELECT result FROM estimates WHERE radio_key=? AND scope_key=?"
+		v, err := db.Scalar(c, q, key, ns.ScopeKey)
+		if err != nil {
+			return nil, err
+		}
+		if v == nil && ns.FitMode == "sample" {
+			_, exact, _ := EstimateScope(ns.Params.With("fit_mode", []string{"all"}))
+			v, err = db.Scalar(c, q+" AND json_extract(result,'$.status')='fitted'", key, exact)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if v != nil {
+			cache[key] = db.Str(v)
+		}
+	}
+	return cache, nil
+}
+
+// CommitPreparationBatch is the single preparation writer. Every accepted
+// target's locations and checkpoint share one immediate transaction. Stale
+// targets are skipped individually, leaving their new versions pending.
+func (a *Atlas) CommitPreparationBatch(ctx context.Context, ns PreparationNamespace, batch []PreparedTarget) ([]PreparedTarget, error) {
 	if a.beforePreparationCommit != nil {
 		a.beforePreparationCommit()
 	}
 	a.WriteMu.Lock()
 	defer a.WriteMu.Unlock()
-	if ctx.Err() != nil {
-		return result, ctx.Err()
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	err = db.Tx(c, func() error {
-		v, err := targetVersion(c, t.Key)
-		if err != nil {
-			return err
-		}
-		if v != t.Version {
-			return ErrStaleInput
-		}
-		for _, w := range writes {
-			if _, err := db.Exec(c, "INSERT OR REPLACE INTO estimates VALUES(?,?,?)", w.key, ns.ScopeKey, w.text); err != nil {
+	c, put, err := a.Conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer put()
+	return CommitPreparationResults(ctx, c, ns, batch)
+}
+
+// CommitPreparationResults is shared by the production single writer and the
+// benchmark observation adapters. The caller owns a dedicated connection and
+// serializes writes; the immediate transaction always validates input versions.
+func CommitPreparationResults(ctx context.Context, c *sqlite.Conn, ns PreparationNamespace, batch []PreparedTarget) ([]PreparedTarget, error) {
+	accepted := make([]PreparedTarget, 0, len(batch))
+	err := db.WriteTx(c, func() error {
+		for _, prepared := range batch {
+			if err := ctx.Err(); err != nil {
 				return err
 			}
+			t := prepared.Target
+			version, err := targetVersion(c, t.Key)
+			if err != nil {
+				return err
+			}
+			if version != t.Version {
+				continue
+			}
+			pending, err := db.Scalar(c, "SELECT 1 FROM preparation_pending WHERE namespace=? AND target_key=? AND version=?", ns.ID, t.Key, t.Version)
+			if err != nil {
+				return err
+			}
+			if pending == nil {
+				continue
+			}
+			if prepared.BlockedBytes > 0 {
+				if _, err = db.Exec(c, "UPDATE preparation_pending SET blocked_bytes=? WHERE namespace=? AND target_key=? AND version=?", prepared.BlockedBytes, ns.ID, t.Key, t.Version); err != nil {
+					return err
+				}
+			} else {
+				for _, w := range prepared.Writes {
+					if _, err = db.Exec(c, "INSERT OR REPLACE INTO estimates VALUES(?,?,?)", w.Key, ns.ScopeKey, w.Text); err != nil {
+						return err
+					}
+				}
+				if _, err = db.Exec(c, "INSERT OR REPLACE INTO preparation_checkpoints VALUES(?,?,?,?,?,?)", ns.ID, t.Key, t.Version, prepared.Result.Fitted, prepared.Result.Unavailable, py.UTCNowISO()); err != nil {
+					return err
+				}
+				if _, err = db.Exec(c, "DELETE FROM preparation_pending WHERE namespace=? AND target_key=? AND version=?", ns.ID, t.Key, t.Version); err != nil {
+					return err
+				}
+			}
+			accepted = append(accepted, prepared)
 		}
-		if _, err := db.Exec(c, "INSERT OR REPLACE INTO preparation_checkpoints VALUES(?,?,?,?,?,?)", ns.ID, t.Key, t.Version, result.Fitted, result.Unavailable, py.UTCNowISO()); err != nil {
-			return err
-		}
-		_, err = db.Exec(c, "DELETE FROM preparation_pending WHERE namespace=? AND target_key=? AND version=?", ns.ID, t.Key, t.Version)
-		return err
+		return nil
 	})
-	return result, err
+	if err != nil {
+		return nil, fmt.Errorf("preparation commit (%s): %w", sqlite.ErrCode(err), err)
+	}
+	return accepted, nil
+}
+
+// PrepareTarget preserves the individual API for manual callers/tests while the
+// automatic runner uses ComputePreparationTarget and CommitPreparationBatch.
+func (a *Atlas) PrepareTarget(ctx context.Context, ns PreparationNamespace, t PreparationTarget, budget int64) (PreparedTargetResult, error) {
+	prepared, err := a.ComputePreparationTarget(ctx, ns, t, budget)
+	if err != nil {
+		return prepared.Result, err
+	}
+	accepted, err := a.CommitPreparationBatch(ctx, ns, []PreparedTarget{prepared})
+	if err != nil {
+		return prepared.Result, err
+	}
+	if len(accepted) == 0 {
+		return prepared.Result, ErrStaleInput
+	}
+	if prepared.BlockedBytes > 0 {
+		return prepared.Result, ErrPreparationBudget
+	}
+	return prepared.Result, nil
 }
 
 func (n PreparationNamespace) String() string {

@@ -528,7 +528,10 @@ func (s *Server) atlasPost(w http.ResponseWriter, r *http.Request, p string, par
 			if v, ok := body["id"]; ok && v != nil {
 				id = fmt.Sprint(v)
 			}
-			if err := atlas.DeleteComparison(c, id); err != nil {
+			a.WriteMu.Lock()
+			err := atlas.DeleteComparison(c, id)
+			a.WriteMu.Unlock()
+			if err != nil {
 				return err
 			}
 		} else if _, err := a.SaveComparison(c, params, body["name"]); err != nil {

@@ -38,6 +38,22 @@ recoverable workspace generations, GPU caches or full cross-reader parity.
 The storage decision documents those limits. No identity remapping, deduplication
 change or conversion is applied to an existing survey.
 
+`preparation/` adds a complete-sweep observation adapter. It imports the parent
+module's real grouping, sampling, fitting and batch checkpoint writer through a
+local module replacement. Build with:
+
+```powershell
+go build -trimpath -o ../../build/benchmarks/duckprep.exe ./preparation
+```
+
+The preparation comparison first converts canonical typed native rows, including
+their original IDs, through the DuckDB appender. It then reads 256 targets at a
+time and fits bounded read-only views with the production Go solver. It uses an
+independent SQLite metadata copy for the same durable checkpoint semantics.
+This measures observation storage and batched reads; it does not replace the
+production metadata engine. See [preparation performance](../../docs/preparation-performance.md)
+and `benchmarks/preparation_perf.py` for full-sweep commands and output checks.
+
 Primary documentation:
 
 - [Go connection and configuration](https://duckdb.org/docs/current/clients/go/connecting)

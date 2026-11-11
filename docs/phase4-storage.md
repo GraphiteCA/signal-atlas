@@ -32,6 +32,11 @@ record IDs/line numbers, timestamps, frequency/band source and nullable accuracy
 Capture types or node information belonging to the separate Drive archive are
 not silently reinterpreted as explorer observation fields.
 
+The subsequent [preparation performance evaluation](preparation-performance.md)
+adds complete 10M-row native/DuckDB fitting sweeps with batched reads and exact
+saved-result parity, plus a matched real-survey reference-solver comparison.
+It revisits this storage decision using preparation throughput directly.
+
 ## Memory changes
 
 - Each segment now reads directly into its final aligned backing allocation.
