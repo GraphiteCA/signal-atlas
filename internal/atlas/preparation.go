@@ -15,15 +15,15 @@ import (
 )
 
 // Target versions prove input validity independently of the map's global revision.
-const preparationSchema = `
+var preparationSchema = metadataGuardSchema + `
 CREATE TABLE IF NOT EXISTS preparation_meta(name TEXT PRIMARY KEY,value INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS preparation_targets(target_key TEXT PRIMARY KEY,ssid TEXT NOT NULL,mac TEXT NOT NULL,version INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS preparation_targets(target_key TEXT PRIMARY KEY,ssid TEXT NOT NULL,mac TEXT NOT NULL,version INTEGER NOT NULL) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS preparation_namespaces(namespace TEXT PRIMARY KEY,scope_key TEXT NOT NULL,grouping TEXT NOT NULL,total INTEGER NOT NULL,pending INTEGER NOT NULL DEFAULT 0);
-CREATE TABLE IF NOT EXISTS preparation_pending(namespace TEXT NOT NULL,target_key TEXT NOT NULL,version INTEGER NOT NULL,blocked_bytes INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(namespace,target_key));
-CREATE INDEX IF NOT EXISTS preparation_ready ON preparation_pending(namespace,blocked_bytes,target_key);
-CREATE TRIGGER IF NOT EXISTS preparation_enqueue AFTER INSERT ON preparation_pending BEGIN UPDATE preparation_namespaces SET pending=pending+1 WHERE namespace=new.namespace; END;
-CREATE TRIGGER IF NOT EXISTS preparation_dequeue AFTER DELETE ON preparation_pending BEGIN UPDATE preparation_namespaces SET pending=pending-1 WHERE namespace=old.namespace; END;
-CREATE TABLE IF NOT EXISTS preparation_checkpoints(namespace TEXT NOT NULL,target_key TEXT NOT NULL,version INTEGER NOT NULL,fitted INTEGER NOT NULL,unavailable INTEGER NOT NULL,completed_utc TEXT NOT NULL,PRIMARY KEY(namespace,target_key));
+CREATE TABLE IF NOT EXISTS preparation_pending(namespace TEXT NOT NULL,target_key TEXT NOT NULL,version INTEGER NOT NULL,blocked_bytes INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(namespace,target_key)) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS preparation_blocked ON preparation_pending(namespace,blocked_bytes,target_key) WHERE blocked_bytes>0;
+CREATE TRIGGER IF NOT EXISTS preparation_enqueue AFTER INSERT ON preparation_pending WHEN ` + metadataRowWrites + ` BEGIN UPDATE preparation_namespaces SET pending=pending+1 WHERE namespace=new.namespace; END;
+CREATE TRIGGER IF NOT EXISTS preparation_dequeue AFTER DELETE ON preparation_pending WHEN ` + metadataRowWrites + ` BEGIN UPDATE preparation_namespaces SET pending=pending-1 WHERE namespace=old.namespace; END;
+CREATE TABLE IF NOT EXISTS preparation_checkpoints(namespace TEXT NOT NULL,target_key TEXT NOT NULL,version INTEGER NOT NULL,fitted INTEGER NOT NULL,unavailable INTEGER NOT NULL,completed_utc TEXT NOT NULL,PRIMARY KEY(namespace,target_key)) WITHOUT ROWID;
 `
 
 type PreparationSettings struct {
@@ -195,7 +195,16 @@ func (a *Atlas) EnsurePreparationNamespace(ctx context.Context, ns PreparationNa
 		if _, err := db.Exec(c, "INSERT INTO preparation_namespaces(namespace,scope_key,grouping,total) SELECT ?,?,?,count(*) FROM preparation_targets", ns.ID, ns.ScopeKey, ns.Grouping); err != nil {
 			return err
 		}
-		_, err := db.Exec(c, "INSERT INTO preparation_pending(namespace,target_key,version) SELECT ?,target_key,version FROM preparation_targets ORDER BY target_key", ns.ID)
+		if _, err := db.Exec(c, "UPDATE metadata_batch_guard SET active=1 WHERE id=1"); err != nil {
+			return err
+		}
+		if _, err := db.Exec(c, "INSERT INTO preparation_pending(namespace,target_key,version) SELECT ?,target_key,version FROM preparation_targets ORDER BY target_key", ns.ID); err != nil {
+			return err
+		}
+		if _, err := db.Exec(c, "UPDATE preparation_namespaces SET pending=total WHERE namespace=?", ns.ID); err != nil {
+			return err
+		}
+		_, err := db.Exec(c, "UPDATE metadata_batch_guard SET active=0 WHERE id=1")
 		return err
 	})
 }
@@ -219,7 +228,7 @@ func (a *Atlas) PreparationProgress(ctx context.Context, ns string, budget int64
 		return PreparationProgress{}, err
 	}
 	defer put()
-	r, err := db.One(c, `SELECT total,pending,(SELECT count(*) FROM preparation_pending WHERE namespace=? AND blocked_bytes>?) blocked FROM preparation_namespaces WHERE namespace=?`, ns, budget, ns)
+	r, err := db.One(c, `SELECT total,pending,(SELECT count(*) FROM preparation_pending WHERE namespace=? AND blocked_bytes>0 AND blocked_bytes>?) blocked FROM preparation_namespaces WHERE namespace=?`, ns, budget, ns)
 	if err != nil {
 		return PreparationProgress{}, err
 	}
@@ -233,7 +242,15 @@ func (a *Atlas) NextPreparationTargets(ctx context.Context, ns string, budget in
 		return nil, err
 	}
 	defer put()
-	rows, err := db.All(c, `SELECT t.* FROM preparation_pending p JOIN preparation_targets t USING(target_key) WHERE p.namespace=? AND p.blocked_bytes<=? ORDER BY p.blocked_bytes,p.target_key LIMIT ?`, ns, budget, limit)
+	if limit < 1 {
+		return nil, nil
+	}
+	rows, err := db.All(c, `SELECT t.* FROM preparation_pending p JOIN preparation_targets t USING(target_key) WHERE p.namespace=? AND p.blocked_bytes=0 ORDER BY p.target_key LIMIT ?`, ns, limit)
+	if err == nil && len(rows) < limit {
+		var blocked []db.Row
+		blocked, err = db.All(c, `SELECT t.* FROM preparation_pending p JOIN preparation_targets t USING(target_key) WHERE p.namespace=? AND p.blocked_bytes>0 AND p.blocked_bytes<=? ORDER BY p.blocked_bytes,p.target_key LIMIT ?`, ns, budget, limit-len(rows))
+		rows = append(rows, blocked...)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -425,9 +442,11 @@ func (a *Atlas) CommitPreparationBatch(ctx context.Context, ns PreparationNamesp
 		// the import/admin pool, whose FULL durability is left unchanged. WAL
 		// still commits estimates and checkpoints atomically and survives an
 		// application crash; power loss may require repeating recent cache work.
-		if _, err := db.Exec(c, "PRAGMA synchronous=NORMAL"); err != nil {
-			c.Close()
-			return nil, err
+		for _, pragma := range []string{"PRAGMA synchronous=NORMAL", "PRAGMA cache_size=-32768", "PRAGMA temp_store=MEMORY", "PRAGMA wal_autocheckpoint=16384"} {
+			if _, err := db.Exec(c, pragma); err != nil {
+				c.Close()
+				return nil, err
+			}
 		}
 		a.preparationWriter = c
 	}
@@ -479,25 +498,24 @@ DELETE FROM preparation_batch;`); err != nil {
 		if err := db.Each(c, "SELECT position FROM preparation_batch ORDER BY position", nil, func(st *sqlite.Stmt) error { accepted = append(accepted, batch[st.ColumnInt(0)]); return nil }); err != nil {
 			return err
 		}
-		for _, p := range accepted {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-			if p.BlockedBytes == 0 {
-				for _, w := range p.Writes {
-					if _, err := db.CachedExec(c, "INSERT OR REPLACE INTO estimates VALUES(?,?,?)", w.Key, ns.ScopeKey, w.Text); err != nil {
-						return err
-					}
-				}
-			}
+		if err := commitPreparedEstimates(ctx, c, ns, accepted); err != nil {
+			return err
 		}
+
 		if _, err := db.CachedExec(c, `UPDATE preparation_pending SET blocked_bytes=(SELECT b.blocked_bytes FROM preparation_batch b WHERE b.target_key=preparation_pending.target_key) WHERE (namespace,target_key) IN (SELECT ?,target_key FROM preparation_batch WHERE blocked_bytes>0)`, ns.ID); err != nil {
 			return err
 		}
 		if _, err := db.CachedExec(c, `INSERT OR REPLACE INTO preparation_checkpoints SELECT ?,target_key,version,fitted,unavailable,? FROM preparation_batch WHERE blocked_bytes=0`, ns.ID, py.UTCNowISO()); err != nil {
 			return err
 		}
-		_, err := db.CachedExec(c, `DELETE FROM preparation_pending WHERE (namespace,target_key) IN (SELECT ?,target_key FROM preparation_batch WHERE blocked_bytes=0)`, ns.ID)
+		deleted, err := db.CachedExec(c, `DELETE FROM preparation_pending WHERE (namespace,target_key) IN (SELECT ?,target_key FROM preparation_batch WHERE blocked_bytes=0)`, ns.ID)
+		if err != nil {
+			return err
+		}
+		if _, err := db.CachedExec(c, "UPDATE preparation_namespaces SET pending=pending-? WHERE namespace=?", deleted, ns.ID); err != nil {
+			return err
+		}
+		_, err = db.CachedExec(c, "UPDATE metadata_batch_guard SET active=0 WHERE id=1")
 		return err
 	})
 	if err != nil {

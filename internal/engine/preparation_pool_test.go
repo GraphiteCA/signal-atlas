@@ -4,6 +4,7 @@ import (
 	"context"
 	"signal-atlas/internal/atlas"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -139,5 +140,59 @@ func TestFrequentClusteredReadsDoNotStarvePreparation(t *testing.T) {
 	state := waitPreparation(t, s, "complete")
 	if state["progress"].(map[string]any)["completed"] != float64(40) {
 		t.Fatal(state)
+	}
+}
+
+// A blocked database writer must not stop the next batch's calculations, and
+// it must not allow an unbounded queue of computed results to accumulate.
+func TestPreparationOverlapsWriterWithOneBoundedCollectingBatch(t *testing.T) {
+	s := preparationServer(t)
+	savePreparation(t, s, map[string]any{"paused": true, "workers": 2})
+	addPreparationRows(t, s, 1200)
+	writing, release := make(chan int, 1), make(chan struct{})
+	var first sync.Once
+	var calculated atomic.Int64
+	s.preparation.mu.Lock()
+	s.preparation.prepare = func(_ context.Context, _ atlas.PreparationNamespace, target atlas.PreparationTarget, _ int64) (atlas.PreparedTarget, error) {
+		calculated.Add(1)
+		return atlas.PreparedTarget{Target: target, Result: atlas.PreparedTargetResult{Unavailable: 1}}, nil
+	}
+	s.preparation.commit = func(ctx context.Context, ns atlas.PreparationNamespace, batch []atlas.PreparedTarget) ([]atlas.PreparedTarget, error) {
+		first.Do(func() { writing <- len(batch) })
+		select {
+		case <-release:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		return s.Atlas.CommitPreparationBatch(ctx, ns, batch)
+	}
+	s.preparation.mu.Unlock()
+	savePreparation(t, s, map[string]any{"paused": false})
+	var releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
+	defer unblock()
+	var writingCount int
+	select {
+	case writingCount = <-writing:
+	case <-time.After(3 * time.Second):
+		t.Fatal("writer never started")
+	}
+	// The timer can submit a partial first batch under the race detector. Test
+	// overlap relative to its actual size, rather than assuming exactly 512.
+	deadline := time.Now().Add(3 * time.Second)
+	for calculated.Load() < int64(writingCount+512) && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if calculated.Load() < int64(writingCount+512) {
+		t.Fatal("calculations stalled behind the writer", writingCount, calculated.Load())
+	}
+	time.Sleep(50 * time.Millisecond)
+	if n := calculated.Load(); n > int64(writingCount+518) {
+		t.Fatal("computed results grew beyond the bounded pipeline", n)
+	}
+	unblock()
+	state := waitPreparation(t, s, "complete")
+	if calculated.Load() != 1200 || state["progress"].(map[string]any)["completed"] != float64(1200) {
+		t.Fatal("lost or duplicate work", calculated.Load(), state)
 	}
 }

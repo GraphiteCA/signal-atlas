@@ -20,6 +20,12 @@ func TestPreparationWriterDoesNotChangeImportDurability(t *testing.T) {
 	if err != nil || db.Int(sync) != 1 {
 		t.Fatal(sync, err)
 	}
+	for pragma, want := range map[string]int64{"cache_size": -32768, "temp_store": 2, "wal_autocheckpoint": 16384} {
+		got, err := db.Scalar(a.preparationWriter, "PRAGMA "+pragma)
+		if err != nil || db.Int(got) != want {
+			t.Fatal("cache writer tuning", pragma, got, err)
+		}
+	}
 	c, put, err := a.Conn(nil)
 	if err != nil {
 		t.Fatal(err)

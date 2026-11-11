@@ -229,13 +229,11 @@ func (a *Atlas) AreaPlan(c *sqlite.Conn, p py.Params, display, discover bool) (m
 const MaxDisplayFits = 1500
 
 func visibleFits(c *sqlite.Conn, exact, sample string, b [4]float64, targetsFor func(string, string) (*targetMap, error)) ([]any, error) {
-	where := `FROM estimates e
-        WHERE e.scope_key IN (?, ?) AND json_extract(e.result,'$.status')='fitted'
-        AND json_extract(e.result,'$.longitude') BETWEEN ? AND ?
-        AND json_extract(e.result,'$.latitude') BETWEEN ? AND ?
-        AND (e.scope_key=? OR NOT EXISTS (SELECT 1 FROM estimates x
-            WHERE x.radio_key=e.radio_key AND x.scope_key=?
-            AND json_extract(x.result,'$.status')='fitted'))`
+	where := `FROM map_locations l JOIN estimates e USING(radio_key,scope_key)
+        WHERE l.scope_key IN (?, ?)
+        AND l.longitude BETWEEN ? AND ? AND l.latitude BETWEEN ? AND ?
+        AND (l.scope_key=? OR NOT EXISTS (SELECT 1 FROM map_locations x
+            WHERE x.radio_key=l.radio_key AND x.scope_key=?))`
 	args := []any{exact, sample, b[0], b[2], b[1], b[3], exact, exact}
 	n, err := db.Scalar(c, "SELECT count(*) "+where, args...)
 	if err != nil {

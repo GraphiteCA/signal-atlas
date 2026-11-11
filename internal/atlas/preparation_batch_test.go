@@ -64,8 +64,8 @@ func TestPreparationBatchRollsBackAllResultsOnFailure(t *testing.T) {
 		}
 		batch = append(batch, p)
 	}
-	// Native JSON expression indexes reject malformed result JSON halfway through
-	// the batch; neither earlier estimates nor their checkpoints may survive.
+	// The staging JSON validity constraint rejects malformed results; neither
+	// earlier estimates nor their checkpoints may survive.
 	batch[len(batch)-1].Writes = []PreparedEstimate{{Key: "invalid-json", Text: "{"}}
 	if _, e := a.CommitPreparationBatch(ctx, ns, batch); e == nil {
 		t.Fatal("bad result accepted")

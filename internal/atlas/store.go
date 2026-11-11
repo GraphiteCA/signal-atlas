@@ -94,13 +94,7 @@ const schemaSQL = `
   CREATE VIEW IF NOT EXISTS radio_catalog AS SELECT radio_key,ssid,mac,band,count(*) count,
     max(rssi_dbm) peak FROM observations GROUP BY radio_key;
   CREATE INDEX IF NOT EXISTS estimate_scope_lookup ON estimates(scope_key);
-  CREATE INDEX IF NOT EXISTS estimate_located_ssid ON estimates(json_extract(result,'$.ssid')) WHERE
-    json_extract(result,'$.status')='fitted' AND json_type(result,'$.latitude') IN ('integer','real')
-    AND json_type(result,'$.longitude') IN ('integer','real') AND json_extract(result,'$.latitude') BETWEEN -85.051129 AND 85.051129
-    AND json_extract(result,'$.longitude') BETWEEN -180 AND 180;
-  CREATE INDEX IF NOT EXISTS estimate_viewport ON estimates(
-    scope_key,json_extract(result,'$.longitude'),json_extract(result,'$.latitude'))
-    WHERE json_extract(result,'$.status')='fitted';
+
 `
 
 func prepareConn(c *sqlite.Conn) error {
@@ -269,6 +263,9 @@ func initialize(c *sqlite.Conn, path string) error {
 		}
 	}
 	if err := db.Script(c, schemaSQL+preparationSchema); err != nil {
+		return err
+	}
+	if err := initializePreparationStorage(c); err != nil {
 		return err
 	}
 	if err := initializeLocations(c); err != nil {
