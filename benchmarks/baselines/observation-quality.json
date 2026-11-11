@@ -896,6 +896,20 @@
   ],
   "source": "internal/atlas/observation_quality_candidate_test.go",
   "source_sha256": "7f3f14a471c0696d53d42ab7f6882eba65071754145ee186c06c61234f67e4e4",
+  "hidden_identity_audit": {
+    "empty_ssid_targets": 952568,
+    "named_targets": 507993,
+    "hidden_keys_not_matching_uppercase_mac": 0,
+    "basis": "Read-only preparation catalog on owned full benchmark copy",
+    "literal_placeholder_policy": "Non-empty imported names are not silently classified as hidden without exporter/source evidence."
+  },
+  "hidden_identity_validation": {
+    "go_suite": "passed including active Python parity (96.239 s)",
+    "hidden_race_tests": "passed",
+    "python_reference": "1,000 independent hidden addresses and mixed-BSSID direct-fit rejection passed",
+    "desktop_executable": "build/SignalAtlas-identity.exe",
+    "desktop_sha256": "b61d050d820cb0401999fcdd39e40cf8c5689be30b187c263f86e3645c6d19a4"
+  },
   "_publication": {
     "private_paths_and_input_names": "replaced with portable placeholders",
     "long_timing_and_progress_series": "summarized explicitly; raw evidence retained locally",

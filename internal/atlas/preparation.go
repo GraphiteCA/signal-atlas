@@ -77,7 +77,7 @@ func TargetKey(ssid, mac string) string {
 }
 func groupTarget(g Group) string {
 	mac := gs(g, "mac")
-	if mac == "" {
+	if mac == "" || gs(g, "ssid") == "" {
 		if ms := members(g); len(ms) > 0 {
 			mac = gs(ms[0], "mac")
 		}

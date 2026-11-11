@@ -6,6 +6,31 @@ reported GPS quality with consensus fitting. Keep the current fast preparation
 as the default and preserve raw scans. This commit includes an aggregate audit
 and tested prototypes; it does not enable new filters or change existing fits.
 
+## Hidden SSIDs use addresses, not the hidden label
+
+The full benchmark catalog contains **952,568 empty-SSID targets**, each keyed
+as `h:<uppercase BSSID/MAC>`, alongside 507,993 named targets. All hidden keys in
+that copy match their individual MAC addresses. Background preparation and
+viewport-priority scans fetch hidden observations by SSID/MAC pair, not by the
+shared `(hidden SSID)` display text. Band identity remains part of each radio key;
+shared-band fitting is allowed only within the same hidden BSSID.
+
+A follow-up fixed the legacy/manual selection helper, which previously grouped
+blank names together when several hidden radios were selected. Both Go and the
+Python reference now partition hidden selections by address, and direct fitting
+rejects mixed hidden BSSIDs. Version checks for shared-band hidden groups use the
+actual member address rather than a display string such as `1 MAC address`.
+Regression tests cover 1,000 hidden addresses, distinct towns, same-address bands,
+separate fit inputs and direct-fit rejection. The already MAC-scoped background
+path keeps its existing saved fit identities.
+
+A literal imported SSID such as `Hidden`, `unknown` or `(hidden SSID)` is a
+nonempty name unless the importer knows it is an exporter-specific placeholder.
+Do not globally rename such strings to empty: they can be real advertised names.
+A future source-specific normalization policy should preserve raw values and
+explain its classification. Likewise, a reused/moved BSSID still needs session
+or site analysis; matching an address is not proof of permanent co-location.
+
 ## What the actual survey indicates
 
 The aggregate audit covers all 5,753,026 scans on an owned survey copy:

@@ -82,15 +82,20 @@ func UnknownBandAliases(groups []Group) map[string]string {
 
 func shaJSON(v any) string { return py.SHA256Hex(py.MustDumps(v, py.DumpOpts{})) }
 
+// Hidden display labels never establish co-location. Only observations of the
+// same BSSID may share a hidden target (including its separate bands).
+func estimationIdentity(g Group) string { return TargetKey(gs(g, "ssid"), gs(g, "mac")) }
+
 // JointGroups is joint_groups(groups, params).
 func JointGroups(groups []Group, p py.Params) []Group {
 	if !p.Is("shared", "1") {
 		return nil
 	}
 	var out []Group
-	order, m := groupBy(groups, func(g Group) string { return gs(g, "ssid") })
-	for _, ssid := range order {
-		mem := m[ssid]
+	order, m := groupBy(groups, estimationIdentity)
+	for _, key := range order {
+		mem := m[key]
+		ssid := gs(mem[0], "ssid")
 		// Broadening a map selection must remain usable even with Shared enabled. The UI reports
 		// that large SSIDs need narrowing.
 		if len(mem) < 2 || len(mem) > 20 {
@@ -188,10 +193,10 @@ func EstimationGroups(groups []Group, p py.Params) []Group {
 	if p.Is("shared", "1") && p.Is("individual", "0") {
 		counts := map[string]int{}
 		for _, g := range groups {
-			counts[gs(g, "ssid")]++
+			counts[estimationIdentity(g)]++
 		}
 		for _, g := range groups {
-			if counts[gs(g, "ssid")] == 1 && gi(g, "count") >= 4 {
+			if counts[estimationIdentity(g)] == 1 && gi(g, "count") >= 4 {
 				independent = append(independent, g)
 			}
 		}

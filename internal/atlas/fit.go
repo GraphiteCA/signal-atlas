@@ -2,6 +2,7 @@ package atlas
 
 import (
 	"sort"
+	"strings"
 
 	"signal-atlas/internal/db"
 	"signal-atlas/internal/obs"
@@ -59,6 +60,13 @@ func (a *Atlas) FitRadio(group Group, p py.Params, cancelled func() bool) (map[s
 	mem := members(group)
 	if mem == nil {
 		mem = []Group{group}
+	}
+	if gs(group, "ssid") == "" && len(mem) > 1 {
+		for _, member := range mem[1:] {
+			if !strings.EqualFold(gs(mem[0], "mac"), gs(member, "mac")) {
+				return nil, py.Errorf("Hidden SSIDs must be fitted separately by BSSID/MAC address")
+			}
+		}
 	}
 	keys := make([]string, len(mem))
 	for i, m := range mem {

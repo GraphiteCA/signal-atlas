@@ -99,7 +99,10 @@ class Jobs:
         params = params or {}
         scope, _ = estimate_scope(params)
         _, where, values = filters(params)
-        keys = [r['radio_key'] for r in group.get('members', [group])]
+        members = group.get('members', [group])
+        if not group.get('ssid') and len({r['mac'].upper() for r in members}) > 1:
+            raise ValueError('Hidden SSIDs must be fitted separately by BSSID/MAC address')
+        keys = [r['radio_key'] for r in members]
         where = f"o.radio_key IN ({','.join('?' for _ in keys)}) AND ({where})"
         values = [*keys, *values]
         shared = group.get("co_location_assumed", "members" in group)
