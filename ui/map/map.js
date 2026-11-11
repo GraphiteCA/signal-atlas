@@ -7,7 +7,7 @@ let map, overlay, fallbackLayer, isFallback = false, points = null, fits = null;
 let seq = 0, timer = null, controller = null, detailController = null, detailSeq = 0;
 let display = {...MapDisplay.defaults}, prefRevision = 0, prefLoaded = false, prefSaving = false, prefTimer;
 let summaryRevision = '', observationRevision='', pointKey = '', pointData = null, initialized = false, retryTimer;
-let summarySolver='reference',fitsViewKey='';
+let summarySolver='reference',fitsViewKey='',pointsViewKey='';
 const priorityClient=Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
 const incoming = new URLSearchParams(location.search);
 let inheritedBands = incoming.getAll('band'), inheritedDates = incoming.getAll('date');
@@ -58,6 +58,7 @@ function query() {
   const p=new URLSearchParams({bbox:bounds().map(v=>v.toFixed(6)).join(','),min_rssi:$('minRssi').value || '-150',zoom:Math.min(22,Math.max(0,map.getZoom()-(isFallback?1:0))).toFixed(2),clustering:display.clustering?'1':'0'});
   if($('band').value==='none')p.set('none','1');else if($('band').value==='inherited'){for(const band of inheritedBands)p.append('band',band);}else if($('band').value)p.append('band',$('band').value);
   if($('ssid').value.trim())p.set('ssid_query',$('ssid').value.trim());
+  if($('hideHidden').checked)p.set('hide_hidden','1');
   if($('dateFrom').value)p.set('date_from',$('dateFrom').value);
   if($('dateTo').value)p.set('date_to',$('dateTo').value);
   for(const date of inheritedDates)p.append('date',date);
@@ -137,6 +138,8 @@ async function load() {
   const my=++seq;clearTimeout(retryTimer);controller?.abort();controller=new AbortController();const signal=controller.signal,p=query();
   const visibility=new URLSearchParams(p);visibility.delete('bbox');visibility.delete('zoom');
   const viewKey=visibility.toString()+':'+observationRevision+':'+summarySolver;
+  // Retire unrelated sightings immediately, while retaining buffers on pans.
+  if(pointsViewKey!==viewKey || !$('showObs').checked){points=null;pointsViewKey=viewKey;draw();}
   statusText(true);
   // Keep observation and AP work independent: APs appear without waiting for a
   // multi-million-point buffer. Both share cancellation and stale-response guards.
@@ -297,6 +300,7 @@ async function start(){
   if(inheritedBands.length===1)$('band').value=inheritedBands[0];
   else if(inheritedBands.length>1){const option=document.createElement('option');option.value='inherited';option.textContent=inheritedBands.length+' bands from analysis';$('band').appendChild(option);$('band').value='inherited';}
   if(incoming.get('none')==='1')$('band').value='none';
+  $('hideHidden').checked=incoming.get('hide_hidden')==='1';
   if(inheritedDates.length){$('dateScope').hidden=false;$('dateScope').textContent=inheritedDates.length+' survey dates ×';}
   $('dateScope').onclick=()=>{inheritedDates=[];$('dateScope').hidden=true;hideDetails();pins.clear();soon();};
   if(incoming.get('individual')==='1')$('model').value=incoming.get('shared')==='1'?'both':'individual';
@@ -316,7 +320,7 @@ async function start(){
   let view;try{view=JSON.parse(localStorage.getItem(viewKey)||'null');}catch(e){}
   if(incoming.has('lng')&&incoming.has('lat'))view={lng:Number(incoming.get('lng')),lat:Number(incoming.get('lat')),zoom:Number(incoming.get('zoom') || 15)};
   if(view&&Number.isFinite(view.lng)&&Number.isFinite(view.lat)&&Number.isFinite(view.zoom)){if(isFallback)map.setView([view.lat,view.lng],view.zoom);else map.jumpTo({center:[view.lng,view.lat],zoom:view.zoom});}else await fitSurvey();
-  for(const id of ['band','minRssi','dateFrom','dateTo','model'])$(id).onchange=()=>{hideDetails();pins.clear();soon();};
+  for(const id of ['band','minRssi','dateFrom','dateTo','model','hideHidden'])$(id).onchange=()=>{hideDetails();pins.clear();soon();};
   for(const id of ['dateFrom','dateTo'])$(id).onchange=()=>{inheritedDates=[];$('dateScope').hidden=true;hideDetails();pins.clear();soon();};
   $('ssid').oninput=()=>{hideDetails();pins.clear();soon();};
   for(const id of ['max','showObs','showFits'])$(id).onchange=soon;

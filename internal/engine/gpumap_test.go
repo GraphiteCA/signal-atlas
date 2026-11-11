@@ -76,6 +76,20 @@ func TestMapAPIRoutingPreferencesAndPointCache(t *testing.T) {
 	if third.Code != 200 || third.Header().Get("X-Total") != "2" || len(third.Body.Bytes()) != 24 {
 		t.Fatal("stale observation cache")
 	}
+	importCSV("hidden.csv", "")
+	for _, tc := range []struct{ query, total string }{
+		{"", "3"},
+		{"&ssid_query=first", "1"},
+		{"&ssid_query=missing", "0"},
+		{"&hide_hidden=1", "2"},
+		{"&hide_hidden=1&ssid_query=SECOND", "1"},
+		{"&hide_hidden=0", "3"},
+	} {
+		r := request("GET", path+tc.query, "")
+		if r.Code != 200 || r.Header().Get("X-Total") != tc.total {
+			t.Fatalf("filtered sightings %s: %d %v", tc.query, r.Code, r.Header())
+		}
+	}
 	if r := request("GET", "/api/app/map/features?zoom=NaN", ""); r.Code != 400 {
 		t.Fatal("invalid zoom accepted")
 	}

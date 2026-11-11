@@ -46,6 +46,19 @@ test('new map loads cancel old pages and discard late responses',async()=>{
   calls[0].resolve({ok:true,json:async()=>({features:[{id:'old',count:1}],total:1,next:'',revision:'1'})});await first;
   assert.equal(c.run('fits.features[0].id'),'new');
 });
+
+test('SSID and hidden filters refresh sightings independently of AP visibility',async()=>{
+  const c=controller(),urls=[];
+  c.node('showObs').checked=true;c.node('showFits').checked=false;c.node('ssid').value='Cafe';c.node('hideHidden').checked=true;
+  c.context.fetch=async url=>{urls.push(url);return {ok:true,headers:new Map([['X-Shown','1'],['X-Total','1'],['X-Origin-Lon','-123.5'],['X-Origin-Lat','48.5']]),arrayBuffer:async()=>new Float32Array([0,0,-65]).buffer};};
+  await c.run('load()');
+  const params=new URL( urls[0],'http://localhost').searchParams;
+  assert.equal(params.get('ssid_query'),'Cafe');assert.equal(params.get('hide_hidden'),'1');
+  assert.equal(c.run('points.n'),1);assert.equal(urls.length,1);
+  c.node('ssid').value='Other';c.context.fetch=()=>new Promise(()=>{});c.run('load()');
+  assert.equal(c.run('points'),null);
+  c.node('hideHidden').checked=false;assert.equal(c.run("query().has('hide_hidden')"),false);
+});
 test('individual pages accumulate all AP identities and expose loading progress',async()=>{
   const c=controller(),pages=[{features:[{id:'a',count:1}],total:2,next:'next',revision:'r'},{features:[{id:'b',count:1}],total:2,next:'',revision:'r'}];
   c.context.fetch=async()=>({ok:true,json:async()=>pages.shift()});await c.run('load()');

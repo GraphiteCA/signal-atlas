@@ -15,7 +15,7 @@
   async function savePreparationAdmin(body){
     try{error('');const r=await fetch('/api/app/preparation/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),j=await r.json();if(!r.ok)throw new Error(j.error||r.statusText);await refreshPreparationAdmin(true);}catch(e){error(e.message);}
   }
-  const titles={new:'Creating a new survey',open:'Opening survey',convert:'Converting saved survey',import:'Importing scans',cleanup:'Removing 0,0 rows',restore:'Restoring previous revision',snapshot:'Saving snapshot',maintenance:'Survey maintenance'};
+  const titles={delete:'Deleting workspace',new:'Creating a new survey',open:'Opening survey',convert:'Converting saved survey',import:'Importing scans',wigle:'Importing from WiGLE',cleanup:'Removing 0,0 rows',restore:'Restoring previous revision',snapshot:'Saving snapshot',maintenance:'Survey maintenance'};
   function error(message){$('adminError').textContent=message;$('adminError').hidden=!message;}
   async function request(action,body){
     const r=await fetch('/api/app/admin/'+action,body===undefined?{cache:'no-store'}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),j=await r.json();if(!r.ok)throw new Error(j.error||r.statusText);return j;
@@ -25,6 +25,7 @@
     if(!result)return '';
     if(Array.isArray(result.files))return '<div class="table-scroll"><table><thead><tr><th>Source</th><th>Accepted</th><th>Zero pairs excluded</th><th>Invalid</th><th>Other rows</th><th>Outcome</th></tr></thead><tbody>'+result.files.map(r=>`<tr><td>${esc(r.filename)}</td><td>${fi(r.duplicate?0:r.valid_rows)}</td><td>${fi(r.zero_excluded_rows)}</td><td>${fi(r.invalid_rows)}</td><td>${fi(r.non_wifi_rows)}</td><td>${esc(r.error|| (r.duplicate?'Already imported':r.empty?'No rows added':'Committed'))}</td></tr>`).join('')+'</tbody></table></div>';
     if(result.removed_rows!==undefined)return `<strong>${fi(result.removed_rows)} rows removed.</strong> ${result.recovery_available?'The prior revision is available under Recovery.':''}`;
+    if(result.deleted)return 'Permanently deleted workspace: <code>'+esc(result.deleted)+'</code>';
     if(result.saved)return 'Snapshot saved to <code>'+esc(result.path)+'</code>';
     if(result.opened)return 'Active survey: <code>'+esc(result.opened)+'</code>';
     if(result.restored)return 'Previous survey revision restored.';
@@ -40,13 +41,28 @@
     $('adminOperationStage').textContent=op.error||op.stage||'';
     $('adminCancel').hidden=!running;$('adminCancel').disabled=!op.can_cancel;
     const progress=$('adminProgress');if(op.total>0){progress.max=op.total;progress.value=op.completed||0;$('adminProgressText').textContent=fi(op.completed)+' / '+fi(op.total);}else{progress.removeAttribute('value');$('adminProgressText').textContent=running?'Working…':'';}
-    if(!running)progress.value=progress.max||1;
+    if(!running&&op.status==='complete')progress.value=progress.max||1;
+    renderWiGLE();
     $('adminResult').innerHTML=resultHTML(op.result);
     if(!running&&pending===op.id){
       pending='';preview=null;$('adminPreviewResult').hidden=true;
       if(op.result?.reload){sessionStorage.setItem('signal-atlas.admin.notice',JSON.stringify({id:op.id,text:op.status==='cancelled'?'Import cancelled. Completed files were retained.':(titles[op.kind]||'Operation')+' complete.'}));location.reload();return;}
       loadHistory();
     }
+  }
+  function renderWiGLE(){
+    const w=operation?.wigle;
+    $('adminWigleCounts').hidden=!w;
+    if(w)$('adminWigleCounts').textContent=`${fi(w.found)} uploads found · ${fi(w.captured)} captured · ${fi(w.remaining)} remaining${w.failed?` · ${fi(w.failed)} failed`:''}`;
+    const retry=operation?.status==='running'&&operation?.retry_at;
+    $('adminWigleBackoff').hidden=!retry;
+    if(retry){const seconds=Math.max(0,Math.ceil((retry-Date.now())/1000));$('adminWigleBackoff').textContent=`${operation.retry_reason}. ${seconds?`Retrying in ${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`:'Retrying…'}`;}
+  }
+  function recentButtons(){
+    const selected=!!$('adminRecent').value;
+    $('adminRecentOpen').disabled=!selected||operation?.status==='running';
+    $('adminRecentForget').disabled=!selected;
+    $('adminRecentDelete').disabled=!selected||operation?.status==='running'||$('adminRecent').value===active?.path;
   }
   async function refresh(){
     if(refreshing)return;refreshing=true;
@@ -62,7 +78,7 @@
       $('adminSurveyJob').hidden=!surveyBusy;$('adminJobText').textContent=surveyBusy?`${s.job.kind}: ${fi(s.job.completed)} / ${fi(s.job.total)} · finish or cancel before snapshots, imports or maintenance.`:'';
       $('adminSnapshotPathField').hidden=native;$('adminConvertFields').hidden=native;$('adminPaths').open=!native;
       if(s.warning){$('adminNotice').textContent=s.warning;$('adminNotice').hidden=false;}
-      renderOperation(s.operation);
+      renderOperation(s.operation);recentButtons();
       await refreshPreparationAdmin();
     }catch(e){error(e.message);}finally{refreshing=false;}
   }
@@ -90,10 +106,28 @@
     $('adminNew').onclick=()=>native?run('new'):($('adminPaths').open=true,$('adminWorkspacePath').focus());
     $('adminOpen').onclick=()=>native?run('open'):($('adminPaths').open=true,$('adminWorkspacePath').focus());
     $('adminNewPath').onclick=()=>run('new',{path:$('adminWorkspacePath').value.trim()});$('adminOpenPath').onclick=()=>run('open',{path:$('adminWorkspacePath').value.trim()});
+    $('adminRecent').onchange=recentButtons;
+    $('adminRecentRefresh').onclick=refresh;
+    $('adminRecentForget').onclick=async()=>{
+      const path=$('adminRecent').value;if(!path)return;
+      try{error('');await request('forget',{path});$('adminRecent').value='';recentButtons();await refresh();$('adminNotice').textContent='Workspace removed from the recent list. Its files are unchanged.';$('adminNotice').hidden=false;}catch(e){error(e.message);}
+    };
+    $('adminRecentDelete').onclick=()=>{
+      const path=$('adminRecent').value;if(!path)return;
+      confirm('ARE YOU REALLY SURE?',`Permanently delete this workspace?\n\n${path}\n\nThe entire folder and everything inside it will be deleted, including observations, saved locations, comparisons and recovery revisions. This cannot be undone and does not move files to the Recycle Bin.`, 'Delete workspace permanently',()=>run('delete',{path,confirmed:true}));
+      $('adminConfirmCancel').focus();
+    };
     $('adminRecentOpen').onclick=()=>{const path=$('adminRecent').value;if(path)run('open',{path});};
     $('adminSave').onclick=()=>run('snapshot',{format:$('adminSnapshotFormat').value,path:$('adminSnapshotPath').value.trim()});
     $('adminConvert').onclick=()=>run('convert',{path:$('adminConvertTarget').value.trim(),source:$('adminConvertSource').value.trim()});
     $('adminImport').onclick=()=>native?run('import',{skip_invalid:$('adminSkipInvalid').checked}):$('adminFiles').click();
+    $('adminWigleImport').onclick=async()=>{
+      const token=$('adminWigleToken').value.trim();
+      if(!token){error('Enter your WiGLE Encoded for use token.');$('adminWigleToken').focus();return;}
+      $('adminWigleToken').value='';
+      await run('wigle',{token,skip_invalid:$('adminSkipInvalid').checked});
+    };
+    setInterval(renderWiGLE,250);
     $('adminFiles').onchange=async e=>{await acceptFiles(Array.from(e.target.files));e.target.value='';};
     $('adminImportByPath').onclick=()=>run('import',{paths:$('adminImportPaths').value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean),skip_invalid:$('adminSkipInvalid').checked});
     const drop=$('adminDropZone');drop.ondragover=e=>{e.preventDefault();drop.classList.add('dragging');};drop.ondragleave=()=>drop.classList.remove('dragging');drop.ondrop=e=>{e.preventDefault();drop.classList.remove('dragging');acceptFiles(Array.from(e.dataTransfer.files));};

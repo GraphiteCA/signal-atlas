@@ -18,6 +18,7 @@ type Filter struct {
 	none                      bool
 	like                      string // ASCII-lowercased needle of o.ssid LIKE '%…%' (case folds ASCII only, as SQLite's LIKE)
 	hasLike                   bool
+	hideHidden                bool
 	ssidIn, ssidOut, macIn    *strSet
 	radioIn, radioOut, bandIn *strSet
 	sel                       []macChoice
@@ -49,6 +50,7 @@ func ParseFilter(p py.Params, spatial bool) (*Filter, error) {
 		f.like, f.hasLike = asciiLower(sq), true
 	}
 	f.none = p.Is("none", "1")
+	f.hideHidden = p.Is("hide_hidden", "1")
 	for _, k := range []struct {
 		key string
 		dst **strSet
@@ -186,6 +188,9 @@ func (f *Filter) dateAccept(id uint32) bool {
 // (Clone it for others): it caches per-date answers.
 func (f *Filter) Match(s *obs.Segment, i int) bool {
 	if f.none {
+		return false
+	}
+	if f.hideHidden && f.st.Str[s.SSID[i]] == "" {
 		return false
 	}
 	if !(s.RSSI[i] >= f.minRSSI) {

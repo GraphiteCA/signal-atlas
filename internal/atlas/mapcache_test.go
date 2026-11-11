@@ -432,7 +432,7 @@ func TestMapModelEligibilityMatchesReferenceTargets(t *testing.T) {
 	if _, err := a.ImportCSV(file, false, nil, "", nil); err != nil {
 		t.Fatal(err)
 	}
-	for _, p := range []py.Params{{}, {"individual": {"1"}}, {"individual": {"1"}, "shared": {"1"}}, {"band": {"5"}}, {"ssid_query": {"Net0"}}, {"min_rssi": {"-60"}}} {
+	for _, p := range []py.Params{{}, {"individual": {"1"}}, {"individual": {"1"}, "shared": {"1"}}, {"band": {"5"}}, {"ssid_query": {"Net0"}}, {"hide_hidden": {"1"}}, {"hide_hidden": {"1"}, "ssid_query": {"Net0"}}, {"min_rssi": {"-60"}}} {
 		if _, _, err := a.mapIndex(context.Background(), c, p); err != nil {
 			t.Fatal(err)
 		}

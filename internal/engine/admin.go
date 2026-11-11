@@ -139,6 +139,10 @@ func (s *Server) adminGet(w http.ResponseWriter, r *http.Request, action string)
 	}
 	switch action {
 	case "status":
+		recent, err := s.set.recentSurveys("")
+		if err != nil {
+			return err
+		}
 		c, put, err := s.Atlas.Conn(r.Context())
 		if err != nil {
 			return err
@@ -152,7 +156,7 @@ func (s *Server) adminGet(w http.ResponseWriter, r *http.Request, action string)
 		if err != nil {
 			return err
 		}
-		sendGoJSON(w, map[string]any{"survey_id": s.surveyID, "path": s.Atlas.Root, "generation": pointer.Active, "recovery_available": pointer.Previous != "", "database": info, "job": s.Jobs.Snapshot(), "operation": s.admin.snapshot(), "recent": s.set.get().RecentSurveys, "dialogs": s.o.Host != nil, "warning": s.startupWarning, "capabilities": map[string]bool{"workspace_snapshot": true, "portable_sqlite": true, "full_observation_sql": true}}, 200)
+		sendGoJSON(w, map[string]any{"survey_id": s.surveyID, "path": s.Atlas.Root, "generation": pointer.Active, "recovery_available": pointer.Previous != "", "database": info, "job": s.Jobs.Snapshot(), "operation": s.admin.snapshot(), "recent": recent, "dialogs": s.o.Host != nil, "warning": s.startupWarning, "capabilities": map[string]bool{"workspace_snapshot": true, "portable_sqlite": true, "full_observation_sql": true}}, 200)
 		return nil
 	case "imports":
 		offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
@@ -200,6 +204,18 @@ func (s *Server) adminPost(w http.ResponseWriter, r *http.Request, action string
 		id, _ := body["id"].(string)
 		s.admin.requestCancel(id)
 		sendGoJSON(w, s.admin.snapshot(), 200)
+		return nil
+	}
+	if action == "forget" {
+		path, _ := body["path"].(string)
+		if strings.TrimSpace(path) == "" {
+			return herr(400, "Choose a workspace to remove from the recent list")
+		}
+		recent, err := s.set.recentSurveys(path)
+		if err != nil {
+			return err
+		}
+		sendGoJSON(w, map[string]any{"recent": recent}, 200)
 		return nil
 	}
 	s.surveyMu.RLock()
@@ -261,6 +277,17 @@ func (s *Server) adminPost(w http.ResponseWriter, r *http.Request, action string
 			return py.Errorf("Choose a workspace or destination path")
 		}
 	}
+	if action == "wigle" {
+		token, _ := body["token"].(string)
+		token = strings.TrimSpace(token)
+		if token == "" || strings.ContainsAny(token, "\r\n") {
+			return herr(400, "Enter the WiGLE token's Encoded for use value")
+		}
+		skip, _ := body["skip_invalid"].(bool)
+		return s.startAdmin(w, "wigle", expected, func(ctx context.Context) (any, error) {
+			return s.adminWiGLE(ctx, token, skip, newWiGLEClient())
+		})
+	}
 	if action == "import" {
 		paths := strList(body["paths"])
 		if len(paths) == 0 && s.o.Host != nil {
@@ -282,6 +309,12 @@ func (s *Server) adminPost(w http.ResponseWriter, r *http.Request, action string
 			return s.adminOpen(ctx, action, path, source)
 		case "snapshot":
 			return s.adminSnapshot(ctx, path, format)
+		case "delete":
+			confirmed, _ := body["confirmed"].(bool)
+			if !confirmed {
+				return nil, herr(400, "Confirm workspace deletion first")
+			}
+			return s.adminDeleteWorkspace(ctx, path)
 		case "cleanup":
 			token, _ := body["token"].(string)
 			return s.adminCleanup(ctx, token)
@@ -325,6 +358,81 @@ func validateWorkspacePath(path string) (string, error) {
 		return "", py.Errorf("Open the workspace root, not an internal generation folder")
 	}
 	return filepath.EvalSymlinks(path)
+}
+
+func (s *Server) adminDeleteWorkspace(ctx context.Context, path string) (any, error) {
+	if !filepath.IsAbs(path) {
+		return nil, herr(400, "Choose a workspace from the recent list")
+	}
+	listed := false
+	for _, recent := range s.set.get().RecentSurveys {
+		listed = listed || strings.EqualFold(filepath.Clean(recent), filepath.Clean(path))
+	}
+	if !listed {
+		return nil, herr(400, "Choose a workspace from the recent list")
+	}
+	root, err := validateWorkspacePath(path)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.EqualFold(root, filepath.Clean(path)) {
+		return nil, herr(400, "Open the actual workspace folder instead of a linked folder before deleting")
+	}
+	s.surveyMu.RLock()
+	defer s.surveyMu.RUnlock()
+	// Never delete the active survey, its parents, or app settings/data.
+	for _, protected := range []string{s.Atlas.Root, filepath.Dir(s.set.path)} {
+		actual, err := filepath.EvalSymlinks(protected)
+		if err != nil {
+			return nil, err
+		}
+		base := strings.ToLower(filepath.Clean(root))
+		protectedPath := strings.ToLower(filepath.Clean(actual))
+		if protectedPath == base || strings.HasPrefix(protectedPath, base+string(os.PathSeparator)) {
+			return nil, herr(409, "Cannot delete the active workspace or application data. Open another survey first.")
+		}
+	}
+	lock, err := acquireSurveyLock(root)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if lock != nil {
+			lock.Close()
+		}
+	}()
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.admin.beginCommit(ctx, "Deleting workspace permanently"); err != nil {
+		return nil, err
+	}
+	// Keep the process lock held while deleting contents. Windows requires the
+	// lock handle to be closed before removing the lock file and empty folder.
+	for _, entry := range entries {
+		if entry.Name() == ".signal-atlas.lock" {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(root, entry.Name())); err != nil {
+			return nil, fmt.Errorf("Workspace deletion was incomplete: %w", err)
+		}
+	}
+	err = lock.Close()
+	lock = nil // Close consumes the handle even when it reports an error.
+	if err != nil {
+		return nil, err
+	}
+	if err := os.Remove(filepath.Join(root, ".signal-atlas.lock")); err != nil {
+		return nil, err
+	}
+	if err := os.Remove(root); err != nil {
+		return nil, err
+	}
+	if _, err := s.set.recentSurveys(path); err != nil {
+		return nil, fmt.Errorf("Workspace deleted, but the recent list could not be saved: %w", err)
+	}
+	return map[string]any{"deleted": root}, nil
 }
 func (s *Server) adminOpen(ctx context.Context, action, path, source string) (any, error) {
 	var err error

@@ -434,3 +434,129 @@ func TestAdminConflictsLocksAndFailures(t *testing.T) {
 		requireComplete(t, adminAction(t, s, "maintenance", map[string]any{"task": task}))
 	}
 }
+
+func TestAdminRecentWorkspaces(t *testing.T) {
+	s := adminServer(t)
+	root := t.TempDir()
+	existing := filepath.Join(root, "kept.atlas")
+	missing := filepath.Join(root, "deleted.atlas")
+	file := filepath.Join(root, "not-a-folder")
+	if err := os.Mkdir(existing, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, []byte("keep"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.set.set(func(st *Settings) {
+		st.RecentSurveys = []string{missing, existing, file, s.Atlas.Root}
+		st.LastSurvey = existing
+	}); err != nil {
+		t.Fatal(err)
+	}
+	before := s.surveyID
+	w := adminRequest(t, s, "GET", "/api/app/admin/status", nil, "")
+	var status struct {
+		Recent []string `json:"recent"`
+	}
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &status) != nil {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if len(status.Recent) != 2 || status.Recent[0] != existing {
+		t.Fatal(status.Recent)
+	}
+	w = adminRequest(t, s, "POST", "/api/app/admin/forget", map[string]any{"path": existing}, "")
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	saved := newSettings(filepath.Dir(s.set.path)).get()
+	if len(saved.RecentSurveys) != 1 || saved.RecentSurveys[0] != s.Atlas.Root || saved.LastSurvey != "" {
+		t.Fatal(saved)
+	}
+	if _, err := os.Stat(existing); err != nil {
+		t.Fatal("forget removed workspace:", err)
+	}
+	if b, err := os.ReadFile(file); err != nil || string(b) != "keep" {
+		t.Fatal("refresh changed files", err)
+	}
+	w = adminRequest(t, s, "POST", "/api/app/admin/forget", map[string]any{"path": s.Atlas.Root}, "")
+	if w.Code != 200 || s.surveyID != before {
+		t.Fatal("forget changed active session", w.Code)
+	}
+	w = adminRequest(t, s, "GET", "/api/app/admin/status", nil, "")
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &status) != nil || len(status.Recent) != 0 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if err := s.rememberSurvey(s.Atlas.Root); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.set.get().RecentSurveys) != 1 {
+		t.Fatal("reopening did not restore recent entry")
+	}
+	w = adminRequest(t, s, "POST", "/api/app/admin/forget", map[string]any{}, "")
+	if w.Code != 400 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+}
+
+func TestAdminDeleteWorkspace(t *testing.T) {
+	s := adminServer(t)
+	target := filepath.Join(t.TempDir(), "delete-me.atlas")
+	if err := s.Atlas.CopyWorkspace(context.Background(), target, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.rememberSurvey(target); err != nil {
+		t.Fatal(err)
+	}
+	reject := func(path string, confirmed bool) {
+		t.Helper()
+		result := adminAction(t, s, "delete", map[string]any{"path": path, "confirmed": confirmed})
+		if result["status"] != "failed" {
+			t.Fatal("deletion should fail", result)
+		}
+		if _, err := os.Stat(target); err != nil {
+			t.Fatal("target changed on rejection", err)
+		}
+	}
+	reject(target, false)
+	reject(s.Atlas.Root, true)
+	reject(filepath.Dir(target), true)
+	lock, err := acquireSurveyLock(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reject(target, true)
+	lock.Close()
+	invalid := t.TempDir()
+	if err := s.rememberSurvey(invalid); err != nil {
+		t.Fatal(err)
+	}
+	reject(invalid, true)
+	if err := s.rememberSurvey(target); err != nil {
+		t.Fatal(err)
+	}
+	before := s.surveyID
+	result := adminAction(t, s, "delete", map[string]any{"path": target, "confirmed": true})
+	requireComplete(t, result)
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Fatal("workspace still exists", err)
+	}
+	if s.surveyID != before {
+		t.Fatal("active session changed")
+	}
+	if !atlas.IsWorkspace(s.Atlas.Root) {
+		t.Fatal("active workspace damaged")
+	}
+	saved := newSettings(filepath.Dir(s.set.path)).get()
+	if saved.LastSurvey == target {
+		t.Fatal("deleted workspace retained for startup")
+	}
+	for _, path := range saved.RecentSurveys {
+		if path == target {
+			t.Fatal("deleted workspace retained in list")
+		}
+	}
+	w := adminRequest(t, s, "GET", "/api/app/admin/status", nil, "")
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+}

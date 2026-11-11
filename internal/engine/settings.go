@@ -62,6 +62,32 @@ func (st *settingsStore) get() Settings {
 	return st.s
 }
 
+// recentSurveys refreshes the list without opening or modifying any workspace.
+// Access errors are retained: an unreadable folder is not necessarily missing.
+func (st *settingsStore) recentSurveys(forget string) ([]string, error) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	next := st.s
+	next.RecentSurveys = []string{}
+	for _, path := range st.s.RecentSurveys {
+		info, err := os.Stat(path)
+		if (forget != "" && strings.EqualFold(filepath.Clean(path), filepath.Clean(forget))) || os.IsNotExist(err) || (err == nil && !info.IsDir()) {
+			continue
+		}
+		next.RecentSurveys = append(next.RecentSurveys, path)
+	}
+	if forget != "" && strings.EqualFold(filepath.Clean(next.LastSurvey), filepath.Clean(forget)) {
+		next.LastSurvey = ""
+	}
+	if len(next.RecentSurveys) != len(st.s.RecentSurveys) || next.LastSurvey != st.s.LastSurvey {
+		if err := atlas.WriteJSONAtomic(st.path, next); err != nil {
+			return nil, err
+		}
+		st.s = next
+	}
+	return next.RecentSurveys, nil
+}
+
 func (st *settingsStore) set(change func(*Settings)) error {
 	st.mu.Lock()
 	defer st.mu.Unlock()
