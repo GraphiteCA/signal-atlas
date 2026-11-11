@@ -261,6 +261,17 @@ func (s *Server) adminPost(w http.ResponseWriter, r *http.Request, action string
 			return py.Errorf("Choose a workspace or destination path")
 		}
 	}
+	if action == "wigle" {
+		token, _ := body["token"].(string)
+		token = strings.TrimSpace(token)
+		if token == "" || strings.ContainsAny(token, "\r\n") {
+			return herr(400, "Enter the WiGLE token's Encoded for use value")
+		}
+		skip, _ := body["skip_invalid"].(bool)
+		return s.startAdmin(w, "wigle", expected, func(ctx context.Context) (any, error) {
+			return s.adminWiGLE(ctx, token, skip, newWiGLEClient())
+		})
+	}
 	if action == "import" {
 		paths := strList(body["paths"])
 		if len(paths) == 0 && s.o.Host != nil {
