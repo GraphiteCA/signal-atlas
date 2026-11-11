@@ -15,7 +15,7 @@
   async function savePreparationAdmin(body){
     try{error('');const r=await fetch('/api/app/preparation/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),j=await r.json();if(!r.ok)throw new Error(j.error||r.statusText);await refreshPreparationAdmin(true);}catch(e){error(e.message);}
   }
-  const titles={new:'Creating a new survey',open:'Opening survey',convert:'Converting saved survey',import:'Importing scans',wigle:'Importing from WiGLE',cleanup:'Removing 0,0 rows',restore:'Restoring previous revision',snapshot:'Saving snapshot',maintenance:'Survey maintenance'};
+  const titles={delete:'Deleting workspace',new:'Creating a new survey',open:'Opening survey',convert:'Converting saved survey',import:'Importing scans',wigle:'Importing from WiGLE',cleanup:'Removing 0,0 rows',restore:'Restoring previous revision',snapshot:'Saving snapshot',maintenance:'Survey maintenance'};
   function error(message){$('adminError').textContent=message;$('adminError').hidden=!message;}
   async function request(action,body){
     const r=await fetch('/api/app/admin/'+action,body===undefined?{cache:'no-store'}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),j=await r.json();if(!r.ok)throw new Error(j.error||r.statusText);return j;
@@ -25,6 +25,7 @@
     if(!result)return '';
     if(Array.isArray(result.files))return '<div class="table-scroll"><table><thead><tr><th>Source</th><th>Accepted</th><th>Zero pairs excluded</th><th>Invalid</th><th>Other rows</th><th>Outcome</th></tr></thead><tbody>'+result.files.map(r=>`<tr><td>${esc(r.filename)}</td><td>${fi(r.duplicate?0:r.valid_rows)}</td><td>${fi(r.zero_excluded_rows)}</td><td>${fi(r.invalid_rows)}</td><td>${fi(r.non_wifi_rows)}</td><td>${esc(r.error|| (r.duplicate?'Already imported':r.empty?'No rows added':'Committed'))}</td></tr>`).join('')+'</tbody></table></div>';
     if(result.removed_rows!==undefined)return `<strong>${fi(result.removed_rows)} rows removed.</strong> ${result.recovery_available?'The prior revision is available under Recovery.':''}`;
+    if(result.deleted)return 'Permanently deleted workspace: <code>'+esc(result.deleted)+'</code>';
     if(result.saved)return 'Snapshot saved to <code>'+esc(result.path)+'</code>';
     if(result.opened)return 'Active survey: <code>'+esc(result.opened)+'</code>';
     if(result.restored)return 'Previous survey revision restored.';
@@ -61,6 +62,7 @@
     const selected=!!$('adminRecent').value;
     $('adminRecentOpen').disabled=!selected||operation?.status==='running';
     $('adminRecentForget').disabled=!selected;
+    $('adminRecentDelete').disabled=!selected||operation?.status==='running'||$('adminRecent').value===active?.path;
   }
   async function refresh(){
     if(refreshing)return;refreshing=true;
@@ -109,6 +111,11 @@
     $('adminRecentForget').onclick=async()=>{
       const path=$('adminRecent').value;if(!path)return;
       try{error('');await request('forget',{path});$('adminRecent').value='';recentButtons();await refresh();$('adminNotice').textContent='Workspace removed from the recent list. Its files are unchanged.';$('adminNotice').hidden=false;}catch(e){error(e.message);}
+    };
+    $('adminRecentDelete').onclick=()=>{
+      const path=$('adminRecent').value;if(!path)return;
+      confirm('ARE YOU REALLY SURE?',`Permanently delete this workspace?\n\n${path}\n\nThe entire folder and everything inside it will be deleted, including observations, saved locations, comparisons and recovery revisions. This cannot be undone and does not move files to the Recycle Bin.`, 'Delete workspace permanently',()=>run('delete',{path,confirmed:true}));
+      $('adminConfirmCancel').focus();
     };
     $('adminRecentOpen').onclick=()=>{const path=$('adminRecent').value;if(path)run('open',{path});};
     $('adminSave').onclick=()=>run('snapshot',{format:$('adminSnapshotFormat').value,path:$('adminSnapshotPath').value.trim()});

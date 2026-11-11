@@ -309,6 +309,12 @@ func (s *Server) adminPost(w http.ResponseWriter, r *http.Request, action string
 			return s.adminOpen(ctx, action, path, source)
 		case "snapshot":
 			return s.adminSnapshot(ctx, path, format)
+		case "delete":
+			confirmed, _ := body["confirmed"].(bool)
+			if !confirmed {
+				return nil, herr(400, "Confirm workspace deletion first")
+			}
+			return s.adminDeleteWorkspace(ctx, path)
 		case "cleanup":
 			token, _ := body["token"].(string)
 			return s.adminCleanup(ctx, token)
@@ -352,6 +358,75 @@ func validateWorkspacePath(path string) (string, error) {
 		return "", py.Errorf("Open the workspace root, not an internal generation folder")
 	}
 	return filepath.EvalSymlinks(path)
+}
+
+func (s *Server) adminDeleteWorkspace(ctx context.Context, path string) (any, error) {
+	if !filepath.IsAbs(path) {
+		return nil, herr(400, "Choose a workspace from the recent list")
+	}
+	listed := false
+	for _, recent := range s.set.get().RecentSurveys {
+		listed = listed || strings.EqualFold(filepath.Clean(recent), filepath.Clean(path))
+	}
+	if !listed {
+		return nil, herr(400, "Choose a workspace from the recent list")
+	}
+	root, err := validateWorkspacePath(path)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.EqualFold(root, filepath.Clean(path)) {
+		return nil, herr(400, "Open the actual workspace folder instead of a linked folder before deleting")
+	}
+	s.surveyMu.RLock()
+	defer s.surveyMu.RUnlock()
+	// Never delete the active survey, its parents, or app settings/data.
+	for _, protected := range []string{s.Atlas.Root, filepath.Dir(s.set.path)} {
+		actual, err := filepath.EvalSymlinks(protected)
+		if err != nil {
+			return nil, err
+		}
+		base := strings.ToLower(filepath.Clean(root))
+		protectedPath := strings.ToLower(filepath.Clean(actual))
+		if protectedPath == base || strings.HasPrefix(protectedPath, base+string(os.PathSeparator)) {
+			return nil, herr(409, "Cannot delete the active workspace or application data. Open another survey first.")
+		}
+	}
+	lock, err := acquireSurveyLock(root)
+	if err != nil {
+		return nil, err
+	}
+	defer lock.Close()
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.admin.beginCommit(ctx, "Deleting workspace permanently"); err != nil {
+		return nil, err
+	}
+	// Keep the process lock held while deleting contents. Windows requires the
+	// lock handle to be closed before removing the lock file and empty folder.
+	for _, entry := range entries {
+		if entry.Name() == ".signal-atlas.lock" {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(root, entry.Name())); err != nil {
+			return nil, fmt.Errorf("Workspace deletion was incomplete: %w", err)
+		}
+	}
+	if err := lock.Close(); err != nil {
+		return nil, err
+	}
+	if err := os.Remove(filepath.Join(root, ".signal-atlas.lock")); err != nil {
+		return nil, err
+	}
+	if err := os.Remove(root); err != nil {
+		return nil, err
+	}
+	if _, err := s.set.recentSurveys(path); err != nil {
+		return nil, fmt.Errorf("Workspace deleted, but the recent list could not be saved: %w", err)
+	}
+	return map[string]any{"deleted": root}, nil
 }
 func (s *Server) adminOpen(ctx context.Context, action, path, source string) (any, error) {
 	var err error

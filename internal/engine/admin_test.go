@@ -497,3 +497,66 @@ func TestAdminRecentWorkspaces(t *testing.T) {
 		t.Fatal(w.Code, w.Body.String())
 	}
 }
+
+func TestAdminDeleteWorkspace(t *testing.T) {
+	s := adminServer(t)
+	target := filepath.Join(t.TempDir(), "delete-me.atlas")
+	if err := s.Atlas.CopyWorkspace(context.Background(), target, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.rememberSurvey(target); err != nil {
+		t.Fatal(err)
+	}
+	reject := func(path string, confirmed bool) {
+		t.Helper()
+		result := adminAction(t, s, "delete", map[string]any{"path": path, "confirmed": confirmed})
+		if result["status"] != "failed" {
+			t.Fatal("deletion should fail", result)
+		}
+		if _, err := os.Stat(target); err != nil {
+			t.Fatal("target changed on rejection", err)
+		}
+	}
+	reject(target, false)
+	reject(s.Atlas.Root, true)
+	reject(filepath.Dir(target), true)
+	lock, err := acquireSurveyLock(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reject(target, true)
+	lock.Close()
+	invalid := t.TempDir()
+	if err := s.rememberSurvey(invalid); err != nil {
+		t.Fatal(err)
+	}
+	reject(invalid, true)
+	if err := s.rememberSurvey(target); err != nil {
+		t.Fatal(err)
+	}
+	before := s.surveyID
+	result := adminAction(t, s, "delete", map[string]any{"path": target, "confirmed": true})
+	requireComplete(t, result)
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Fatal("workspace still exists", err)
+	}
+	if s.surveyID != before {
+		t.Fatal("active session changed")
+	}
+	if !atlas.IsWorkspace(s.Atlas.Root) {
+		t.Fatal("active workspace damaged")
+	}
+	saved := newSettings(filepath.Dir(s.set.path)).get()
+	if saved.LastSurvey == target {
+		t.Fatal("deleted workspace retained for startup")
+	}
+	for _, path := range saved.RecentSurveys {
+		if path == target {
+			t.Fatal("deleted workspace retained in list")
+		}
+	}
+	w := adminRequest(t, s, "GET", "/api/app/admin/status", nil, "")
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+}

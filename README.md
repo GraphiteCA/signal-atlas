@@ -55,6 +55,9 @@ the independent Drive database open. Native file and folder dialogs handle paths
 **Refresh list** rechecks recent workspace folders; missing folders disappear automatically.
 **Remove from list** forgets the selected workspace without deleting its files or closing it.
 A forgotten workspace can be added again with **Open database**.
+**Delete workspace** permanently removes the selected folder and all its contents after an
+explicit confirmation. It does not use the Recycle Bin. Open another survey first to delete
+the active workspace; workspaces open in another process cannot be deleted.
 
 **Import scans** accepts multiple CSV logs, WiGLE backups, logger/WarHog databases and saved survey
 SQLite files. Importing a saved database adds its scans; **Convert a saved SQLite survey** creates a
