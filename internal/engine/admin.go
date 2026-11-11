@@ -396,7 +396,11 @@ func (s *Server) adminDeleteWorkspace(ctx context.Context, path string) (any, er
 	if err != nil {
 		return nil, err
 	}
-	defer lock.Close()
+	defer func() {
+		if lock != nil {
+			lock.Close()
+		}
+	}()
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return nil, err
@@ -414,7 +418,9 @@ func (s *Server) adminDeleteWorkspace(ctx context.Context, path string) (any, er
 			return nil, fmt.Errorf("Workspace deletion was incomplete: %w", err)
 		}
 	}
-	if err := lock.Close(); err != nil {
+	err = lock.Close()
+	lock = nil // Close consumes the handle even when it reports an error.
+	if err != nil {
 		return nil, err
 	}
 	if err := os.Remove(filepath.Join(root, ".signal-atlas.lock")); err != nil {
