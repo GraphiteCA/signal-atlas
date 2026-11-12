@@ -1,5 +1,5 @@
 // Package engine is Signal Atlas's local server. It serves the app's pages (the home page, Wardrive
-// Compare and Graphite's Signal Atlas explorer) and the APIs they speak: Signal Atlas's own API
+// Compare and the survey map) and the APIs they speak: Signal Atlas's own API
 // (serve_survey.py, ported), background jobs, and the app's endpoints (compare engine sessions,
 // native dialogs, dropped-file paths, saving exports, map tiles).
 package engine
@@ -47,7 +47,6 @@ type Options struct {
 	DisablePreparation bool  // isolated/manual benchmark and test workloads
 	UI                 fs.FS // ui/: the home page and the page bridge
 	Compare            fs.FS // web/: compare.html
-	Explorer           fs.FS // python/templates/: Graphite's explorer
 	Data               string
 	Version            string
 	Hosts              []string // Host header values allowed besides the listening address
@@ -265,9 +264,6 @@ func (s *Server) allowed(r *http.Request) bool {
 	return o == "" || s.origins[o]
 }
 
-var explorerAssets = map[string]bool{"/explorer.js": true, "/explorer.css": true, "/satellite.js": true, "/network_tree.js": true, "/observation_scope.js": true,
-	"/estimate_comparison.js": true, "/online_map.js": true, "/follow_estimate.js": true, "/area_estimates.js": true, "/network_tree.css": true}
-
 // ServeHTTP routes a request.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.closed.Load() {
@@ -366,11 +362,8 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		case p == "/admin" || p == "/admin.html":
 			return s.serveFS(w, s.o.UI, "admin.html", true)
 		case p == "/database" || p == "/database.html":
-			return s.serveFS(w, s.o.UI, "database.html", true)
-		case p == "/atlas" || p == "/atlas/":
-			return s.serveFS(w, s.o.Explorer, "explorer.html", true)
-		case explorerAssets[p]:
-			return s.serveFS(w, s.o.Explorer, strings.TrimPrefix(p, "/"), false)
+			http.Redirect(w, r, "/admin?tab=survey", http.StatusTemporaryRedirect)
+			return nil
 		case p == "/api/status":
 			sendJSON(w, s.status(), 200)
 			return nil
@@ -689,7 +682,7 @@ func (s *Server) downloadStore(w http.ResponseWriter, ctx context.Context) error
 	return err
 }
 
-// ---- static files: the compare page and the explorer get the app bridge first thing in <head> ----
+// ---- static files: app pages get the app bridge first thing in <head> ----
 
 var bridgeTag = []byte(`<script src="/app/bridge.js"></script>`)
 
@@ -706,9 +699,6 @@ func (s *Server) serveFS(w http.ResponseWriter, fsys fs.FS, rel string, inject b
 	case ".html":
 		ctype = "text/html; charset=utf-8"
 		if inject {
-			// Keep the Python reference files unchanged while making its fallback
-			// map usable without a CDN connection.
-			data = bytes.ReplaceAll(data, []byte("https://unpkg.com/leaflet@1.9.4/dist/"), []byte("/app/vendor/leaflet/"))
 			if i := bytes.Index(bytes.ToLower(data), []byte("<head>")); i >= 0 {
 				tags := bridgeTag
 				native := s.o.Host != nil

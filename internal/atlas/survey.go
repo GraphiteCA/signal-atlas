@@ -1,10 +1,10 @@
-// Package atlas is Signal Atlas (Graphite's Python, kept in python) in Go: the store, filters and
+// Package atlas is Signal Atlas (originally Graphite's Python) in Go: the store, filters and
 // queries (survey_data.py), the location model (estimate_ap.py), selection-aware fit groups and
 // comparisons (selection_estimates.py, area_estimates.py), the fit job (serve_survey.fit_radio)
 //
-// The schema, every SQL statement, every validation message and every key Signal Atlas derives
-// (radio_key, scope_key, shared:/radio: group hashes) are the Python's, so a store made by the
-// Python opens here and the other way round; test/parity checks it result for result.
+// Core observations, analysis results and derived keys retain the Python contract.
+// Schema 6 adds original-source archives, extra fields and duplicate provenance;
+// older applications may reject its version. test/parity checks analysis results.
 // What differs is speed: imports parse on every core and write in one transaction with the
 // secondary indexes built once at the end, and fits run in parallel.
 package atlas
@@ -29,7 +29,7 @@ type Row = db.Row
 var RequiredColumns = []string{"CurrentLatitude", "CurrentLongitude", "MAC", "RSSI", "SSID"}
 
 // SchemaVersion is PRAGMA user_version of the store.
-const SchemaVersion = 5
+const SchemaVersion = 6
 
 // SQLiteVersion is the engine's SQLite.
 var SQLiteVersion = db.Version()
@@ -141,6 +141,7 @@ func (f Fields) get(k string) string {
 // Observation is parse_observation's dict.
 type Observation struct {
 	Key, ID, SSID, MAC                 string
+	Extra                              string
 	Latitude, Longitude, RSSI          float64
 	Accuracy                           any // float64 or nil
 	FirstSeen, DayTable, Date, Channel string
@@ -206,7 +207,7 @@ func ParseObservation(f Fields, line int64) (*Observation, error) {
 		id = itoa(line)
 	}
 	first := f.get("FirstSeen")
-	return &Observation{Key: itoa(line), ID: id, SSID: ssid, MAC: mac, Latitude: lat, Longitude: lon, RSSI: rssi, Accuracy: acc,
+	return &Observation{Extra: extraFields(f), Key: itoa(line), ID: id, SSID: ssid, MAC: mac, Latitude: lat, Longitude: lon, RSSI: rssi, Accuracy: acc,
 		FirstSeen: first, DayTable: f.get("day_table"), Date: py.Head(first, 10), Channel: f.get("Channel"),
 		Frequency: f.get("Frequency"), FrequencyMHz: mhz, Band: band, BandSource: src, Source: f.get("source"),
 		RadioKey: RadioKey(ssid, mac, band)}, nil
@@ -407,6 +408,7 @@ type Progress func(valid, invalid, read, total int64) error
 // csvHeader handles csv_reader's header: the WiGLE preamble, the names, the required columns.
 type csvHeader struct {
 	names     []string
+	wdg       bool
 	preamble  bool
 	firstLine int64
 	done      bool
@@ -429,6 +431,18 @@ func (h *csvHeader) take(rec []string) (bool, error) {
 	for i, n := range rec {
 		h.names[i] = py.Strip(n)
 		have[h.names[i]] = true
+	}
+	// WDG exports use snake_case names and contain aggregate scan metadata.
+	// Only normalize a recognized header, leaving ordinary CSV validation intact.
+	h.wdg = have["mac"] && have["ssid"] && have["rssi"] && have["latitude"] && have["longitude"] && have["first_seen"] && have["auth_mode"] && have["captured_at"] && have["scan_count"]
+	if h.wdg {
+		aliases := map[string]string{"mac": "MAC", "ssid": "SSID", "auth_mode": "AuthMode", "channel": "Channel", "frequency": "Frequency", "rssi": "RSSI", "latitude": "CurrentLatitude", "longitude": "CurrentLongitude", "first_seen": "FirstSeen"}
+		for i, name := range h.names {
+			if canonical, ok := aliases[name]; ok {
+				h.names[i] = canonical
+				have[canonical] = true
+			}
+		}
 	}
 	var missing []string
 	for _, c := range RequiredColumns {
@@ -595,7 +609,7 @@ func ReadObservations(path string, ssid *string, mac string) ([]*Observation, er
 		if chosen == nil {
 			chosen = &s
 		} else if s != *chosen {
-			return py.Errorf("Select one network with --ssid, or use import_survey.py and serve_survey.py for multiple SSIDs")
+			return py.Errorf("Select one network, or use the survey map for multiple SSIDs")
 		}
 		o, err := ParseObservation(f, line)
 		if err != nil {

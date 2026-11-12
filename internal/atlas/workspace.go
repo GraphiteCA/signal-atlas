@@ -13,6 +13,7 @@ import (
 	"signal-atlas/internal/db"
 	"signal-atlas/internal/geo"
 	"signal-atlas/internal/obs"
+	"zombiezen.com/go/sqlite"
 )
 
 const WorkspaceFormat = "signal-atlas-workspace"
@@ -278,6 +279,10 @@ func (a *Atlas) ZeroPreview(ctx context.Context) (ZeroPreview, error) {
 // PrepareCleanup modifies only a newly created candidate directory. Until the
 // caller publishes it, a crash/failure/cancel leaves the old generation intact.
 func (a *Atlas) PrepareCleanup(ctx context.Context, dest string, progress func(int64, int64, string)) (*Atlas, map[string]any, error) {
+	return a.prepareFiltered(ctx, dest, progress, "Removing 0,0 rows in candidate", true, func(s *obs.Segment, i int) (bool, error) { return geo.ZeroPair(s.Lat[i], s.Lon[i]), nil })
+}
+
+func (a *Atlas) prepareFiltered(ctx context.Context, dest string, progress func(int64, int64, string), stage string, zero bool, remove func(*obs.Segment, int) (bool, error)) (*Atlas, map[string]any, error) {
 	say := func(stage string) {
 		if progress != nil {
 			progress(0, int64(a.Obs.State().N), stage)
@@ -291,6 +296,14 @@ func (a *Atlas) PrepareCleanup(ctx context.Context, dest string, progress func(i
 		return nil, nil, err
 	}
 	fail := func(err error) (*Atlas, map[string]any, error) { candidate.Close(); return nil, nil, err }
+	removals, err := newPreservationStage()
+	if err != nil {
+		return fail(err)
+	}
+	defer removals.close()
+	if _, err := db.Exec(removals.c, "CREATE TABLE removed(id INTEGER PRIMARY KEY)"); err != nil {
+		return fail(err)
+	}
 	st := candidate.Obs.State()
 	segs := make([]*obs.Segment, 0, len(st.Segs))
 	counts := map[int64]int64{}
@@ -305,11 +318,18 @@ func (a *Atlas) PrepareCleanup(ctx context.Context, dest string, progress func(i
 					return fail(err)
 				}
 				if progress != nil {
-					progress(done+int64(i), int64(st.N), "Removing 0,0 rows in candidate")
+					progress(done+int64(i), int64(st.N), stage)
 				}
 			}
-			if !geo.ZeroPair(s.Lat[i], s.Lon[i]) {
+			drop, err := remove(s, i)
+			if err != nil {
+				return fail(err)
+			}
+			if !drop {
 				continue
+			}
+			if _, err := db.Exec(removals.c, "INSERT INTO removed VALUES(?)", s.ID(i)); err != nil {
+				return fail(err)
 			}
 			changed = true
 			if start < i {
@@ -337,8 +357,25 @@ func (a *Atlas) PrepareCleanup(ctx context.Context, dest string, progress func(i
 		return fail(err)
 	}
 	err = db.WriteTx(c, func() error {
+		if err := db.Each(removals.c, "SELECT id FROM removed", nil, func(r *sqlite.Stmt) error {
+			id := r.ColumnInt64(0)
+			if _, err := db.Exec(c, "DELETE FROM observation_details WHERE observation_id=?", id); err != nil {
+				return err
+			}
+			if zero {
+				_, err := db.Exec(c, "UPDATE observation_provenance SET observation_id=NULL WHERE observation_id=?", id)
+				return err
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
 		for id, n := range counts {
-			if _, err := db.Exec(c, "UPDATE imports SET active_rows=active_rows-?,zero_removed_rows=zero_removed_rows+? WHERE id=?", n, n, id); err != nil {
+			zeroRemoved := int64(0)
+			if zero {
+				zeroRemoved = n
+			}
+			if _, err := db.Exec(c, "UPDATE imports SET active_rows=active_rows-?,zero_removed_rows=zero_removed_rows+? WHERE id=?", n, zeroRemoved, id); err != nil {
 				return err
 			}
 		}

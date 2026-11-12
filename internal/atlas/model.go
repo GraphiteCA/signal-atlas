@@ -537,7 +537,7 @@ func Estimate(observations []*Observation, o EstimateOpts) (map[string]any, erro
 		}
 	}
 	if len(observations) > 5000 {
-		return nil, py.Errorf("Use import_survey.py and serve_survey.py for more than 5,000 observations; the explorer uses bounded per-radio fitting")
+		return nil, py.Errorf("Use the survey map for more than 5,000 observations; it uses bounded per-radio fitting")
 	}
 	if math.Ceil(2*o.ExtentM/o.StepM) > 1000 {
 		return nil, py.Errorf("Grid exceeds 1,002,001 candidates; increase --grid-step-m")

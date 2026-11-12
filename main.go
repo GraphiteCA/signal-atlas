@@ -1,6 +1,6 @@
 // Signal Atlas: a desktop app (Windows, macOS, Linux) for wardriving data too big for the browser. It holds two
-// tools, Wardrive Compare (compare WiGLE CSV drives on the road they share) and Graphite's Signal
-// Atlas explorer (fit access-point locations from whole surveys), both run by a Go engine.
+// tools, Wardrive Compare (compare WiGLE CSV drives on the road they share) and the survey
+// map (fit access-point locations from whole surveys), both run by a Go engine.
 //
 // The screens are web pages shown in a native window (Wails: WebView2 on Windows, WKWebView on
 // macOS, WebKitGTK on Linux); no browser is opened. They talk to the engine (internal/engine) over the window's own
@@ -31,11 +31,6 @@ var uiFiles embed.FS
 //go:embed web
 var webFiles embed.FS
 
-// Graphite's explorer pages, used as he delivered them (python/templates/).
-//
-//go:embed python/templates
-var explorerFiles embed.FS
-
 // Version is stamped at build time (-ldflags "-X main.Version=1.0.0").
 var Version = "dev"
 
@@ -52,8 +47,7 @@ func main() {
 	flag.Parse()
 	ui, _ := fs.Sub(uiFiles, "ui")
 	web, _ := fs.Sub(webFiles, "web")
-	explorer, _ := fs.Sub(explorerFiles, "python/templates")
-	opts := engine.Options{UI: ui, Compare: web, Explorer: explorer, Data: *data, Version: Version}
+	opts := engine.Options{UI: ui, Compare: web, Data: *data, Version: Version}
 	if *serve != "" {
 		s, err := engine.New(opts)
 		if err != nil {

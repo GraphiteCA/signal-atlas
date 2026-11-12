@@ -1,16 +1,16 @@
 # Signal Atlas
 
-A desktop app for Windows, macOS and Linux, for wardriving data too big for the browser. It has three
-tools:
+A desktop app for Windows, macOS and Linux, for wardriving data too big for the browser. Its main analysis tools are:
 
 - **Wardrive Compare**, by **[Champ](https://github.com/TheChampCodes)**. Drop WiGLE CSV logs from any logger and compare drives on the road they
   share: networks per second and per km, how long networks stay visible, speed bands, channels, a
   baseline drive with a bootstrap range and fairness checks, repeat passes, multi-node rigs.
-- **Signal Atlas explorer**, by **[Graphite](https://github.com/GraphiteCA)**. Import whole CSV surveys or open SQLite databases, filter by SSID, MAC, band,
+- **Survey map**, by **[Graphite](https://github.com/GraphiteCA)**. Import whole CSV surveys or open SQLite databases, filter by SSID, MAC, band,
   date and signal, and fit where each network's access point is. It supports one fit per radio or
-  one shared location per SSID, nearby fits as you pan, and pinned date-range comparisons.
-- **Drive database.** Collect every log and database into one SQLite file on your PC, without
-  duplicate sightings, and export it all as WiGLE CSV: in one file, one per day, or as a copy.
+  one shared location per SSID, background AP preparation, and pinned APs.
+
+Database administration includes duplicate-sighting cleanup and WiGLE CSV export directly on the
+active survey workspace. No separate archive is required.
 
 **Which files.** Every tool takes plain **WiGLE CSV logs** from any logger, and **WarHog's database
 files**: the per-day `wardrive_YYYY_MM_DD.sqlite3` files a WarHog Core writes to its SD card, copied
@@ -20,6 +20,10 @@ a fix are left out where a position is needed.
 
 It runs in its own window and does not open a browser. Your data never leaves the computer, and the
 app is dark-themed throughout.
+
+Read the [import/export and preservation guide](docs/import-export.md) and
+[schema reference](docs/schema.md) for supported sources, field mappings,
+deduplication, backup formats and workspace-folder design.
 
 ## Running it
 
@@ -50,8 +54,8 @@ system's Save dialog. Each tool has a **Home** link back to the start page.
 
 **Database administration.** Open **Admin** from the map or home page. **New database** creates a
 separate survey workspace; **Open database** and recent surveys switch between existing workspaces.
-The last survey opens next time. Switching safely stops its survey job while keeping Compare and
-the independent Drive database open. Native file and folder dialogs handle paths in the desktop app.
+The last survey opens next time. Switching safely stops its survey job while keeping
+Compare open. Native file and folder dialogs handle paths in the desktop app.
 **Refresh list** rechecks recent workspace folders; missing folders disappear automatically.
 **Remove from list** forgets the selected workspace without deleting its files or closing it.
 A forgotten workspace can be added again with **Open database**.
@@ -64,7 +68,7 @@ SQLite files. Importing a saved database adds its scans; **Convert a saved SQLit
 new workspace with its saved locations and comparisons. Original files stay unchanged. Rows whose
 latitude and longitude are both numeric zero are excluded automatically and counted separately.
 Valid equator or prime-meridian readings with only one zero coordinate stay. The survey takes Wi-Fi
-sightings; the independent Drive archive also retains other capture types.
+sightings.
 
 **Save snapshot** offers a fast, complete workspace copy or a portable SQLite file containing all
 observations and metadata. **Maintenance → Preview 0,0 rows** finds old zero pairs before explicit
@@ -72,22 +76,31 @@ cleanup. Cleanup retains a previous revision for recovery, preserves surviving I
 history, and invalidates only affected saved locations. Validation, lookup rebuilding and metadata
 maintenance are available alongside it. See [Phase 2 administration](docs/phase2-admin.md).
 
-**Drive database.** Make a new Drive database (one `.sqlite3` file wherever you choose) or open one,
-then add files with **Add logs and databases…** or by dropping them on the window. It takes WiGLE
-CSV logs, WarHog's day files and other SQLite files with WiGLE's columns, WiGLE Android app backups,
-Signal Atlas databases and other Drive databases. A sighting already in the database is skipped,
-whichever file it came from: the same device seen at the same time and place, with the same signal,
-by the same node. A file added before is skipped whole. **Export everything** writes one WiGLE CSV,
-one CSV per day (`wigle_YYYY-MM-DD.csv` in a folder you pick), or a compact copy of the database.
-Files are read where they are and nothing is uploaded; the Drive database opened last opens again
-next time. The sightings are kept as the text the logs had, in a table any SQLite tool can read.
+**Deduplication and CSV export.** Imports automatically skip identical stored sightings within a file
+and across earlier imports. Results and import history report **Duplicates skipped**, including files
+that contain only duplicates. Failed or cancelled files can be retried safely. New successful imports archive original source
+bytes inside the workspace, including excluded rows and WiGLE downloads. Extra fields participate
+in deduplication, and accepted duplicate rows retain provenance links. Import history offers
+**Export original** with byte-length and SHA-256 verification. Older imports show **Not retained**
+until the original is reimported; previously discarded structured fields are not reconstructed.
+
+For duplicates stored by older versions, **Admin → Maintenance → Remove duplicate sightings** still
+provides preview, cleanup and recovery. It preserves the earliest stored row, its ID, import history
+and comparisons.
+
+Use **Admin → Survey & backups → Export survey CSV** for one WiGLE CSV or a new folder containing
+one file per day. Exports stream the active survey's stored rows; undated rows use `wigle_undated.csv`.
+Security, altitude, node identity and vendor fields are included when retained; older imports
+may have blanks. CSV omits archived originals, provenance and saved results; use a snapshot
+for a complete backup. Export does not
+remove duplicates automatically. Existing Drive database files can be added through **Import scans**,
+with duplicate sightings skipped automatically; the original archive file is left unchanged.
 
 **Fits are kept across imports.** Adding a drive drops only the saved fits of networks it has new
 sightings of (named networks by SSID, hidden ones by MAC); every other fit stays. **Fit every AP**
-then refits just those. Graphite's Python drops every fit on every import; the app keeps the rest
-because they can't have changed.
+then refits just those. Unaffected fits remain available.
 
-**Fast fits.** The explorer's **Fast fits** switch uses a quicker solver. It scores the same coarse
+**Fast fits.** Admin's **Fast fits** setting uses a quicker solver. It scores the same coarse
 grid as the exact search and starts from the same eight best cells, but walks downhill from each
 instead of scoring every 0.25 m point, then checks the 0.25 m points around where it lands. On a
 test of 300 noisy networks it landed on exactly the same point 292 times and within a metre 298
@@ -121,22 +134,15 @@ of the displayed page. The dialect is SQLite. See the
 choice and the SQL adapter's limits.
 
 
-**GPU map.** **GPU map** (on the home page and at the top of the explorer) draws every sighting in
+**GPU map.** **Open survey map** on the home page draws every sighting in
 view and every fitted AP with deck.gl over MapLibre, coloured by signal. Past the chosen number of
 points (half a million to eight million) it shows every k-th sighting so the whole view is covered;
 zoom in for all of them. It filters by band, signal and SSID, and hovering a fitted AP shows what it
 is. It needs WebGL, which every supported system's web view has.
 
-**Fit every AP.** The explorer normally fits access points near the map view as you pan. **Fit every
-AP** fits every network the current filters keep, as one background job. It works through them a
-batch of 256 networks at a time, saves each fit as it finishes and shows them on the map as it goes,
-keeping the calculation queue bounded. **Cancel job** keeps what is done, and running it again
-skips networks that already have a fit. A zoomed-out map shows an even sample of up to 1,500 fits;
-zoom in to see every fit in an area.
-
 **The map** opens where you are when the system will say. That means Windows with location
 services on, and macOS after you allow it. Otherwise it opens where you last left it, or on the
-whole world. Nothing is sent anywhere to find you. The explorer's store, exports and the map tile
+whole world. Nothing is sent anywhere to find you. The survey store, exports and the map tile
 cache live in the app's data folder:
 
 | System | Data folder |
@@ -181,7 +187,8 @@ filters; they are not enabled as production defaults.
 
 ## Earlier upstream speed measurements
 
-The following measurements predate this follow-up and use a different 16-core PC
+The following measurements predate source preservation (schema 6), do not include
+its archival/provenance costs, and use a different 16-core PC
 with 64 GB of memory. They are historical context, not new benchmark results.
 
 | Pipeline | Rate |
@@ -190,13 +197,13 @@ with 64 GB of memory. They are historical context, not new benchmark results.
 | Wardrive Compare, add and analyse | 76 million rows a minute |
 | Explorer, opening a saved SQLite database | about 42 million rows a minute |
 | Explorer, Fit every AP | about 13,000 networks a minute; 5 million rows (130,000 networks) in about 10 minutes, memory flat |
-| Drive database, adding logs | about 18 million rows a minute, the same at 10 million rows; under 0.2 GB of memory |
-| Drive database, adding a file already in it | about 50 million rows a minute (every row a duplicate) |
-| Drive database, exporting WiGLE CSV | about 58 million rows a minute, one file or one per day |
+| Legacy Drive archive, adding logs | about 18 million rows a minute, the same at 10 million rows; under 0.2 GB of memory |
+| Legacy Drive archive, adding a file already in it | about 50 million rows a minute (every row a duplicate) |
+| Legacy Drive archive, exporting WiGLE CSV | about 58 million rows a minute, one file or one per day |
 | Explorer queries | under 0.6 s at 10 million rows, under 3 s at 50 million |
 | AP location fits | about 10,700 radios a minute |
 
-Compare uses about 80 MB of memory per million rows while it works. The explorer's store holds about
+Compare uses about 80 MB of memory per million rows while it works. The survey store holds about
 150 MB per million observations while the app is open.
 
 ## How it works
@@ -207,37 +214,35 @@ engine through the window's own origin, and nothing listens on the network.
 | Path | What it is |
 |---|---|
 | `web/compare.html` | Wardrive Compare. It also runs on its own in a browser, using the analysis worker inside it. |
-| `python/` | Graphite's Signal Atlas reference, with matching import/hidden-identity fixes: the Python package, its tests, and the explorer pages (`python/templates/`) that the app shows. |
 | `internal/compare` | Compare's analysis in Go, ported line for line from the worker in `web/compare.html`. |
 | `internal/atlas` | Signal Atlas in Go, ported from Graphite's Python: filters, queries, the location model and its grid search, fit groups, area estimates, comparisons. |
-| `internal/drivedb` | The Drive database: reading every kind of log and database, combining without duplicates, exporting. Compare and the explorer use its readers to take database files as the CSV logs they convert to. |
-| `internal/obs` | The column store that holds the explorer's observations. |
+| `internal/drivedb` | Legacy archive support and readers for logs and databases. Compare and survey imports use its readers to take database files as the CSV logs they convert to. |
+| `internal/obs` | The column store that holds the survey's observations. |
 | `internal/engine` | The local server: Signal Atlas's API, background jobs, compare sessions, native dialogs, saving exports, the map tile cache. |
 | `internal/py`, `internal/pycsv` | Python's behaviour where results depend on it: `json.dumps` text for cache keys and group hashes, `float()` and `int()`, the `csv` module's record splitting. |
-| `ui/` | The home page, the Drive database page, the GPU map, and the bridge script loaded into each page. |
+| `ui/` | The home page, database administration, the GPU map, and the bridge script loaded into each page. |
 | `internal/engine/settings.go` | The app's settings, and the update check and install. |
 | `packaging/`, `scripts/release.py` | The app icon, the Windows manifest, the Linux build container and desktop entry, the macOS app bundle, and the script that builds releases. |
 
 Graphite's Python keeps observations in SQLite with an R-tree and six indexes, which spends minutes
 building indexes at tens of millions of rows. The app keeps them in a column store instead, and
-everything else in SQLite in his schema. **Save SQLite database** writes a complete file in his
-format, which his Python opens as its own.
+everything else in SQLite in SQLite, including preservation tables. **Save snapshot → Portable SQLite** writes a
+standalone observation table and survey metadata. Schema 6 adds source archives, extra fields
+and provenance; older Atlas applications may require an update to open it.
 
 ## Proof that the ports give the same answers
 
 `go test ./...` runs two comparisons.
 
-- **Signal Atlas.** A deliberately awkward synthetic survey goes through Graphite's Python and the Go
-  port. The test compares every result: imports, every query under twenty filter sets (errors
+- **Signal Atlas.** A deliberately awkward synthetic survey runs through Go against recorded reference results. The test compares every result: imports, every query under twenty filter sets (errors
   included), group keys, every fit in four modes, area plans, comparisons and the single-network
   report. Positions agree to a centimetre, and everything else to one part in a billion.
 - **Wardrive Compare.** The page's own worker runs in Node next to the Go port, on the same drives
   under seven configurations. About 31,000 result values and the CSV exports match exactly.
 
-The comparisons need Python 3.10+ with numpy, and Node. They are skipped when either is missing.
-Graphite's own tests run with `python -m unittest discover -s tests` from `python/`.
-For the complete portable PR checks, run `python scripts/check.py`; it requires NumPy
-and Node so the numerical/worker comparisons cannot silently skip. Optional `--race`,
+The Signal Atlas regression test runs entirely in Go. Compare tests use Python for drive fixtures
+and Node for the active JavaScript worker. For complete portable PR checks, run
+`python scripts/check.py`; it requires Go and Node. Optional `--race`,
 `--gpu` and `--cross` checks are documented in the [review guide](docs/review-guide.md).
 
 ## Building
@@ -309,8 +314,7 @@ runs the Windows build through its built-in emulation.
 
 - **Wardrive Compare** is **[Champ](https://github.com/TheChampCodes)**'s work. `web/compare.html` is the tool, and
   `internal/compare` is its analysis ported to Go.
-- **Signal Atlas**, its location method and its explorer are **[Graphite](https://github.com/GraphiteCA)**'s work. `python/` is
-  his code as delivered, and `internal/atlas` is a Go port of it.
+- **Signal Atlas**, its location method and its explorer are **[Graphite](https://github.com/GraphiteCA)**'s work. `internal/atlas` is a Go port of the original implementation.
 
 Third-party software and data are listed in [NOTICE.md](NOTICE.md).
 

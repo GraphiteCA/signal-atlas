@@ -114,7 +114,7 @@ func main() {
 	data := flag.String("data", "", "owned benchmark data (contains store/)")
 	repo := flag.String("repo", ".", "upstream checkout")
 	donor := flag.String("donor", "..", "donor source copy")
-	page := flag.String("page", "gpu", "gpu, canvas, admin, sql, explorer or donor")
+	page := flag.String("page", "gpu", "gpu, canvas, admin, sql or donor")
 	output := flag.String("output", "", "new JSON output path")
 	count := flag.Int("seed-fits", 0, "seed synthetic saved locations for rendering only")
 	driver := flag.String("driver", "native.js", "diagnostic script name inside benchmarks/")
@@ -133,7 +133,7 @@ func main() {
 	if *page == "sql" {
 		dialogHost = sqlExportHost{dir: filepath.Dir(*output)}
 	}
-	s, err := engine.New(engine.Options{Host: dialogHost, DisablePreparation: !*automatic, Data: *data, Version: "dev", UI: os.DirFS(filepath.Join(*repo, "ui")), Explorer: os.DirFS(filepath.Join(*repo, "python", "templates")), Compare: os.DirFS(filepath.Join(*repo, "web")), Hosts: []string{"wails.localhost", "wails.localhost:80", "wails"}, Origins: []string{"wails://wails"}})
+	s, err := engine.New(engine.Options{Host: dialogHost, DisablePreparation: !*automatic, Data: *data, Version: "dev", UI: os.DirFS(filepath.Join(*repo, "ui")), Compare: os.DirFS(filepath.Join(*repo, "web")), Hosts: []string{"wails.localhost", "wails.localhost:80", "wails"}, Origins: []string{"wails://wails"}})
 	must(err)
 	defer s.Close()
 	if *count > 0 {
@@ -183,9 +183,6 @@ func main() {
 			if *page == "canvas" {
 				path = "/map?renderer=canvas"
 			}
-			if *page == "explorer" {
-				path = "/atlas/"
-			}
 			if *page == "admin" {
 				path = "/admin"
 			}
@@ -195,7 +192,7 @@ func main() {
 			http.Redirect(w, r, path, http.StatusFound)
 			return
 		}
-		if r.URL.Path == "/map" || r.URL.Path == "/atlas/" || (r.URL.Path == "/admin" || r.URL.Path == "/sql") {
+		if r.URL.Path == "/map" || (r.URL.Path == "/admin" || r.URL.Path == "/sql") {
 			out := httptest.NewRecorder()
 			s.ServeHTTP(out, r)
 			body := bytes.Replace(out.Body.Bytes(), []byte("</body>"), []byte(`<script src="/__bench/native.js"></script></body>`), 1)

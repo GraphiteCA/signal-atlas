@@ -14,7 +14,7 @@ import (
 
 func TestMapAPIRoutingPreferencesAndPointCache(t *testing.T) {
 	dir := t.TempDir()
-	s, err := New(Options{DisablePreparation: true, Data: filepath.Join(dir, "data"), Version: "dev", UI: os.DirFS("../../ui"), Explorer: os.DirFS("../../python/templates")})
+	s, err := New(Options{DisablePreparation: true, Data: filepath.Join(dir, "data"), Version: "dev", UI: os.DirFS("../../ui")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,13 +27,15 @@ func TestMapAPIRoutingPreferencesAndPointCache(t *testing.T) {
 		s.ServeHTTP(w, r)
 		return w
 	}
-	for _, path := range []string{"/map", "/app/map/map.js", "/app/map/display.js", "/app/vendor/maplibre/maplibre-gl.js", "/app/vendor/deck/deck.gl.js", "/app/vendor/leaflet/leaflet.js", "/atlas/"} {
+	for _, path := range []string{"/map", "/app/map/map.js", "/app/map/display.js", "/app/vendor/maplibre/maplibre-gl.js", "/app/vendor/deck/deck.gl.js", "/app/vendor/leaflet/leaflet.js"} {
 		if r := request("GET", path, ""); r.Code != 200 {
 			t.Fatalf("asset %s: %d", path, r.Code)
 		}
 	}
-	if r := request("GET", "/atlas/", ""); bytes.Contains(r.Body.Bytes(), []byte("https://unpkg.com/leaflet")) {
-		t.Fatal("reference fallback still needs CDN")
+	for _, path := range []string{"/atlas", "/atlas/", "/explorer.js", "/explorer.css", "/satellite.js", "/network_tree.js", "/network_tree.css", "/observation_scope.js", "/estimate_comparison.js", "/online_map.js", "/follow_estimate.js", "/area_estimates.js"} {
+		if r := request("GET", path, ""); r.Code != 404 {
+			t.Fatalf("retired observation analysis asset %s: %d", path, r.Code)
+		}
 	}
 	for _, body := range []string{`{"radius_m":51}`, `{"radius_m":4}`, `{"label_min_zoom":23}`, `{"label_min_zoom":1}`, `{"radius_m":10.5}`} {
 		if r := request("POST", "/api/app/map/display", body); r.Code != 400 {

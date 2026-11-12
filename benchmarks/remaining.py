@@ -46,7 +46,7 @@ for case in a.cases.split(','):
         with (root/case/'cpu-top.txt').open('w') as out:
             subprocess.run(['go','tool','pprof','-top','-nodecount=25',str(root/case/'cpu.pprof')],cwd=bm.ROOT,stdout=out,stderr=subprocess.STDOUT,check=True)
     elif case=='native':
-        for page in ['gpu','explorer','donor']:
+        for page in ['gpu','donor']:
             before=set(bm.BUILD.glob('native-'+page+'-*'))
             cmd=[sys.executable,str(bm.ROOT/'benchmarks'/'run.py'),'native','--data',a.render_data,'--page',page,'--probe',str(bm.BUILD/'nativebench.exe'),'--donor',str(bm.ROOT/'build'/'benchmarks'/'sources-epq2r4mk'/'donor')]
             if page=='gpu':cmd+=['--seed-fits','50000']

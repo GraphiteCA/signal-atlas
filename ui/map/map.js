@@ -185,12 +185,9 @@ async function showAP(id) {
   $('details').hidden=false;$('detailBody').textContent='Loading AP…';
   try {
     const p=query();p.set('id',id);const r=await json('/api/app/map/detail?'+p,{signal});if(my!==detailSeq)return;
-    $('detailBody').innerHTML=`<h2>${esc(r.ssid || '(hidden SSID)')}</h2><p>${esc(r.mac)} · ${esc(r.band || 'unknown')} GHz</p><p>${r.shared?'Shared AP estimate':'Individual radio estimate'}<br>${fi(r.used)} observations · residual ${Number(r.rms).toFixed(1)} dB${r.edge?'<br>At the search edge':''}</p><p>${r.lat.toFixed(7)}, ${r.lon.toFixed(7)}</p><p class="muted" id="detailRadius">${display.radius_m} m planning radius · not a confidence interval</p><div class="actions"><button id="pinAP">${pins.has(id)?'Unpin AP':'Pin AP'}</button><button id="centerAP">Center AP</button><a id="analyzeAP" href="/atlas/">Analyze observations</a></div>`;
+    $('detailBody').innerHTML=`<h2>${esc(r.ssid || '(hidden SSID)')}</h2><p>${esc(r.mac)} · ${esc(r.band || 'unknown')} GHz</p><p>${r.shared?'Shared AP estimate':'Individual radio estimate'}<br>${fi(r.used)} observations · residual ${Number(r.rms).toFixed(1)} dB${r.edge?'<br>At the search edge':''}</p><p>${r.lat.toFixed(7)}, ${r.lon.toFixed(7)}</p><p class="muted" id="detailRadius">${display.radius_m} m planning radius · not a confidence interval</p><div class="actions"><button id="pinAP">${pins.has(id)?'Unpin AP':'Pin AP'}</button><button id="centerAP">Center AP</button></div>`;
     $('pinAP').onclick=()=>{if(pins.has(id))pins.delete(id);else pins.set(id,r);draw();soon();showAP(id);};
     $('centerAP').onclick=()=>{if(isFallback)map.setView([r.lat,r.lon],Math.max(map.getZoom(),18));else map.easeTo({center:[r.lon,r.lat],zoom:Math.max(map.getZoom(),18)});};
-    // The reference explorer remains available with its fitting/selection tools.
-    const analysis=query();for(const key of ['bbox','zoom','clustering','pin'])analysis.delete(key);analysis.set('ssid',r.ssid);analysis.set('mac',r.mac);analysis.set('individual',r.shared?'0':'1');
-    $('analyzeAP').href='/atlas/?'+analysis;
   }catch(e){if(my===detailSeq&&e.name!=='AbortError')$('detailBody').textContent=e.message;}
 }
 function pick(r){
@@ -298,7 +295,7 @@ async function start(){
   await loadDisplay();
   for(const [param,id] of [['ssid_query','ssid'],['min_rssi','minRssi'],['date_from','dateFrom'],['date_to','dateTo']])if(incoming.has(param))$(id).value=incoming.get(param);
   if(inheritedBands.length===1)$('band').value=inheritedBands[0];
-  else if(inheritedBands.length>1){const option=document.createElement('option');option.value='inherited';option.textContent=inheritedBands.length+' bands from analysis';$('band').appendChild(option);$('band').value='inherited';}
+  else if(inheritedBands.length>1){const option=document.createElement('option');option.value='inherited';option.textContent=inheritedBands.length+' selected bands';$('band').appendChild(option);$('band').value='inherited';}
   if(incoming.get('none')==='1')$('band').value='none';
   $('hideHidden').checked=incoming.get('hide_hidden')==='1';
   if(inheritedDates.length){$('dateScope').hidden=false;$('dateScope').textContent=inheritedDates.length+' survey dates ×';}

@@ -1,5 +1,5 @@
 // Package parity runs test/parity/scenario.json against the Go port of Signal Atlas, for the
-// comparison with Graphite's Python (test/parity/ref_atlas.py; see parity_test.go).
+// comparison with recorded reference results (see parity_test.go).
 package parity
 
 import (
@@ -111,7 +111,7 @@ func Run(work, here string) (string, error) {
 	out["comparisons"] = safe(atlas.Comparisons(c))
 	out["info"] = safe(A.DatabaseInfo(c))
 	ssid := "ExampleNet"
-	obs, err := atlas.ReadObservations(filepath.Join(here, "python", "demo-survey.csv"), &ssid, "")
+	obs, err := atlas.ReadObservations(filepath.Join(here, "test", "parity", "demo-survey.csv"), &ssid, "")
 	if err != nil {
 		panic(err)
 	}

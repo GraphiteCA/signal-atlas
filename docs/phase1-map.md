@@ -1,6 +1,6 @@
 # Phase 1: GPU survey map
 
-The home page now opens the GPU survey map as the primary map. Imports, detailed observation analysis, Compare and the Drive database remain reachable from its navigation. Python reference sources are unchanged; the app bridge transfers filters/view position to the map and selected AP observations back to analysis.
+The home page now opens the GPU survey map as the primary map. Observation analysis has been retired from the app, including its routes, embedded assets and map handoff. Admin and Compare remain available from map navigation. The obsolete Python implementation has also been removed; Go regression tests use recorded reference fixtures.
 
 ## Delivered behavior
 
@@ -61,7 +61,7 @@ Raw paths, memory peaks, final renderer reports, exclusions and API evidence are
 
 The full Go regression suite (including Python/NumPy parity) passed. New map tests cover exact counts beyond 1,500 APs, pagination, pins, stale cursors, import/band/SQL invalidation, rollback, solver isolation, full-input precedence, preference round trips and API guards. Seven JavaScript tests cover controls, collisions, stale requests, progressive pages and stable GPU data objects. Benchmark safety tests and Go vet passed.
 
-Native probes cover GPU and canvas rendering, cluster member details, pins and preference writes without fit-revision changes. The isolated browser smoke test verifies the analysis handoff and both renderers with CDN/raster delivery blocked; its screenshots were visually reviewed for badge spacing, solid rings, detail text and fallback controls. Test data and profiles remain under ignored `build/benchmarks`; no live survey was cleared or imported.
+Native probes cover GPU and canvas rendering, cluster member details, pins and preference writes without fit-revision changes. The isolated browser smoke test verifies AP details and both renderers with CDN/raster delivery blocked; its screenshots were visually reviewed for badge spacing, solid rings, detail text and fallback controls. Test data and profiles remain under ignored `build/benchmarks`; no live survey was cleared or imported.
 
 ```powershell
 go test -count=1 ./...

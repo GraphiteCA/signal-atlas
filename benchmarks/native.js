@@ -11,7 +11,7 @@
   window.addEventListener('error', e => report.errors.push(String(e.message)));
   window.addEventListener('unhandledrejection', e => report.errors.push(String(e.reason)));
   try {
-    // Deferred explorer scripts run after this script is parsed. A DOM element
+    // Deferred map scripts run after this script is parsed. A DOM element
     // named "map" is not the Leaflet/MapLibre instance.
     for (let i=0;i<300 && (typeof map === 'undefined' || !map || typeof map.getCenter!=='function');i++) await sleep(100);
     if (typeof map === 'undefined' || !map || typeof map.getCenter!=='function') throw new Error('map not created; check CDN libraries/WebGL');
@@ -60,16 +60,6 @@
         const pacing=await frames(i=>map.setView([48.401,-123.399+(i%30)*.000002],15,{animate:false}));
         layer._draw=draw;report.scenarios.push({clustering,saved_aps:rows.length,data_ready_to_display_ms:firstUsable,pan_frames:pacing,draw_cpu:stats(vals)});
       }
-    } else {
-      report.renderer='upstream Leaflet explorer';
-      await sleep(500);clearTimeout(areaTimer);areaController?.abort();areaSequence++;
-      const explicitAreaLoad=loadAreaEstimates;loadAreaEstimates=async()=>{};
-      report.pan_policy='controlled movement on loaded AP layers; app AP auto-fetch entrypoint disabled; renderer events retained';
-      map.setView([48.401,-123.399],15,{animate:false});clearTimeout(areaTimer);
-      const start=performance.now();await explicitAreaLoad();await frame();await frame();
-      const initial=performance.now()-start;
-      const pacing=await frames(i=>map.setView([48.401,-123.399+(i%30)*.000002],15,{animate:false}));clearTimeout(areaTimer);
-      report.scenarios.push({first_usable_ms:initial,shown_saved_aps:areaRows.length,dom_elements:document.querySelectorAll('*').length,pan_frames:pacing});
     }
     report.resources=performance.getEntriesByType('resource').map(r=>({name:r.name,duration_ms:r.duration,transfer_bytes:r.transferSize}));
     report.note='RAF measures frame pacing, not GPU timer-query execution. Basemaps and library delivery follow the production page. Donor canvas uses bundled Leaflet and the same AP payload; component-only comparison.';
