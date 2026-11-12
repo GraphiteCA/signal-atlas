@@ -1,0 +1,597 @@
+# Exact BLE names of adult toys (lowercase), from the buttplug.io device list as the Warble report lists them.
+26-021-b
+4d01
+4d02
+4d03
+4d04
+4d05
+4d06
+4d07
+4d08
+4d09
+6907 mv1
+6908 mv1
+6909 mv1
+6909 mv2
+6914 mv1
+6915 mv1
+a073
+a531
+ab shutter3 [aogu ble device]
+ac695x_1(ble)
+ak71
+alex neo
+alex neo 2
+almib
+alnxb
+alvxb
+amn neo
+aogu scb
+aogu suv
+ap-22-892
+asf-001-bt-r
+auxfun-box
+ava neo
+ax05
+b2cm6
+bach smart
+baihu
+bc1816
+bc1847
+bgcd
+bgqs
+bgsf
+bgzy
+bobi2
+bodikang
+bx288a
+cb-wxw03
+cbt001
+cbt002
+cbw02
+ccp322s5
+ccp324s2
+ccpa10s2
+ccpa18s5
+ccpb22s5
+cctsk
+cctxuegao
+cfg1 vibrator
+cg-cone
+cici 2
+cici+ 2
+clara_vibio
+cliona
+cocopro
+cty222s4
+cty508s5
+cty823s5
+cty916s4
+cycsa
+cyx2
+d358
+d402
+dg239a
+dj333a
+dodson_vibio
+doublesonic
+dt01
+dt250a
+easylive no8 cup
+echo 2
+eidolon
+ella neo
+elle_vibio
+emma neo
+emma neo 2
+f1sv2a
+f1sv2x
+f1sv3
+f520a-lt
+f520b-lt
+f537-lt
+fk008a
+flamingo
+flamingo t
+fm-lilac-101
+fox m70 pro
+fox m70-2
+foxm70pro
+frida_vibio
+fugu
+fugu2
+funkegel
+funone
+funwand
+fuse1.1
+g123
+g12b
+g12d
+g171
+g202
+g203
+g204
+g20b
+g213
+g228
+g23a
+g29c
+g29d
+g302
+g304
+g307
+g310
+g312
+g314
+g315
+g317
+g320
+g321
+g322
+g326
+g331
+g335
+g336
+g339
+g341
+g348
+g349
+g354
+g355
+g403
+g407
+g40a
+g43a
+g901
+g912
+g913
+gballs2
+gballs3
+gigi3
+gk03
+gk25
+gk27
+gkml
+glmt
+gugudai
+gx07
+gx16
+gx17
+gx21
+gx22
+gx23
+gx25
+gx26
+gx27
+gx29
+gx33
+gx39
+gx85
+haima
+hannes neo
+hbp-jxt001
+hh010
+hismith
+hismith piupiu
+hismith s1
+hismith s2
+hismith s3
+hj2024n01
+honey-835
+hpb-0520
+hpb-296
+hpb-297
+hpb-376
+hpb-376-1
+hpb-391
+hpb-393
+hpb-393-1
+hpb-398
+hpb-399
+hpb-437
+hpb-472
+hpb-501
+hpb-ddt003
+hpb-s302
+htk-ble-bm001
+hugo2
+huohu
+hx013h
+ida wave
+idawave
+ijvb-w10-bt-rx
+iker neo
+j-aresiii
+j-auroraii
+j-blackbull
+j-cherly2c
+j-dallin
+j-derik
+j-diego
+j-dina
+j-divers
+j-dodge
+j-dukedazzle2
+j-dyllis
+j-eclipse
+j-elixiregg
+j-enam
+j-euphoric
+j-euphoric2
+j-euphoric3
+j-explorer2
+j-fabledragon
+j-faunus
+j-firedragon
+j-flamewing
+j-jason
+j-lach
+j-lagoon
+j-mace
+j-mace2
+j-mackay
+j-maelstrom
+j-maiden
+j-marcela
+j-mariner
+j-marino
+j-markel
+j-mars
+j-marshal
+j-marslion
+j-marslion2
+j-martino
+j-martinoiii
+j-maxsensr
+j-mecha
+j-melody
+j-mighty
+j-mirage3
+j-moonhorn
+j-morningbuds2
+j-mowgliii
+j-mutantx
+j-myrna
+j-mysticolor
+j-mystor
+j-pak
+j-palmyra
+j-panther
+j-pathfinder
+j-pathfinder2
+j-pathfinder3
+j-pau
+j-peachy
+j-peacock
+j-pearlconch
+j-pearlconchl
+j-perseus
+j-petalwish2
+j-petalwish3
+j-petiterose
+j-phantom
+j-piet2
+j-pinhead
+j-pipes
+j-pixel
+j-pogo
+j-prismcy
+j-pul
+j-punch
+j-punisher
+j-pyro
+j-pyt
+j-rainbow
+j-rapidtwist2
+j-rayen
+j-retroguard
+j-rhythmic2
+j-rhythmic3
+j-rhythmic4
+j-ringstar
+j-rosebud
+j-roselin
+j-rosella2
+j-rosella3
+j-rosestar
+j-rosethorn2
+j-rosevore
+j-rowdy
+j-rowdy3
+j-royaleye
+j-ryden
+j-scarlett
+j-syncflare
+j-tanmouth
+j-tarian
+j-tarik
+j-thelma
+j-torin
+j-torque
+j-torrian
+j-troi
+j-trueform
+j-trueform3
+j-uricaguard2
+j-vase
+j-vase2
+j-vbarbie
+j-vbarbie2t
+j-vbarbie3f
+j-vbarbiep
+j-veelips
+j-veemy
+j-veeva2
+j-vellum
+j-velocity
+j-velvetrabbit
+j-verax
+j-verax2
+j-verax4
+j-viball
+j-vibripple
+j-vibsiren
+j-vibsiren2
+j-vibtrefoil
+j-victor
+j-viele
+j-viele3
+j-vigo
+j-vince
+j-violetgale
+j-violetvine
+j-virtuoso
+j-virtuoso2
+j-vita
+j-viv
+j-viva
+j-vivara
+j-vividpulse
+j-vividwings
+j-volt
+j-vortex2s
+j-vortextongue
+j-vortextongue2
+j-vortus
+j-vows
+j-xylia
+je joue
+joyhub-rosella2
+jxt001
+jxt002
+k107
+k108
+k109
+k112
+k113
+k118
+k120
+k12a
+k12b
+k12c
+k311
+kegel coach
+keon
+keon r2
+keon wifi
+keon2
+knicker vibe
+kwl2
+lb-w01
+lg389
+libo
+lioness
+lioness2
+liv3
+ll18
+love egg
+love_nuts
+luwushuang
+luxiaohan
+luxus
+lxcdvp
+ly165a01
+ly199b01
+ly213a01
+ly234a01
+ly270a01
+ly271a01
+ly272a01
+magic cell
+magic lotos
+magic sundi
+magic wand
+mano product
+mb controller
+mb link 201
+md19
+meese-cd
+meese-v389
+mini emma neo
+mm massager
+monsterhub
+monsterpub
+mora neo
+mv crescendo
+mv poco
+mv tenuto
+my2607-ble-v1.0
+nbq-b619rx
+nfy008
+nobra control
+nobracontrol
+nova2
+nova_2
+ohmibod 4.0
+ohmibod chill panty vibe
+ohmibod esca
+ohmibod foxy
+ohmibod lumen
+ohmibod nex2
+ohmibod nex3
+ohmibod sphinx
+omor
+omorfi
+onyx+
+onyx2
+onyx2.1
+ossm
+pbt
+pcs
+pearl 2+
+pearl 3
+pearl2
+pearl2+
+pearl2.1
+pearl3
+phoenix neo
+phoenix neo 2
+pht
+picobong butt plug
+picobong egg
+picobong male toy
+picobong ring
+pink_punch
+pinkpunch_dreambunny
+pinkpunch_peacaron
+pinkpunch_peachu
+pleasuredrive
+powershot
+prostate vibe
+prowand
+ptvea
+ptyb22s2
+pulse galaxie
+pulse interactive
+pulse union
+qcpw
+qcsw
+qcvw
+qd48
+qh-hx029a-b
+qh-sj007a
+qh-sx007e
+qh-sx045a-b
+qingnan#16
+qingting
+rc31
+realm1.1
+realov_vibe
+rivera_vibio
+s38a
+s63e alex neo
+s63e alex neo 2
+sakuraneko-01
+sakuraneko-02
+sakuraneko-03
+sakuraneko-04
+sam neo
+sam neo 2
+sam neo 2 pro
+sayberx
+serveu
+shinkuro
+sinloli
+sinloli aston
+sinloli cosima
+sinloli-ethel
+sinloli-sherry
+sl278b
+smart bean
+smart bean3
+smart mini vibe
+sml-2310-sz-b
+sn80
+solstice x
+sona3 cruise
+spot w1
+spot w2
+ss-td-ydtd-001
+st462a
+stg05a
+surfer originals
+surfer2
+surfer_plug
+swk-sx013a
+swk-sx067-b
+sx033a
+sx033app
+sx218a
+synchro ex
+synchro2
+t528-lt
+ta-s001a
+tay001
+tay006
+tay009
+tf-bhplus
+tf-meta2
+tf-rock
+tf-spray
+tff1
+tfg1
+tfhl
+tfkl
+tfmm
+the cowgirl
+the handy
+the unicorn
+tiani harmony
+tiani twist
+tianiharmony
+titan1.1
+tklm-c001-bt
+tklm-c003-bt
+tklm-c004-bt
+tklm-c005-bt
+tklm-n001-bt
+tklm-w001-bt
+tklm-w003-bt-rx
+tor3
+tracydog
+tryfun-one
+trysta neo
+twerking butt
+twerkingbutt
+txhl
+txkl
+txmm
+ufo-tw
+ufosa
+ummib
+umnxb
+umvxb
+utimi
+v415
+va617a-3
+va617a-4
+vibratissimo
+vick neo
+vick neo 2
+virtual blowbot
+virtual rabbit
+viviana
+vorzepiston
+vv468a
+vx236a-ble-v1.0
+vx357a-ble-v1.0
+wand 2
+wb-tdd
+wb-zdb-wst
+we-vibe rocketman
+wildolo
+wsxk
+xiaolu
+xone
+xw-lw3
+xxd-lush
+ycy-fjb-01
+ycy-fjb-02
+youcups
+yuyi
+yxlinksspp
+yxsj
+zalo-jeanne
+zalo-king
+zalo-queen
+⽕箭 x7
