@@ -166,7 +166,7 @@ func (s *Server) adminGet(w http.ResponseWriter, r *http.Request, action string)
 			return err
 		}
 		defer put()
-		rows, err := db.All(c, "SELECT * FROM imports ORDER BY id DESC LIMIT 100 OFFSET ?", offset)
+		rows, err := db.All(c, "SELECT i.*,s.sha256 AS source_sha256,f.size_bytes AS source_bytes,s.filename AS source_filename FROM imports i LEFT JOIN import_sources s ON s.import_id=i.id LEFT JOIN source_files f ON f.sha256=s.sha256 ORDER BY i.id DESC LIMIT 100 OFFSET ?", offset)
 		if err != nil {
 			return err
 		}
@@ -283,6 +283,40 @@ func (s *Server) adminPost(w http.ResponseWriter, r *http.Request, action string
 		if path == "" {
 			return py.Errorf("Choose a workspace or destination path")
 		}
+	}
+	if action == "export-source" {
+		id := db.Int(body["import_id"])
+		if id <= 0 {
+			return herr(400, "Choose an import")
+		}
+		if path == "" && s.o.Host != nil {
+			c, put, e := s.Atlas.Conn(r.Context())
+			if e != nil {
+				return e
+			}
+			row, e := db.One(c, "SELECT filename FROM import_sources WHERE import_id=?", id)
+			put()
+			if e != nil {
+				return e
+			}
+			if row == nil {
+				return herr(400, "Original source unavailable for this import")
+			}
+			name := sanitizeName(db.Str(row["filename"]))
+			var ok bool
+			path, ok, err = s.o.Host.SavePath("Export preserved original source", name, strings.TrimPrefix(filepath.Ext(name), "."))
+			if err != nil {
+				return err
+			}
+			if !ok {
+				sendGoJSON(w, map[string]any{"cancelled": true}, 200)
+				return nil
+			}
+		}
+		if path == "" {
+			return herr(400, "Choose an original-source export destination")
+		}
+		return s.startAdmin(w, action, expected, func(ctx context.Context) (any, error) { return s.adminExportOriginal(ctx, path, id) })
 	}
 	if action == "export-csv" {
 		if format != "csv" && format != "days" {
@@ -807,6 +841,9 @@ func (s *Server) adminMaintenance(ctx context.Context, task string) (any, error)
 }
 
 func (s *Server) adminImports(ctx context.Context, paths []string, skip bool) (any, error) {
+	return s.adminImportsWithSources(ctx, paths, skip, nil)
+}
+func (s *Server) adminImportsWithSources(ctx context.Context, paths []string, skip bool, originals map[string]string) (any, error) {
 	defer s.releaseUploads(paths)
 	a, j, err := s.freezeSurvey(ctx, false)
 	if err != nil {
@@ -829,24 +866,28 @@ func (s *Server) adminImports(ctx context.Context, paths []string, skip bool) (a
 			s.admin.progress(fmt.Sprintf("%s · %d accepted · %d invalid", name, valid, invalid), read, total, true)
 			return ctx.Err()
 		}
+		original := path
+		if originals[path] != "" {
+			original = originals[path]
+		}
 		var result map[string]any
 		var importErr error
 		if !drivedb.IsDatabase(path) {
-			result, importErr = a.ImportCSV(path, skip, progress, name, func(stage string) { s.admin.progress(name+" · "+stage, 0, 0, true) })
+			result, importErr = a.ImportCSVWithSource(path, original, skip, progress, name, func(stage string) { s.admin.progress(name+" · "+stage, 0, 0, true) })
 		} else {
 			kind, e := atlas.DatabaseKind(path)
 			if e == nil && kind == atlas.KindAtlas && portableSurvey(path) != nil {
 				importErr = portableSurvey(path)
 			} else if e == nil && kind == atlas.KindWiGLE {
-				result, importErr = a.ImportWiGLE(path, skip, func(v, i int64) error { return progress(v, i, v+i, 0) }, nil)
+				result, importErr = a.ImportWiGLEWithSource(path, original, name, skip, func(v, i int64) error { return progress(v, i, v+i, 0) }, nil)
 			} else {
 				if e := os.MkdirAll(filepath.Join(s.o.Data, "uploads"), 0755); e != nil {
 					return nil, e
 				}
 				tmp := filepath.Join(s.o.Data, "uploads", "convert-"+newHex()+".csv")
-				_, _, _, importErr = drivedb.ToCSVContext(ctx, path, tmp, "signal-atlas", false, func(rows, done, total int64) { s.admin.progress("Converting "+name, done, total, true) })
+				importErr = atlas.DatabaseImportCSV(ctx, path, tmp)
 				if importErr == nil {
-					result, importErr = a.ImportCSV(tmp, skip, progress, name, nil)
+					result, importErr = a.ImportCSVWithSource(tmp, original, skip, progress, name, nil)
 				}
 				os.Remove(tmp)
 			}

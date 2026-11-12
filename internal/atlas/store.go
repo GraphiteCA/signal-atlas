@@ -267,7 +267,7 @@ func initialize(c *sqlite.Conn, path string) error {
 			return err
 		}
 	}
-	if err := db.Script(c, schemaSQL+preparationSchema); err != nil {
+	if err := db.Script(c, schemaSQL+preparationSchema+preservationSchema); err != nil {
 		return err
 	}
 	if err := initializePreparationStorage(c); err != nil {
@@ -304,7 +304,7 @@ func initialize(c *sqlite.Conn, path string) error {
 	if _, err := db.Exec(c, "UPDATE imports SET active_rows=valid_rows WHERE active_rows<0"); err != nil {
 		return err
 	}
-	if _, err := db.Exec(c, "PRAGMA user_version=5"); err != nil {
+	if _, err := db.Exec(c, "PRAGMA user_version=6"); err != nil {
 		return err
 	}
 	// Adopt an old basemap sidecar once; the database is authoritative thereafter.
@@ -420,6 +420,26 @@ func bandAssignments(c *sqlite.Conn) (map[string]string, error) {
 // on every core while the file is hashed, gathered into one new segment, and committed with the
 // imports row; a failure or a cancel leaves nothing behind.
 func (a *Atlas) ImportCSV(path string, skipInvalid bool, progress Progress, filename string, say func(string)) (map[string]any, error) {
+	return a.ImportCSVWithSource(path, path, skipInvalid, progress, filename, say)
+}
+
+// ImportCSVWithSource retains the original database/container when path is an adapter CSV.
+func (a *Atlas) ImportCSVWithSource(path, original string, skipInvalid bool, progress Progress, filename string, say func(string)) (map[string]any, error) {
+	if filename == "" {
+		filename = filepath.Base(original)
+	}
+	if say != nil {
+		say("Preserving original source")
+	}
+	captured, clean, err := captureSource(original)
+	if err != nil {
+		return nil, err
+	}
+	defer clean()
+	if path == original {
+		path = captured
+	}
+	original = captured
 	a.WriteMu.Lock()
 	defer a.WriteMu.Unlock()
 	c, put, err := a.Conn(nil)
@@ -440,7 +460,7 @@ func (a *Atlas) ImportCSV(path string, skipInvalid bool, progress Progress, file
 		err error
 	}
 	hc := make(chan hashed, 1)
-	go func() { s, e := FileSHA256(path); hc <- hashed{s, e} }()
+	go func() { s, e := FileSHA256(original); hc <- hashed{s, e} }()
 	h := <-hc // the duplicate check comes first, as in Python (hashing is a few seconds per GB)
 	if h.err != nil {
 		return nil, h.err
@@ -450,6 +470,10 @@ func (a *Atlas) ImportCSV(path string, skipInvalid bool, progress Progress, file
 		return nil, err
 	}
 	if existing != nil {
+		err = db.WriteTx(c, func() error { return archiveSource(c, original, filename, db.Int(existing["id"]), nil) })
+		if err != nil {
+			return nil, err
+		}
 		return map[string]any{"duplicate": true, "valid_rows": existing["valid_rows"], "invalid_rows": existing["invalid_rows"], "non_wifi_rows": existing["non_wifi_rows"], "zero_excluded_rows": existing["zero_excluded_rows"], "duplicate_rows": existing["duplicate_rows"], "added_rows": int64(0)}, nil
 	}
 	importID, err := nextImportID(c)
@@ -463,7 +487,7 @@ func (a *Atlas) ImportCSV(path string, skipInvalid bool, progress Progress, file
 	if say != nil {
 		say("Checking existing observations for duplicates")
 	}
-	checkDuplicate, closeDuplicates, err := a.importDuplicateChecker(func() error {
+	checkDuplicate, closeDuplicates, err := a.importDuplicateChecker(c, func() error {
 		if progress != nil {
 			return progress(0, 0, 0, size)
 		}
@@ -474,6 +498,11 @@ func (a *Atlas) ImportCSV(path string, skipInvalid bool, progress Progress, file
 	}
 	duplicatesCommitted := false
 	defer func() { closeDuplicates(duplicatesCommitted) }()
+	preservation, err := newPreservationStage()
+	if err != nil {
+		return nil, err
+	}
+	defer preservation.close()
 	seg := obs.NewSegment(importID, a.Obs.NextBase(nil), int(min(size/100+16, 1<<26)))
 	in := a.Obs.Dict.NewInterner()
 	var valid, invalid, nonWifi, zero, duplicates, processed int64
@@ -539,8 +568,11 @@ func (a *Atlas) ImportCSV(path string, skipInvalid bool, progress Progress, file
 			o.Band, o.BandSource, o.RadioKey = b, "manual assignment", RadioKey(o.SSID, o.MAC, b)
 		}
 		row := rowOf(in, a.Obs.Dict, o, r.line)
-		duplicate, err := checkDuplicate(&row)
+		id, duplicate, err := checkDuplicate(&row, o.Extra, seg.Base+int64(seg.N))
 		if err != nil {
+			return err
+		}
+		if err := preservation.add(importID, r.line, id, o, duplicate); err != nil {
 			return err
 		}
 		if duplicate {
@@ -565,7 +597,7 @@ func (a *Atlas) ImportCSV(path string, skipInvalid bool, progress Progress, file
 			return nil, err
 		}
 	}
-	if valid == 0 && zero == 0 && duplicates == 0 {
+	if valid == 0 && zero == 0 && duplicates == 0 && nonWifi == 0 && invalid == 0 {
 		return nil, py.Errorf("CSV contains no valid observations")
 	}
 	if say != nil {
@@ -579,6 +611,17 @@ func (a *Atlas) ImportCSV(path string, skipInvalid bool, progress Progress, file
 	err = db.WriteTx(c, func() error {
 		if _, err := db.Exec(c, "INSERT INTO imports(id,filename,sha256,imported_utc,valid_rows,invalid_rows,non_wifi_rows,zero_excluded_rows,active_rows,duplicate_rows) VALUES(?,?,?,?,?,?,?,?,?,?)",
 			importID, filename, h.sum, py.UTCNowISO(), valid, invalid, nonWifi, zero, valid, duplicates); err != nil {
+			return err
+		}
+		if err := preservation.commit(c); err != nil {
+			return err
+		}
+		if err := archiveSource(c, original, filename, importID, func() error {
+			if progress != nil {
+				return progress(valid, invalid, size, size)
+			}
+			return nil
+		}); err != nil {
 			return err
 		}
 		// New sightings can move a network's fitted location: its fits are dropped, so they are

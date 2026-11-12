@@ -21,6 +21,10 @@ a fix are left out where a position is needed.
 It runs in its own window and does not open a browser. Your data never leaves the computer, and the
 app is dark-themed throughout.
 
+Read the [import/export and preservation guide](docs/import-export.md) and
+[schema reference](docs/schema.md) for supported sources, field mappings,
+deduplication, backup formats and workspace-folder design.
+
 ## Running it
 
 Download your system's file from the Releases page.
@@ -74,7 +78,11 @@ maintenance are available alongside it. See [Phase 2 administration](docs/phase2
 
 **Deduplication and CSV export.** Imports automatically skip identical stored sightings within a file
 and across earlier imports. Results and import history report **Duplicates skipped**, including files
-that contain only duplicates. Failed or cancelled files can be retried safely.
+that contain only duplicates. Failed or cancelled files can be retried safely. New successful imports archive original source
+bytes inside the workspace, including excluded rows and WiGLE downloads. Extra fields participate
+in deduplication, and accepted duplicate rows retain provenance links. Import history offers
+**Export original** with byte-length and SHA-256 verification. Older imports show **Not retained**
+until the original is reimported; previously discarded structured fields are not reconstructed.
 
 For duplicates stored by older versions, **Admin → Maintenance → Remove duplicate sightings** still
 provides preview, cleanup and recovery. It preserves the earliest stored row, its ID, import history
@@ -82,7 +90,9 @@ and comparisons.
 
 Use **Admin → Survey & backups → Export survey CSV** for one WiGLE CSV or a new folder containing
 one file per day. Exports stream the active survey's stored rows; undated rows use `wigle_undated.csv`.
-Authentication, altitude and other fields not retained by the survey are blank. Export does not
+Security, altitude, node identity and vendor fields are included when retained; older imports
+may have blanks. CSV omits archived originals, provenance and saved results; use a snapshot
+for a complete backup. Export does not
 remove duplicates automatically. Existing Drive database files can be added through **Import scans**,
 with duplicate sightings skipped automatically; the original archive file is left unchanged.
 
@@ -177,7 +187,8 @@ filters; they are not enabled as production defaults.
 
 ## Earlier upstream speed measurements
 
-The following measurements predate this follow-up and use a different 16-core PC
+The following measurements predate source preservation (schema 6), do not include
+its archival/provenance costs, and use a different 16-core PC
 with 64 GB of memory. They are historical context, not new benchmark results.
 
 | Pipeline | Rate |
@@ -215,8 +226,9 @@ engine through the window's own origin, and nothing listens on the network.
 
 Graphite's Python keeps observations in SQLite with an R-tree and six indexes, which spends minutes
 building indexes at tens of millions of rows. The app keeps them in a column store instead, and
-everything else in SQLite in his schema. **Save SQLite database** writes a complete file in his
-format, which his Python opens as its own.
+everything else in SQLite in SQLite, including preservation tables. **Save snapshot → Portable SQLite** writes a
+standalone observation table and survey metadata. Schema 6 adds source archives, extra fields
+and provenance; older Atlas applications may require an update to open it.
 
 ## Proof that the ports give the same answers
 

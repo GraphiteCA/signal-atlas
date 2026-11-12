@@ -3,10 +3,12 @@ package atlas
 import (
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"math"
 	"os"
 	"path/filepath"
+	"signal-atlas/internal/db"
 	"sort"
 	"strconv"
 	"time"
@@ -17,6 +19,35 @@ import (
 // ExportSurveyCSV streams a committed observation state. dest is an owned
 // staging file or directory; the caller publishes it only after success.
 func (a *Atlas) ExportSurveyCSV(ctx context.Context, dest, version string, days bool, progress func(int64, int64)) (int64, []string, error) {
+	a.WriteMu.Lock()
+	defer a.WriteMu.Unlock()
+	c, put, err := a.Conn(ctx)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer put()
+	details, done, err := detailReader(c)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer done()
+	columns := append([]string{}, drivedb.Columns...)
+	columns = append(columns, "Band")
+	known := map[string]bool{}
+	for _, k := range columns {
+		known[k] = true
+	}
+	keys, err := db.All(c, "SELECT DISTINCT j.key FROM observation_details d,json_each(d.fields_json) j ORDER BY j.key")
+	if err != nil {
+		return 0, nil, err
+	}
+	for _, r := range keys {
+		k := db.Str(r["key"])
+		if !known[k] {
+			columns = append(columns, k)
+			known[k] = true
+		}
+	}
 	type output struct {
 		f    *os.File
 		w    *csv.Writer
@@ -77,7 +108,7 @@ func (a *Atlas) ExportSurveyCSV(ctx context.Context, dest, version string, days 
 			if _, err = fmt.Fprintln(f, drivedb.Preamble(version)); err != nil {
 				return nil, err
 			}
-			if err = o.w.Write(drivedb.Columns); err != nil {
+			if err = o.w.Write(columns); err != nil {
 				return nil, err
 			}
 			started[name] = true
@@ -122,6 +153,25 @@ func (a *Atlas) ExportSurveyCSV(ctx context.Context, dest, version string, days 
 				return 0, nil, err
 			}
 			row := []string{st.Str[s.MAC[i]], st.Str[s.SSID[i]], "", first, st.Str[s.Channel[i]], num(s.Freq[i]), num(s.RSSI[i]), num(s.Lat[i]), num(s.Lon[i]), "", num(s.Acc[i]), "", "", "WIFI", ""}
+			row = append(row, st.Str[s.Band[i]])
+			extra, e := details(s.ID(i))
+			if e != nil {
+				return 0, nil, e
+			}
+			fields := map[string]string{}
+			if extra != "" {
+				if e := json.Unmarshal([]byte(extra), &fields); e != nil {
+					return 0, nil, e
+				}
+			}
+			for len(row) < len(columns) {
+				row = append(row, "")
+			}
+			for k, name := range columns {
+				if value, ok := fields[name]; ok {
+					row[k] = value
+				}
+			}
 			if err = o.w.Write(row); err != nil {
 				return 0, nil, err
 			}

@@ -298,18 +298,18 @@ func (s *Server) adminWiGLE(ctx context.Context, token string, skip bool, client
 		if size > wigleFileLimit {
 			return result(), fmt.Errorf("WiGLE download exceeds 2 GB")
 		}
-		source, original, unwrapErr := wigleUnwrap(ctx, path, name)
+		source, _, unwrapErr := wigleUnwrap(ctx, path, name)
 		var rows []map[string]any
 		if unwrapErr == nil {
 			// Reuse all supported scan formats and the existing content-based deduplication.
-			sourceName := sanitizeName(upload.ID) + "__" + sanitizeName(original)
+			sourceName := sanitizeName(upload.ID) + "__" + sanitizeName(name)
 			s.uploadMu.Lock()
 			if s.uploads == nil {
 				s.uploads = map[string]string{}
 			}
 			s.uploads[source] = sourceName
 			s.uploadMu.Unlock()
-			imported, importErr := s.adminImports(ctx, []string{source}, skip)
+			imported, importErr := s.adminImportsWithSources(ctx, []string{source}, skip, map[string]string{source: path})
 			if imported != nil {
 				rows, _ = imported.(map[string]any)["files"].([]map[string]any)
 			}

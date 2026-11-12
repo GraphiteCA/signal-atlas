@@ -2,9 +2,9 @@
 // queries (survey_data.py), the location model (estimate_ap.py), selection-aware fit groups and
 // comparisons (selection_estimates.py, area_estimates.py), the fit job (serve_survey.fit_radio)
 //
-// The schema, every SQL statement, every validation message and every key Signal Atlas derives
-// (radio_key, scope_key, shared:/radio: group hashes) are the Python's, so a store made by the
-// Python opens here and the other way round; test/parity checks it result for result.
+// Core observations, analysis results and derived keys retain the Python contract.
+// Schema 6 adds original-source archives, extra fields and duplicate provenance;
+// older applications may reject its version. test/parity checks analysis results.
 // What differs is speed: imports parse on every core and write in one transaction with the
 // secondary indexes built once at the end, and fits run in parallel.
 package atlas
@@ -29,7 +29,7 @@ type Row = db.Row
 var RequiredColumns = []string{"CurrentLatitude", "CurrentLongitude", "MAC", "RSSI", "SSID"}
 
 // SchemaVersion is PRAGMA user_version of the store.
-const SchemaVersion = 5
+const SchemaVersion = 6
 
 // SQLiteVersion is the engine's SQLite.
 var SQLiteVersion = db.Version()
@@ -141,6 +141,7 @@ func (f Fields) get(k string) string {
 // Observation is parse_observation's dict.
 type Observation struct {
 	Key, ID, SSID, MAC                 string
+	Extra                              string
 	Latitude, Longitude, RSSI          float64
 	Accuracy                           any // float64 or nil
 	FirstSeen, DayTable, Date, Channel string
@@ -206,7 +207,7 @@ func ParseObservation(f Fields, line int64) (*Observation, error) {
 		id = itoa(line)
 	}
 	first := f.get("FirstSeen")
-	return &Observation{Key: itoa(line), ID: id, SSID: ssid, MAC: mac, Latitude: lat, Longitude: lon, RSSI: rssi, Accuracy: acc,
+	return &Observation{Extra: extraFields(f), Key: itoa(line), ID: id, SSID: ssid, MAC: mac, Latitude: lat, Longitude: lon, RSSI: rssi, Accuracy: acc,
 		FirstSeen: first, DayTable: f.get("day_table"), Date: py.Head(first, 10), Channel: f.get("Channel"),
 		Frequency: f.get("Frequency"), FrequencyMHz: mhz, Band: band, BandSource: src, Source: f.get("source"),
 		RadioKey: RadioKey(ssid, mac, band)}, nil

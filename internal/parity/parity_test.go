@@ -50,6 +50,13 @@ func TestMatchesReference(t *testing.T) {
 	// Phase 2 adds import accounting without changing this fixture's accepted
 	// rows. Assert those new fields before comparing the unchanged Python API.
 	goResult := b.(map[string]any)
+	// Schema 6 adds preservation tables; numerical/analysis results remain the
+	// recorded schema-5 Python contract. Assert the intentional version change.
+	info := goResult["info"].(map[string]any)
+	if info["schema_version"] != float64(6) {
+		t.Fatalf("unexpected schema: %v", info["schema_version"])
+	}
+	info["schema_version"] = float64(5)
 	for _, key := range []string{"import", "import_dup"} {
 		row := goResult[key].(map[string]any)
 		if row["zero_excluded_rows"] != float64(0) {
