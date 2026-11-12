@@ -1,5 +1,9 @@
 # Phase 2: survey administration
 
+> Historical implementation and measurement report. Claims about defaults,
+> validation and upstream revisions refer to the work recorded here. For current
+> behavior and checks, use the [documentation index](README.md).
+
 The Admin page is reachable from Home and the survey map. Phase 2 delivers plan items A01–A07 on the Phase 1 GPU-map base. The upstream baseline remains `6d8833659906faa89b1677424caf5f5cd905c56d`.
 
 ## User workflow

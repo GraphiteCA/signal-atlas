@@ -1,5 +1,9 @@
 # Phase 4: storage evaluation, lower observation memory and SQL browser
 
+> Historical implementation and measurement report. Claims about defaults,
+> validation and upstream revisions refer to the work recorded here. For current
+> behavior and checks, use the [documentation index](README.md).
+
 Follow-up: [actual-survey memory, preparation and tuned DuckDB results](memory-preparation.md) revise the storage recommendation and resource defaults below. These phase measurements remain historical.
 
 Phase 4 starts at `481057a` (Phase 3), on upstream

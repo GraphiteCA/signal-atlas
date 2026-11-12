@@ -1,5 +1,9 @@
 # Baseline benchmarking
 
+> Historical implementation and measurement report. Claims about defaults,
+> validation and upstream revisions refer to the work recorded here. For current
+> behavior and checks, use the [documentation index](README.md).
+
 Phase 0 measures the upstream application at `6d8833659906faa89b1677424caf5f5cd905c56d`. Production engine, UI and storage behavior are unchanged. Benchmark commands are separate programs; they never use the application's normal data directory.
 
 Results and the final phase decision are recorded in `benchmarks/baselines/phase0-summary.json`. Raw local evidence is retained under `build/benchmarks/` and source copies under `build/benchmarks/sources-*/`. Real survey inputs and raw records are not checked into the repository.

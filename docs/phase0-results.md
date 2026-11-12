@@ -1,5 +1,9 @@
 # Phase 0 baseline results
 
+> Historical implementation and measurement report. Claims about defaults,
+> validation and upstream revisions refer to the work recorded here. For current
+> behavior and checks, use the [documentation index](README.md).
+
 Phase 0 is complete on upstream [`6d88336`](https://github.com/olosnoks/signal-atlas/commit/6d8833659906faa89b1677424caf5f5cd905c56d), verified as current GitHub main during this run. The application code is unchanged. Baseline completion does not mean every performance target passed.
 
 **Recommendation:** use the upstream GPU map as the foundation for the map port, add exact backend clustering and cached map responses, and retain the current Go backend for that first feature port. Keep the storage decision separate: DuckDB uses much less memory and reopens faster, while the current backend imports and serves observation overviews faster in these tests.

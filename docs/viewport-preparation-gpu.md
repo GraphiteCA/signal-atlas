@@ -1,5 +1,9 @@
 # Viewport-first preparation and GPU throughput
 
+> Historical implementation and measurement report. Claims about defaults,
+> validation and upstream revisions refer to the work recorded here. For current
+> behavior and checks, use the [documentation index](README.md).
+
 Base revision: `80fcc3d`. Measurements: 11 November 2026, i7-10700K,
 32 GiB RAM, RTX 2080 Ti, driver 621.01, Go 1.27.3.
 Machine-readable evidence: [viewport-preparation-gpu.json](../benchmarks/baselines/viewport-preparation-gpu.json).

@@ -1,5 +1,9 @@
 # Metadata preparation follow-up
 
+> Historical implementation and measurement report. Claims about defaults,
+> validation and upstream revisions refer to the work recorded here. For current
+> behavior and checks, use the [documentation index](README.md).
+
 Base: `e60214a`, branch `codex/preparation-metadata`, 11 November 2026.
 See [benchmark evidence](../benchmarks/baselines/metadata-preparation.json) and
 the separate [observation-quality recommendation](observation-quality.md).

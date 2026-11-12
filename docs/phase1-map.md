@@ -1,5 +1,9 @@
 # Phase 1: GPU survey map
 
+> Historical implementation and measurement report. Claims about defaults,
+> validation and upstream revisions refer to the work recorded here. For current
+> behavior and checks, use the [documentation index](README.md).
+
 The home page now opens the GPU survey map as the primary map. Observation analysis has been retired from the app, including its routes, embedded assets and map handoff. Admin and Compare remain available from map navigation. The obsolete Python implementation has also been removed; Go regression tests use recorded reference fixtures.
 
 ## Delivered behavior

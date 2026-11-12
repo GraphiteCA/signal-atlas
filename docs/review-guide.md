@@ -1,5 +1,11 @@
 # Large-survey map, administration and preparation changes
 
+> Historical implementation and measurement report. Claims about defaults,
+> validation and upstream revisions refer to the work recorded here. For current
+> behavior and checks, use the [documentation index](README.md).
+> This report predates source preservation and v0.3.2 Compare additions. See
+> [import/export](import-export.md), [Compare](compare.md) and [schema](schema.md).
+
 This is a coordinated follow-up to upstream `6d88336`. The existing Wails shell,
 GPU map renderer, immutable observation store, reference/fast solvers, Compare
 and independent Drive archive remain the foundation. The new work ports map and

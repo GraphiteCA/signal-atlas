@@ -53,6 +53,11 @@ The validation rules and field definitions are in [the schema reference](schema.
 
 ## Duplicates and provenance
 
+![Synthetic Vancouver import history with 302 and 238 duplicates skipped and both original files available for export](images/vancouver-import-history.png)
+
+*The demo imports retain 21,572 observations from 22,112 source rows. Both
+original synthetic CSV files remain available through Export original.*
+
 Exact observation deduplication compares SSID, MAC, band and band source, radio
 key, timestamp/date, channel, numeric measurements, and retained extra fields.
 Different node identities, authentication values, altitude text, vendor values,
@@ -79,6 +84,16 @@ row's observation link. A previous workspace revision remains available for reco
 | Export original | Exact archived bytes for the selected import, verified against size and SHA-256 | Subsequent Atlas edits and fitted locations |
 | SQL results CSV | The displayed result page | Other result pages; a complete survey backup |
 | Compare CSV | The selected Compare drive/unit through Compare's separate workflow | An Atlas workspace backup |
+
+**Compare → From the Atlas survey** is a separate analysis handoff, by day or
+imported file. Unlike ordinary survey CSV export, it restores recorded duplicate
+source rows by default. It cannot restore excluded measurements, Bluetooth or
+duplicate provenance that older imports never retained. See the [Compare guide](compare.md).
+
+Current workspace and portable SQLite snapshots also retain Wardrive Compare
+results saved in `compare_runs`, including settings, names and notes. Opening a
+saved comparison displays its stored results; it does not reload source logs or
+recompute the analysis. Importing a snapshot as scans does not merge these runs.
 
 Survey exports include all stored observations regardless of map filters. Daily
 exports use `wigle_YYYY-MM-DD.csv`; missing or invalid date prefixes use

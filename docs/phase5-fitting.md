@@ -1,5 +1,9 @@
 # Phase 5: solver comparison and optional GPU scoring
 
+> Historical implementation and measurement report. Claims about defaults,
+> validation and upstream revisions refer to the work recorded here. For current
+> behavior and checks, use the [documentation index](README.md).
+
 Follow-up: [actual-survey memory, preparation and tuned DuckDB results](memory-preparation.md) revise the storage recommendation and resource defaults below. These phase measurements remain historical.
 
 Base: `8af4acc`, after the complete native/DuckDB preparation comparison.

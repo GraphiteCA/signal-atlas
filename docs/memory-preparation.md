@@ -1,5 +1,9 @@
 # Memory and preparation follow-up
 
+> Historical implementation and measurement report. Claims about defaults,
+> validation and upstream revisions refer to the work recorded here. For current
+> behavior and checks, use the [documentation index](README.md).
+
 Base: `0b73cab` (Phase 5), branch `codex/memory-and-preparation`.
 
 ## Recommendation

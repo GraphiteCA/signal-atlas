@@ -1,5 +1,11 @@
 # Phase 3: automatic AP preparation
 
+> Historical implementation and measurement report. Claims about defaults,
+> validation and upstream revisions refer to the work recorded here. For current
+> behavior and checks, use the [documentation index](README.md).
+> Current preparation supports 1–16 workers; new surveys default to half the Go
+> scheduler slots, bounded to 1–8 workers, with a 256 MB scratch budget.
+
 Plan items J01–J05 are implemented on Phase 2 commit `5c54f94`. The checked upstream main is still `6d8833659906faa89b1677424caf5f5cd905c56d`.
 
 ## Behavior and controls

@@ -1,5 +1,9 @@
 # Rejecting spurious observations: measured options
 
+> Historical implementation and measurement report. Claims about defaults,
+> validation and upstream revisions refer to the work recorded here. For current
+> behavior and checks, use the [documentation index](README.md).
+
 Recommendation: add an **optional, nondestructive quality pass** for suspect fits.
 Start by distinguishing physical radios/sites from SSID names, then combine
 reported GPS quality with consensus fitting. Keep the current fast preparation
