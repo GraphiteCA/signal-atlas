@@ -100,7 +100,12 @@ func preservationInsert(c *sqlite.Conn, sql string, values ...any) (err error) {
 		return err
 	}
 	defer func() {
-		err = errors.Join(err, stmt.Reset(), stmt.ClearBindings())
+		resetErr := stmt.Reset()
+		// Preserve the primary failure; Reset can repeat an execution error.
+		if err == nil {
+			err = resetErr
+		}
+		err = errors.Join(err, stmt.ClearBindings())
 	}()
 	if err = db.Bind(stmt, values); err != nil {
 		return err
