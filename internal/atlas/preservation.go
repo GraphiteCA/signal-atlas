@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -90,23 +91,27 @@ func (p *preservationStage) add(importID, line, id int64, o *Observation, duplic
 	return preservationInsert(p.c, "INSERT INTO observation_provenance VALUES(?,?,?,?,?,?)", importID, line, o.ID, id, o.DayTable, o.Source)
 }
 
-// Cache the handful of insert statements: compiling SQL per sighting dominates
-// large-survey import time. Every binding is replaced before each execution.
-func preservationInsert(c *sqlite.Conn, sql string, values ...any) error {
+// Conn.Prepare caches one statement per SQL string; Conn.Close finalizes it.
+// Keep that cache for bulk imports, but release bound row values after each call
+// (Reset alone retains them), including partially bound and failed inserts.
+func preservationInsert(c *sqlite.Conn, sql string, values ...any) (err error) {
 	stmt, err := c.Prepare(sql)
 	if err != nil {
 		return err
 	}
-	if err := db.Bind(stmt, values); err != nil {
-		stmt.Reset()
+	defer func() {
+		resetErr := stmt.Reset()
+		// Preserve the primary failure; Reset can repeat an execution error.
+		if err == nil {
+			err = resetErr
+		}
+		err = errors.Join(err, stmt.ClearBindings())
+	}()
+	if err = db.Bind(stmt, values); err != nil {
 		return err
 	}
 	_, err = stmt.Step()
-	resetErr := stmt.Reset()
-	if err != nil {
-		return err
-	}
-	return resetErr
+	return err
 }
 
 func (p *preservationStage) commit(c *sqlite.Conn) error {
