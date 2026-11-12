@@ -40,6 +40,11 @@ header.top{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:flex-end;justif
 .btn.pri:hover{filter:brightness(1.08);background:var(--accent)}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .btnrow{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.spick{display:flex;flex-direction:column;gap:10px;margin-top:-16px;border:1px solid var(--line);border-radius:6px;padding:12px 16px;background:var(--panel)}.spick[hidden]{display:none}
+.splist{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:4px 18px;max-height:260px;overflow:auto}
+.splist label{display:flex;gap:8px;align-items:baseline;font-size:.9rem;min-width:0}.splist label span:first-of-type{overflow-wrap:anywhere}.splist label span:last-of-type{white-space:nowrap}
+#svName{cursor:text;flex:1 1 260px;max-width:420px}#savedBanner .btn{margin-left:10px}
+body.savedview #settings label:not([for=kmin]):not([for=tz]),body.savedview #drives .btn,body.savedview #drives select,body.savedview #drives input[type=checkbox],body.savedview #resetLayout{pointer-events:none;opacity:.5}
 .progress{height:4px;background:var(--wash);border-radius:2px;overflow:hidden}.progress i{display:block;height:100%;background:var(--accent);width:0}
 .notice{border-left:3px solid var(--warn);padding:8px 12px;background:var(--panel);font-size:.9rem}
 .notice.err{border-left-color:var(--bad)}
@@ -97,14 +102,33 @@ footer.site{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.78rem;color:var(
 footer.site a{color:var(--accent);text-decoration:none}
 .fair{display:flex;flex-direction:column;gap:4px;padding-block:8px;border-top:1px solid var(--line)}.fair:first-child{border-top:0}
 .chips{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:.84rem}.ok{color:var(--accent)}.warn{color:var(--warn)}
+.devf select{max-width:230px}#devText{cursor:text;flex:1 1 200px;max-width:320px}
+a.pick{color:var(--accent);text-decoration:none;cursor:pointer}a.pick:hover{text-decoration:underline}
+tr.grp td{font:600 .76rem var(--body);color:var(--muted);letter-spacing:.03em;padding-top:10px}
+td.mac{font-family:var(--data);font-size:.8rem;white-space:nowrap}
+.flag{color:var(--warn);font-weight:600}
 </style>
 </head><body>
 <div class="wrap">
   <header class="top" data-standalone><div><h1>&#x1f4e1; Wardrive Compare</h1><p class="mut sm">Compare any number of WiGLE CSV logs on the road they share. By <a href="https://github.com/TheChampCodes">Champ</a>.</p></div><nav class="site" aria-label="Signal Atlas"><a href="/">&larr; Home</a><a href="/atlas/">Signal Atlas explorer</a></nav></header>
   <div class="drop" id="drop">
     <div><strong>Drop WiGLE CSV logs or database files here</strong><br><span class="mut sm">Add as many as you like. They're read where they are on disk and never uploaded. Drive names and notes are saved on this PC.</span></div>
-    <div class="btnrow"><label class="btn pri" for="file">Choose files</label><input id="file" type="file" accept=".csv,.txt,text/csv" multiple hidden><button class="btn" id="clear" type="button">Clear all</button></div>
+    <div class="btnrow"><label class="btn pri" for="file">Choose files</label><input id="file" type="file" accept=".csv,.txt,text/csv" multiple hidden><button class="btn" id="fromSurvey" type="button" hidden>From the Atlas survey</button><button class="btn" id="savedBtn" type="button" hidden>Saved comparisons</button><button class="btn" id="clear" type="button">Clear all</button></div>
   </div>
+  <div class="spick" id="surveyPick" hidden>
+    <div class="btnrow"><strong>Drives from the Atlas survey</strong><label class="sm" for="spBy">One drive per <select id="spBy"><option value="day" selected>day</option><option value="import">imported file</option></select></label><span class="mut sm" id="spNote"></span></div>
+    <div class="splist" id="spList"></div>
+    <div class="btnrow"><button class="btn pri" id="spAdd" type="button">Add ticked</button><button class="btn" id="spAll" type="button">Tick all</button><button class="btn" id="spClose" type="button">Close</button><label class="sm" for="spDup"><input type="checkbox" id="spDup" checked> Put back the exact duplicates the survey set aside</label></div>
+    <p class="mut sm">The survey stores each sighting once and keeps a record of every exact duplicate it set aside, so they are put back here and the duplicate figures match the logs. It holds Wi-Fi sightings that have a position: Bluetooth and the data-quality counts still need the log files themselves. Imports made before the survey kept those records come without their duplicates.</p>
+  </div>
+  <div class="spick" id="savedPick" hidden>
+    <div class="btnrow"><strong>Comparisons saved in the Atlas survey</strong><span class="mut sm" id="svNote"></span></div>
+    <div class="btnrow"><input class="btn" id="svName" type="text" maxlength="100" placeholder="Name, for example New antenna vs old" aria-label="Name for this comparison"><button class="btn pri" id="svSave" type="button">Save this comparison</button><span class="mut sm" id="svStat"></span></div>
+    <div class="tw" id="svList"></div>
+    <div class="btnrow"><button class="btn" id="svClose" type="button">Close</button></div>
+    <p class="mut sm">A saved comparison is a snapshot of the results on this page, with its settings, drive names and notes. It is kept in the survey's database (table <code>compare_runs</code>), so it travels with snapshots and can be read in the SQL browser. Opening one shows the stored results; to change settings, add the logs again.</p>
+  </div>
+  <div class="ex" id="savedBanner" hidden></div>
   <div id="prog" hidden><div class="sm mut" id="progText"></div><div class="progress"><i id="progBar"></i></div></div>
   <div id="impMsgs"></div>
   <div id="msgs"></div>
@@ -120,7 +144,7 @@ footer.site a{color:var(--accent);text-decoration:none}
     <label for="legGap">New leg after a gap of<select id="legGap"><option value="5">5 min</option><option value="10">10 min</option><option value="20" selected>20 min</option><option value="45">45 min</option></select></label>
     <label for="tz">Log timestamps are<select id="tz"><option value="utc" selected>UTC</option><option value="local">Local time</option></select></label>
   </div>
-  <nav class="rail" id="rail"><a href="#s-drives">Logs</a><a href="#s-speed">Speed</a><a href="#s-map">Map</a><a href="#s-road">Shared road</a><a href="#s-repeat">Repeatability</a><a href="#s-sched">Scheduler</a><a href="#s-history">AP history</a><a href="#s-nodes">Nodes</a><a href="#s-mix">Network mix</a><a href="#s-data">Data quality</a></nav>
+  <nav class="rail" id="rail"><a href="#s-drives">Logs</a><a href="#s-speed">Speed</a><a href="#s-map">Map</a><a href="#s-road">Shared road</a><a href="#s-repeat">Repeatability</a><a href="#s-sched">Scheduler</a><a href="#s-history">AP history</a><a href="#s-nodes">Nodes</a><a href="#s-mix">Network mix</a><a href="#s-devices" id="railDevices" hidden>Devices</a><a href="#s-data">Data quality</a></nav>
   <div class="tiles" id="tiles"></div>
   <section id="s-drives"><div class="btnrow" style="justify-content:space-between"><h2 id="driveTitle">Drives</h2><button class="btn" id="resetLayout" type="button" hidden>Undo all splits and merges</button></div><p class="sm mut" id="driveHelp"></p><div class="card" id="drives"></div></section>
   <section id="s-perf"><h2>Performance by drive</h2><p class="sm mut">Rates divide by active time, which leaves out logging gaps of a minute or more.</p><div class="card"><div class="tw" id="perf"></div></div></section>
@@ -150,6 +174,14 @@ footer.site a{color:var(--accent);text-decoration:none}
     <div class="card"><div class="tw" id="histTable"></div></div></section>
   <section id="s-nodes"><h2>Nodes</h2><p class="sm mut">Only logs with a Node column show here. Only this node counts APs no other node on that drive saw.</p><div class="card"><div class="tw" id="nodes"></div></div></section>
   <section id="s-mix"><h2>Network mix</h2><p class="sm mut">Percentages are shares of distinct networks on each drive.</p><div class="card"><div class="tw" id="mix"></div></div></section>
+  <section id="s-devices" hidden><h2>Devices</h2><p class="sm mut" id="devLede"></p>
+    <div class="card"><div class="btnrow"><h3>Kinds of device, by drive</h3><label class="sm mut" for="devTyp">Radio</label><select class="btn" id="devTyp"><option value="all" selected>Both</option><option value="wifi">Wi-Fi</option><option value="ble">Bluetooth</option></select><label class="sm"><input type="checkbox" id="devEveryday"> Everyday kinds too</label></div>
+      <p class="sm mut">Distinct devices of each kind on each drive. Pick a kind to list its devices below.</p><div class="tw" id="devCats"></div></div>
+    <div class="card"><h3>Manufacturers</h3><p class="sm mut" id="devMakersLede"></p><div class="tw" id="devMakers"></div></div>
+    <div class="card" id="devFind"><h3>Find devices</h3>
+      <div class="btnrow devf"><label class="sm mut" for="devCat">Kind</label><select class="btn" id="devCat"></select><label class="sm mut" for="devMaker">Manufacturer</label><select class="btn" id="devMaker"></select><label class="sm mut" for="devDrive">Seen on</label><select class="btn" id="devDrive"></select><input class="btn" id="devText" type="search" placeholder="Name, MAC or maker" aria-label="Search devices"></div>
+      <p class="sm mut" id="devCount"></p><div class="tw" id="devList"></div></div>
+  </section>
   <section id="s-data"><h2>Data quality</h2><div class="card"><div class="tw" id="quality"></div></div><p class="sm mut" id="perfNote"></p></section>
   <section id="s-method"><h2>How the numbers work</h2><ul class="plain sm">
     <li><strong>Splits and merges:</strong> these change how rows are grouped and never edit your files. Saved CSVs keep each original row as written, including rows the analysis leaves out, except rows with an unreadable timestamp.</li>
@@ -164,6 +196,7 @@ footer.site a{color:var(--accent);text-decoration:none}
     <li><strong>Fairness checks:</strong> shared road (2 km and 30% of each drive), speed mix (the two drives' time per speed band on shared road, 70% alike), direction (heading agrees on half the stretches), time of day (3 h, same weekday or weekend), GPS (no more than 10% of rows without a fix) and randomized MACs (no more than half of the networks, and the two drives within 15 points of each other). Thresholds are rules of thumb.</li>
     <li><strong>Channel yield:</strong> each row's Channel column. New APs are first sightings on the drive, the same thing the scheduler's yield EWMA counts. Share of sightings against share of APs shows where the radio's time went against what it found.</li>
     <li><strong>Revisit interval:</strong> seconds between consecutive sightings of one network within an encounter. Node overlap is the share of networks heard by two or more nodes within the same second, the mesh's own [PAIR] redundancy metric.</li>
+    <li><strong>Devices:</strong> each network or Bluetooth device is identified from its MAC prefix, its name and its Bluetooth manufacturer id (the MfgrId column, when the logger writes it). Notable kinds come from the detection tables of Warble 3.1.321 (MAC prefixes for cameras, police and fleet gear, drones and tools; names for Flock, Flipper Zero, Pineapple and the like) and the buttplug.io list of adult toys' Bluetooth names. Everyday kinds come from names and from what the manufacturer usually makes. A randomized MAC has no manufacturer. A name can be faked or reused, so a match means "looks like", not proof. This needs the Signal Atlas app.</li>
     <li><strong>Street map:</strong> tiles load from OpenStreetMap, so its servers see which area the map shows. Your logs are never sent anywhere.</li>
   </ul></section>
   <footer class="site" data-standalone><span>Signal Atlas · Wardrive Compare</span><span><a href="/">home →</a></span><span><a href="/atlas/">Signal Atlas explorer →</a></span></footer>
@@ -429,16 +462,66 @@ W.onmessage=(e)=>{const m=e.data;
   else if(m.type==='added'){$('msgs').innerHTML=m.errors.map(x=>`<div class="notice err">${esc(x.file)}: ${esc(x.msg)}</div>`).join('')}
   else if(m.type==='error'){$('prog').hidden=true;$('msgs').innerHTML=`<div class="notice err">Couldn't finish the analysis: ${esc(m.msg)}. Try fewer files or reload the page.</div>`}
   else if(m.type==='exported'){$('prog').hidden=true;window.__lastExport=m;saveCsv(m)}
-  else if(m.type==='result'){$('prog').hidden=true;R=m.result;window.__result=R;if(R){baseline=R.baseline;kmin=Math.min(kmin,Math.max(2,R.n))}renderAll()}
+  else if(m.type==='result'){$('prog').hidden=true;R=m.result;window.__result=R;if(R){baseline=R.baseline;kmin=Math.min(kmin,Math.max(2,R.n))}DEV.ans=null;renderAll();devAsk('snap')}
+  else if(m.type==='devices')devGot(m);
 };
 if(window.SignalAtlasApp)SignalAtlasApp.compare.listen((m)=>W.onmessage({data:m}));
-function run(){W.postMessage({type:'analyse',cfg:cfg()})}
+// viewing is the saved comparison on show (in the app): its results are stored, so nothing re-runs.
+let viewing=null;
+function run(){if(viewing)return;W.postMessage({type:'analyse',cfg:cfg()})}
+const selIds=['mode','driveGap','legGap','radius','typ','tz'];
+function leaveSaved(rerun){if(!viewing)return;const p=viewing.prev;viewing=null;document.body.classList.remove('savedview');$('savedBanner').hidden=true;
+  mode=p.mode;cuts=p.cuts;joins=p.joins;excluded=p.excluded;baseline=p.baseline;names=p.names;notes=p.notes;kmin=p.kmin;isExample=p.isExample;hasReal=p.hasReal;selIds.forEach(id=>{$(id).value=p.sel[id]});setDis();$('exBanner').hidden=!isExample;
+  if(rerun)run()}
 async function saveCsv(m){const stat=$('saved-'+m.key);const base=nm(m.key).replace(/\.csv$/i,'').replace(/[^\w.\- ,]+/g,'_');const say_=t=>{if(stat)stat.textContent=t};say_(`${fi(m.rows)} rows ready`);try{if(m.file&&window.SignalAtlasApp){const r=await SignalAtlasApp.saveFile(m.file,base+'.csv');say_(r&&r.saved?`Saved ${fi(m.rows)} rows`:'Save cancelled');return}const u=URL.createObjectURL(m.blob),l=document.createElement('a');l.href=u;l.download=base+'.csv';document.body.appendChild(l);l.click();l.remove();setTimeout(()=>URL.revokeObjectURL(u),60000);say_(`Saved ${fi(m.rows)} rows`)}catch(e){say_("Couldn't save the file")}}
-function addFiles(list,opts={}){const fl=[...list].filter(f=>f.size>0);if(!fl.length)return;if(isExample){isExample=false;W.postMessage({type:'clear'});names={...names};Object.keys(names).forEach(k=>{if(k.startsWith('ex'))delete names[k]});Object.keys(notes).forEach(k=>{if(k.startsWith('ex'))delete notes[k]});$('exBanner').hidden=true;baseline=null;excluded=new Set()}hasReal=true;$('prog').hidden=false;$('progText').textContent='Reading files';W.postMessage({type:'add',files:fl,cfg:cfg(),solo:!!opts.solo})}
+function addFiles(list,opts={}){const fl=[...list].filter(f=>f.size>0);if(!fl.length)return;startReal('Reading files');W.postMessage({type:'add',files:fl,cfg:cfg(),solo:!!opts.solo})}
+function startReal(text){leaveSaved(false);if(isExample){isExample=false;W.postMessage({type:'clear'});names={...names};Object.keys(names).forEach(k=>{if(k.startsWith('ex'))delete names[k]});Object.keys(notes).forEach(k=>{if(k.startsWith('ex'))delete notes[k]});$('exBanner').hidden=true;baseline=null;excluded=new Set()}hasReal=true;$('prog').hidden=false;$('progText').textContent=text}
+// In the app, drives can also come from the open Atlas survey: a day or an imported file each.
+if(window.SignalAtlasApp&&SignalAtlasApp.compare.survey){let sv=null;const sp=$('surveyPick'),boxes=()=>[...$('spList').querySelectorAll('input')];
+  const draw=()=>{const by=$('spBy').value,l=by==='day'?sv.days:sv.imports;
+    $('spNote').textContent=`${fi(sv.observations)} sightings in the open survey (${sv.survey})`+(sv.undated?`; ${fi(sv.undated)} with no date are left out`:'');
+    $('spList').innerHTML=l.length?l.map(d=>`<label><input type="checkbox" value="${esc(d.key)}"><span>${esc(d.name)}</span><span class="mut sm">${by==='import'&&d.from?esc(d.from===d.to?d.from:d.from+' to '+d.to)+', ':''}${fi(d.rows)} rows${d.duplicates?` + ${fi(d.duplicates)} duplicates`:''}</span></label>`).join(''):'<span class="mut sm">The survey has no dated sightings yet. Import scans in Admin first.</span>'};
+  const fail=(e)=>{$('prog').hidden=true;$('msgs').innerHTML=`<div class="notice err">Couldn't read the survey: ${esc(e.message)}</div>`};
+  $('fromSurvey').hidden=false;
+  $('fromSurvey').addEventListener('click',async()=>{if(!sp.hidden){sp.hidden=true;return}sp.hidden=false;sv=null;$('spNote').textContent='';$('spList').innerHTML='<span class="mut sm">Reading the survey…</span>';try{sv=await SignalAtlasApp.compare.survey();draw()}catch(e){sp.hidden=true;fail(e)}});
+  $('spBy').addEventListener('change',()=>{if(sv)draw()});
+  $('spAll').addEventListener('click',()=>{const b=boxes(),on=b.some(x=>!x.checked);b.forEach(x=>{x.checked=on})});
+  $('spClose').addEventListener('click',()=>{sp.hidden=true});
+  $('spAdd').addEventListener('click',()=>{const keys=boxes().filter(x=>x.checked).map(x=>x.value);if(!keys.length)return;sp.hidden=true;startReal('Reading the survey');SignalAtlasApp.compare.addSurvey({by:$('spBy').value,keys,duplicates:$('spDup').checked,cfg:cfg()}).catch(fail)});
+}
+// In the app, a comparison can be saved in the open survey and opened again later.
+if(window.SignalAtlasApp&&SignalAtlasApp.compare.saved){const api=SignalAtlasApp.compare.saved,pk=$('savedPick');let runs=[];
+  const when=s=>{const d=new Date(s);return isNaN(d)?String(s):d.toLocaleString('en-CA',{dateStyle:'medium',timeStyle:'short'})};
+  const drawRuns=()=>{$('svNote').textContent=runs.length?`${runs.length} saved`:'';
+    $('svList').innerHTML=runs.length?tbl([['Name'],['Saved'],['Drives',1],['Compared'],['']],runs.map(r=>[esc(r.name),esc(when(r.created_utc)),fi(r.drives),esc((r.sources||[]).map(x=>x.name).join(', ')),`<button class="btn sm" data-open="${esc(r.id)}" type="button">Open</button> <button class="btn sm" data-del="${esc(r.id)}" type="button">Delete</button>`])):'<span class="mut sm">Nothing is saved in this survey yet.</span>';
+    const can=!!(R&&R.n)&&!isExample&&!viewing;$('svSave').disabled=!can;$('svName').disabled=!can;
+    if(!can)$('svStat').textContent=viewing?'This one is already saved.':'Add logs or survey drives first; the example is not saved.'};
+  const load=async()=>{$('svStat').textContent='';try{runs=(await api.list()).runs||[];drawRuns()}catch(e){$('svList').innerHTML=`<div class="notice err">${esc(e.message)}</div>`}};
+  const openSaved=(run)=>{const st=run.state||{},c=st.cfg||{};
+    const prev=viewing?viewing.prev:{mode,cuts,joins,excluded,baseline,names,notes,kmin,isExample,hasReal,sel:Object.fromEntries(selIds.map(id=>[id,$(id).value]))};
+    viewing={id:run.id,name:run.name,prev};document.body.classList.add('savedview');isExample=false;hasReal=true;$('exBanner').hidden=true;$('prog').hidden=true;$('msgs').innerHTML='';
+    mode=c.mode||'drive';cuts=new Set(c.cuts||[]);joins=new Set(c.joins||[]);excluded=new Set(c.excluded||[]);names={...names,...(st.names||{})};notes={...notes,...(st.notes||{})};
+    [['mode',mode],['driveGap',c.driveGapH],['legGap',c.legGapMin],['radius',c.radius],['typ',c.typ],['tz',st.tz]].forEach(([id,v])=>{if(v!==undefined&&v!==null)$(id).value=String(v)});setDis();
+    R=run.result;window.__result=R;baseline=R.baseline;kmin=Math.min(st.kmin||2,Math.max(2,R.n));
+    $('savedBanner').innerHTML=`Saved comparison <b>${esc(run.name)}</b> (saved ${esc(when(run.created_utc))}). These are the stored results: settings, splits and CSV export need the logs, so add them again to change anything.<button class="btn" id="svLeave" type="button">Close saved comparison</button>`;
+    $('savedBanner').hidden=false;$('svLeave').addEventListener('click',()=>leaveSaved(true));renderAll()};
+  $('savedBtn').hidden=false;
+  $('savedBtn').addEventListener('click',()=>{pk.hidden=!pk.hidden;if(!pk.hidden){$('svList').innerHTML='<span class="mut sm">Reading the survey…</span>';load()}});
+  $('svClose').addEventListener('click',()=>{pk.hidden=true});
+  $('svSave').addEventListener('click',async()=>{const name=$('svName').value.trim();if(!name){$('svStat').textContent='Give it a name first.';$('svName').focus();return}
+    const ns={},nt={};R.allDrives.forEach(d=>{if(names[d.key])ns[d.key]=names[d.key];if(notes[d.key])nt[d.key]=notes[d.key]});
+    $('svStat').textContent='Saving…';
+    try{runs=(await api.save({name,drives:R.n,sources:R.drives.map(d=>({key:d.key,name:nm(d.key),files:d.files,start:d.start,end:d.end,rows:d.rows,km:d.km})),state:{cfg:cfg(),tz:$('tz').value,kmin,names:ns,notes:nt},result:R})).runs||[];$('svName').value='';drawRuns();$('svStat').textContent=`Saved as ${name}.`}
+    catch(e){$('svStat').textContent="Couldn't save: "+e.message}});
+  $('svList').addEventListener('click',async e=>{const o=e.target.closest('[data-open]'),d=e.target.closest('[data-del]');
+    try{if(d){if(!d.dataset.sure){d.dataset.sure='1';d.textContent='Delete for good?';return}runs=(await api.remove(d.dataset.del)).runs||[];drawRuns()}
+      else if(o){openSaved(await api.open(o.dataset.open));pk.hidden=true}}
+    catch(er){$('svStat').textContent="That didn't work: "+er.message}});
+}
 $('file').addEventListener('change',e=>{addFiles(e.target.files);e.target.value=''});
 const dz=$('drop');['dragenter','dragover'].forEach(t=>dz.addEventListener(t,e=>{e.preventDefault();dz.classList.add('over')}));['dragleave','drop'].forEach(t=>dz.addEventListener(t,e=>{e.preventDefault();dz.classList.remove('over')}));dz.addEventListener('drop',e=>addFiles(e.dataTransfer.files));
 document.addEventListener('dragover',e=>e.preventDefault());document.addEventListener('drop',e=>{e.preventDefault();if(!dz.contains(e.target))addFiles(e.dataTransfer.files)});
-$('clear').addEventListener('click',()=>{W.postMessage({type:'clear'});isExample=false;hasReal=false;excluded=new Set();baseline=null;$('exBanner').hidden=true;$('msgs').innerHTML=''});
+$('clear').addEventListener('click',()=>{leaveSaved(false);W.postMessage({type:'clear'});isExample=false;hasReal=false;excluded=new Set();baseline=null;$('exBanner').hidden=true;$('msgs').innerHTML=''});
 ['radius','typ','driveGap','legGap'].forEach(id=>$(id).addEventListener('change',run));
 $('tz').addEventListener('change',()=>{if(R)renderAll()});
 $('mode').addEventListener('change',e=>{mode=e.target.value;setDis();saveLayout();baseline=null;run()});
@@ -616,9 +699,63 @@ function renderSched(){if(!R||!R.n||!R.drives[0].chans)return;renderChChart();re
   $('bandMiss').innerHTML=R.n<2?'<p class="sm mut">Add a second log to compare.</p>':bm.length?tbl([[U()],['Band'],['Its APs',1],['Baseline also heard',1],['Baseline APs',1],['It also heard',1]],bm):'<p class="sm mut">No shared road with the baseline.</p>';
   const rh=[[U()],['Median revisit',1],['90% within',1],['Within 2 s',1],['2.4 GHz median',1],['5 GHz median',1],['Median first signal',1],['Loudest at first sight',1],['Median gain after first',1],['Node overlap',1]];
   $('revisit').innerHTML=tbl(rh,R.drives.map(d=>{const r=d.revisit,f=d.first;return[label(d.key),secs(r.all.med),secs(r.all.p90),r.all.fast===null?'–':fi(r.all.fast)+'%',secs(r.b24.med),secs(r.b5.med),f.med===null?'–':fi(f.med)+' dBm',f.atPeak===null?'–':fi(f.atPeak)+'%',f.gain===null?'–':fi(f.gain)+' dB',d.nodeOverlap===null?'–':fi(d.nodeOverlap)+'%']}))}
-function renderLabels(){if(!R)return;renderPerf();renderSpeedChart();renderSpeedTable();renderBase();renderRepeat();renderRest();renderStat();renderSched();drawMap();renderMapLede();renderLede();renderTiles();fillBaseline()}
+function renderLabels(){if(!R)return;renderPerf();renderSpeedChart();renderSpeedTable();renderBase();renderRepeat();renderRest();renderStat();renderSched();drawMap();renderMapLede();renderLede();renderTiles();fillBaseline();renderDevices()}
 function fillBaseline(){const b=$('baseline'),v=R.baseline;b.innerHTML=R.drives.map(d=>`<option value="${d.key}">${esc(nm(d.key))}</option>`).join('');b.value=v;const k=$('kmin'),opts=[];for(let i=2;i<=Math.max(2,R.n);i++)opts.push(`<option value="${i}">${i} ${noun(2)}</option>`);k.innerHTML=opts.join('');k.value=kmin;const sd=$('speedDrive'),cur=sd.value;sd.innerHTML=`<option value="all">All drives</option>`+R.drives.map(d=>`<option value="${d.key}">${esc(nm(d.key))}</option>`).join('');if([...sd.options].some(o=>o.value===cur))sd.value=cur;const m=$('metric');if(!m.options.length)m.innerHTML=Object.entries(METRICS).map(([a,b])=>`<option value="${a}">${b[0]}</option>`).join('');const cm=$('chMetric');if(!cm.options.length)cm.innerHTML=Object.entries(CH_METRICS).map(([a,b])=>`<option value="${a}">${b[0]}</option>`).join('');const cd=$('chDrive'),cur2=cd.value;cd.innerHTML=`<option value="all">All drives</option>`+R.drives.map(d=>`<option value="${d.key}">${esc(nm(d.key))}</option>`).join('');if([...cd.options].some(o=>o.value===cur2))cd.value=cur2}
-function renderAll(){const has=!!R&&R.n>0;$('driveTitle').textContent={drive:'Drives',file:'Files',leg:'Legs'}[mode];$('driveHelp').textContent={drive:'Files that run on from each other are lumped into one drive. Split a drive, merge two, or save any of them as its own CSV.',file:'Each CSV stands alone. Split a file at a gap or a chosen time, merge files, or save any part as its own CSV.',leg:'Each stretch between logging gaps stands alone. Split or merge legs, or save any of them as its own CSV.'}[mode]+' Name each one and note its setup. Names and notes come back when you add the same logs again.';['settings','rail','tiles','s-drives','s-perf','s-speed','s-map','s-road','s-repeat','s-sched','s-history','s-nodes','s-mix','s-data','s-method'].forEach(id=>{$(id).hidden=!(has||(id==='s-drives'&&R))});$('exBanner').hidden=!isExample;$('lede').hidden=!has;if(!R){$('lede').hidden=false;$('lede').textContent='Drop your CSVs above to compare them.';return}renderDrives();if(!has)return;fillBaseline();$('speedLede').textContent='Speed bands use GPS speed in km/h. Time visible is measured per encounter, so a stop can make it look very long.';renderLede();renderTiles();renderPerf();renderSpeedChart();renderSpeedTable();drawMap();renderMapLede();renderBase();renderRepeat();renderRest();renderStat();renderSched()}
+function renderAll(){const has=!!R&&R.n>0;$('driveTitle').textContent={drive:'Drives',file:'Files',leg:'Legs'}[mode];$('driveHelp').textContent={drive:'Files that run on from each other are lumped into one drive. Split a drive, merge two, or save any of them as its own CSV.',file:'Each CSV stands alone. Split a file at a gap or a chosen time, merge files, or save any part as its own CSV.',leg:'Each stretch between logging gaps stands alone. Split or merge legs, or save any of them as its own CSV.'}[mode]+' Name each one and note its setup. Names and notes come back when you add the same logs again.';['settings','rail','tiles','s-drives','s-perf','s-speed','s-map','s-road','s-repeat','s-sched','s-history','s-nodes','s-mix','s-data','s-method'].forEach(id=>{$(id).hidden=!(has||(id==='s-drives'&&R))});renderDevices();$('exBanner').hidden=!isExample;$('lede').hidden=!has;if(!R){$('lede').hidden=false;$('lede').textContent='Drop your CSVs above to compare them.';return}renderDrives();if(!has)return;fillBaseline();$('speedLede').textContent='Speed bands use GPS speed in km/h. Time visible is measured per encounter, so a stop can make it look very long.';renderLede();renderTiles();renderPerf();renderSpeedChart();renderSpeedTable();drawMap();renderMapLede();renderBase();renderRepeat();renderRest();renderStat();renderSched()}
+// ---- devices: what the networks and Bluetooth devices are, and who made them ----
+// In the app the engine identifies them (internal/devices) and filters the list. Each result's notable
+// devices and counts are kept on R.devices, so a saved comparison has them; it filters that copy here.
+const DEV={f:{typ:'all',category:'notable',maker:'',drive:'',text:''},ans:null,timer:0};
+const devLive=()=>!!(window.SignalAtlasApp&&!viewing&&R&&R.n);
+const devDefault=()=>{const f=DEV.f;return f.typ==='all'&&f.category==='notable'&&!f.maker&&!f.drive&&!f.text};
+function devAsk(id){if(!devLive())return;W.postMessage({type:'devices',id,cfg:cfg(),filter:id==='snap'?{typ:'all',category:'notable',limit:2000}:{...DEV.f,limit:500}})}
+function devGot(m){if(!R||!R.n||viewing)return;$('prog').hidden=true;const keep={drives:m.drives,categories:m.categories,makers:m.makers,makerCount:m.makerCount,list:m.list,matched:m.matched};
+  if(m.id==='snap'){R.devices=keep;if(devDefault())DEV.ans=keep;else devAsk('list')}else DEV.ans=keep;renderDevices()}
+// a saved comparison's stored copy, filtered here (it holds the notable devices only)
+function devLocal(){const s=R&&R.devices;if(!s)return null;const f=DEV.f,t=f.text.trim().toLowerCase();
+  const list=s.list.filter(d=>(f.typ==='all'||(f.typ==='ble')===(d.type==='BLE'))&&(f.category===''||f.category==='notable'||d.category===f.category)&&(!f.maker||(d.maker||'-')===f.maker)&&(!f.drive||d.drives.includes(f.drive))&&(!t||[d.mac,d.name,d.maker,d.detail].join('\n').toLowerCase().includes(t)));
+  return{...s,list:list.slice(0,500),matched:list.length,local:true}}
+function devRefresh(){if(devLive())devAsk('list');else renderDevices()}
+function renderDevices(){const sec=$('s-devices'),show=!!(R&&R.n&&(window.SignalAtlasApp||R.devices));sec.hidden=!show;$('railDevices').hidden=!show;if(!show)return;
+  const a=devLive()?DEV.ans:devLocal();
+  if(!a){$('devLede').textContent=devLive()?'Identifying devices…':'This saved comparison was stored before device identification. Add the logs again to see it.';['devCats','devMakers','devList','devCount','devMakersLede'].forEach(id=>{$(id).innerHTML=''});return}
+  const keys=R.drives.map(d=>d.key).filter(k=>a.drives.some(x=>x.key===k));const dh=keys.map(k=>[label(k),1]);
+  const per=(by)=>keys.map(k=>by[k]?fi(by[k]):'–');
+  // the lede: notable kinds, the most common first
+  const nb=a.categories.filter(c=>c.notable&&c.n).sort((x,y)=>y.n-x.n),tot=nb.reduce((s,c)=>s+c.n,0),all=a.categories.reduce((s,c)=>s+c.n,0);
+  $('devLede').innerHTML=nb.length?`<b>${fi(tot)}</b> notable ${tot===1?'device':'devices'} on ${keys.length===1?'this drive':'these drives'}: ${nb.slice(0,6).map(c=>`${fi(c.n)} ${esc(c.name)}`).join(', ')}${nb.length>6?`, and ${nb.length-6} more kinds`:''}.`+(a.local?' Saved with this comparison.':''):`Nothing notable on ${keys.length===1?'this drive':'these drives'}, among the devices identified.`;
+  // kinds by drive
+  const ev=$('devEveryday').checked,cs=a.categories.filter(c=>c.n&&(c.notable||ev));
+  $('devCats').innerHTML=cs.length?tbl([['Kind'],['Group'],['All',1],...dh],cs.map(c=>[`<a class="pick" data-cat="${esc(c.code)}">${esc(c.name)}</a>`,`<span class="mut">${esc(c.group)}</span>`,fi(c.n),...per(c.by)])):'<p class="sm mut">No notable devices. Tick "Everyday kinds too" to see the rest.</p>';
+  // manufacturers
+  const ms=a.makers.filter(m=>m.name!=='-').slice(0,15),unk=a.makers.find(m=>m.name==='-');
+  $('devMakersLede').textContent=a.local?'The most common makers among the saved notable devices.':`${fi(a.makerCount-(unk?1:0))} manufacturers among ${fi(all)} devices. ${unk?fi(unk.n)+' devices have none known: a randomized MAC, or a Bluetooth device that sent no manufacturer id.':''}`;
+  $('devMakers').innerHTML=ms.length?tbl([['Manufacturer'],['Devices',1],...dh],ms.map(m=>[`<a class="pick" data-maker="${esc(m.name)}">${esc(m.name)}</a>`,fi(m.n),...per(m.by)])):'<p class="sm mut">No manufacturer known.</p>';
+  // the pickers
+  const f=DEV.f,groups=[...new Set(a.categories.map(c=>c.group))];
+  $('devCat').innerHTML=`<option value="notable">Notable devices</option><option value="">Any kind</option>`+groups.map(g=>`<optgroup label="${esc(g)}">${a.categories.filter(c=>c.group===g).map(c=>`<option value="${esc(c.code)}">${esc(c.name)} (${fi(c.n)})</option>`).join('')}</optgroup>`).join('');
+  if(![...$('devCat').options].some(o=>o.value===f.category))$('devCat').insertAdjacentHTML('beforeend',`<option value="${esc(f.category)}">${esc(f.category)}</option>`);$('devCat').value=f.category;
+  $('devMaker').innerHTML=`<option value="">Any manufacturer</option><option value="-">None known</option>`+a.makers.filter(m=>m.name!=='-').map(m=>`<option value="${esc(m.name)}">${esc(m.name)} (${fi(m.n)})</option>`).join('');
+  if(![...$('devMaker').options].some(o=>o.value===f.maker))$('devMaker').insertAdjacentHTML('beforeend',`<option value="${esc(f.maker)}">${esc(f.maker)}</option>`);$('devMaker').value=f.maker;
+  $('devDrive').innerHTML=`<option value="">Any ${noun(1)}</option>`+keys.map(k=>`<option value="${esc(k)}">${esc(nm(k))}</option>`).join('');$('devDrive').value=keys.includes(f.drive)?f.drive:'';$('devTyp').value=f.typ;
+  // the list
+  const cn=Object.fromEntries(a.categories.map(c=>[c.code,c.name]));
+  $('devCount').textContent=(a.matched?`${fi(a.matched)} ${a.matched===1?'device matches':'devices match'}`+(a.matched>a.list.length?`; the first ${fi(a.list.length)} are shown, notable ones and the most often seen first.`:'.'):'No devices match.')+(a.local?' A saved comparison keeps its notable devices only.':'');
+  const when=(x,y)=>{const s=fmtDate(x)+' '+fmtTime(x);return s===fmtDate(y)+' '+fmtTime(y)?s:s+' – '+(fmtDate(x)===fmtDate(y)?'':fmtDate(y)+' ')+fmtTime(y)};
+  $('devList').innerHTML=a.list.length?tbl([['Kind'],['Name'],['MAC'],['Manufacturer'],['Radio'],['Sightings',1],['Best signal',1],[noun(2)[0].toUpperCase()+noun(2).slice(1)],['Seen'],['']],a.list.map(d=>[
+    (d.notable?'<span class="flag">●</span> ':'')+esc(cn[d.category]||d.category)+(d.detail?`<br><span class="sm mut">${esc(d.detail)}</span>`:''),
+    d.name?esc(d.name):'<span class="mut">no name</span>',`<span class="mac">${esc(d.mac)}</span>`+(d.random?' <span class="pill">random</span>':''),
+    d.maker?esc(d.maker):'<span class="mut">–</span>',d.type==='BLE'?'Bluetooth':'Wi-Fi',fi(d.n),fi(d.best)+' dBm',
+    d.drives.filter(k=>keys.includes(k)).map(k=>`<span class="sw" title="${esc(nm(k))}" style="background:${col(driveIx(k))}"></span>`).join(''),
+    `<span class="sm">${esc(when(d.first,d.last))}</span>`,
+    `<a class="sm" href="https://www.openstreetmap.org/?mlat=${d.lat.toFixed(6)}&mlon=${d.lon.toFixed(6)}#map=18/${d.lat.toFixed(6)}/${d.lon.toFixed(6)}" target="_blank" rel="noopener" title="Where it was heard loudest">Map</a>`])):'';
+  $('devList').querySelectorAll('td:nth-child(3)').forEach(td=>td.classList.add('mac'))}
+$('devTyp').addEventListener('change',e=>{DEV.f.typ=e.target.value;devRefresh()});
+$('devEveryday').addEventListener('change',renderDevices);
+[['devCat','category'],['devMaker','maker'],['devDrive','drive']].forEach(([id,k])=>$(id).addEventListener('change',e=>{DEV.f[k]=e.target.value;devRefresh()}));
+$('devText').addEventListener('input',e=>{clearTimeout(DEV.timer);DEV.timer=setTimeout(()=>{DEV.f.text=e.target.value;devRefresh()},300)});
+['devCats','devMakers'].forEach(id=>$(id).addEventListener('click',e=>{const p=e.target.closest('a.pick');if(!p)return;e.preventDefault();
+  if(p.dataset.cat!==undefined){DEV.f.category=p.dataset.cat;DEV.f.maker=''}else{DEV.f.maker=p.dataset.maker;DEV.f.category=''}devRefresh();$('devFind').scrollIntoView({behavior:'smooth',block:'start'})}));
 let rw=0;new ResizeObserver(()=>{const w=$('s-speed').clientWidth;if(w&&w!==rw&&R&&R.n){rw=w;renderSpeedChart();drawMap();renderBase();renderRepeat();renderChChart()}}).observe(document.body);
 
 // ---- example data ----

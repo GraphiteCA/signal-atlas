@@ -1,0 +1,186 @@
+# Bluetooth company id (hex) -> device category, from the company-category tables of the Warble 3.1.321 report.
+0040	Printer
+0058	TV
+005C	Smart home
+0067	Headphones
+0068	Vehicle
+0069	Health monitor
+006B	Fitness
+0087	Fitness
+0089	Headphones
+009B	Vehicle
+009F	Fitness
+00B1	Fitness
+00BA	Headphones
+00CE	Smart home
+00D0	Glucose monitor
+00D1	Fitness
+00D9	Headphones
+00DC	Toothbrush
+0103	Speaker
+0107	Headphones
+010D	Vehicle
+010E	Vehicle
+011F	Vehicle
+0123	Health monitor
+012E	Smart home
+013B	Smart home
+0155	Smart home
+0157	Fitness
+015B	Health monitor
+0167	Glucose monitor
+016D	Glucose monitor
+0170	Glucose monitor
+017C	Vehicle
+018B	Printer
+01D1	Smart home
+01E0	Headphones
+01F1	Printer
+01F9	Health monitor
+01FC	Fitness
+020B	Vehicle
+020E	Health monitor
+0230	Headphones
+0243	Health monitor
+0258	Speaker
+025D	Printer
+026D	Fitness
+0282	Headphones
+0295	Headphones
+02AE	Smart home
+02B2	Smart ring
+02F2	Camera
+0304	Smart ring
+0334	Smart home
+0360	Health monitor
+0364	Fitness
+038A	Smart home
+038D	Health monitor
+0399	Camera
+03D5	Smart home
+03FF	Health monitor
+0421	Controller
+043A	Headphones
+044A	E-bike / scooter
+0494	Headphones
+04A5	Headphones
+04AD	Headphones
+04D0	Camera
+04D8	Camera
+04DE	Smart home
+04DF	Smart home
+04EB	Smart home
+051A	Camera
+0533	Headphones
+0553	Game console
+055D	Controller
+0576	Tracker
+057F	Controller
+0585	Headphones
+0586	Smart home
+0594	Smart home
+059D	Health monitor
+059F	Health monitor
+05BA	Smart home
+05BC	Smart home
+05E8	E-bike / scooter
+05EB	Vehicle
+05ED	Printer
+0600	Robot vacuum
+060F	Smart home
+0611	Health monitor
+0618	Headphones
+062F	Headphones
+063C	Health monitor
+065F	Printer
+066A	Printer
+0679	Fitness
+067C	Tracker
+067D	Fitness
+0689	Fitness
+06A1	Vehicle
+06B1	Smart home
+06D6	Health monitor
+06D7	Vehicle
+0723	Vehicle
+073A	Smart home
+0755	Printer
+075A	Headphones
+0768	Fitness
+076B	Health monitor
+07A2	TV
+07D0	Smart home
+07D6	Smart home
+07F8	Toothbrush
+07FA	Speaker
+080B	Smart home
+0820	Smart home
+0826	Vehicle
+083F	Smart home
+0870	Smart home
+08AA	Drone
+08B4	Smart home
+08C3	Tracker
+08EC	Vehicle
+0915	Vehicle
+0933	E-bike / scooter
+0941	Vehicle
+094A	Fitness
+0960	Vehicle
+0977	Vehicle
+0998	Tracker
+09F1	Camera
+0A10	Vehicle
+0A1F	Health monitor
+0A4F	E-bike / scooter
+0A80	Headphones
+0AD4	Printer
+0B01	Smart home
+0B27	Smart home
+0B55	Vehicle
+0B6A	Printer
+0BA3	Headphones
+0BA6	Vehicle
+0BA9	Smart home
+0BC6	TV
+0BF2	Health monitor
+0C29	Vehicle
+0C4C	Health monitor
+0C4F	Robot vacuum
+0C82	Controller
+0C94	Health monitor
+0CCD	Vehicle
+0D0A	Fitness
+0D1B	Smart home
+0D4F	Smart ring
+0D65	Health monitor
+0D68	Headphones
+0D81	Headphones
+0D95	Smart home
+0D9A	Headphones
+0DCE	Health monitor
+0DE8	Smart home
+0E41	Computer
+0E43	Health monitor
+0E45	Tracker
+0EA1	Smart home
+0EBB	Vehicle
+0EFF	Health monitor
+0F02	Health monitor
+0F08	Fitness
+0F1F	E-bike / scooter
+0F75	Glucose monitor
+0F7C	Headphones
+0F7F	E-bike / scooter
+0F88	Smart home
+0FC4	Vehicle
+1047	E-bike / scooter
+1048	Vehicle
+106E	Fitness
+109D	Health monitor
+10AE	Headphones
+10BC	Vehicle
+10C8	Glucose monitor
+10D1	Computer
+10D4	Camera
+10D7	Camera

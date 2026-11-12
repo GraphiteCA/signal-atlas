@@ -436,6 +436,7 @@ func (e *Engine) Analyse(cfg *Config) map[string]any {
 		}
 	}
 	e.lastUnits = map[string]lastUnit{}
+	e.unitsGen++
 	for _, d := range all {
 		e.lastUnits[d.key] = lastUnit{files: d.files, a: d.ra, b: d.rb}
 	}

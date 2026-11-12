@@ -5,6 +5,17 @@ A desktop app for Windows, macOS and Linux, for wardriving data too big for the 
 - **Wardrive Compare**, by **[Champ](https://github.com/TheChampCodes)**. Drop WiGLE CSV logs from any logger and compare drives on the road they
   share: networks per second and per km, how long networks stay visible, speed bands, channels, a
   baseline drive with a bootstrap range and fairness checks, repeat passes, multi-node rigs.
+  **From the Atlas survey** takes drives straight from the open survey instead, one per day or one
+  per imported file; the survey is only read. The exact duplicates the survey set aside are put
+  back from its records, so duplicate figures match the logs. The survey holds Wi-Fi sightings with
+  a position, so add the log files themselves when Bluetooth or data-quality counts matter.
+  **Saved comparisons** keeps a result, with its settings, names and notes, in the survey's
+  database (table `compare_runs`) to open again later or read in the SQL browser.
+  **Devices** identifies what each drive heard and who made it, from MAC prefixes, names and
+  Bluetooth manufacturer ids: notable kinds such as Flock and ALPR cameras, body cams, police
+  radios, drones, Flipper Zeros and attack tools, trackers and adult toys, then everyday kinds. A
+  table of kinds and manufacturers by drive, and a device list to filter by kind, manufacturer,
+  radio, drive or text.
 - **Survey map**, by **[Graphite](https://github.com/GraphiteCA)**. Import whole CSV surveys or open SQLite databases, filter by SSID, MAC, band,
   date and signal, and fit where each network's access point is. It supports one fit per radio or
   one shared location per SSID, background AP preparation, and pinned APs.
@@ -214,7 +225,8 @@ engine through the window's own origin, and nothing listens on the network.
 | Path | What it is |
 |---|---|
 | `web/compare.html` | Wardrive Compare. It also runs on its own in a browser, using the analysis worker inside it. |
-| `internal/compare` | Compare's analysis in Go, ported line for line from the worker in `web/compare.html`. |
+| `internal/compare` | Compare's analysis in Go, ported line for line from the worker in `web/compare.html`. Its device counts and list (`devices.go`) run only in the app. |
+| `internal/devices` | Device identification: manufacturer and kind from a MAC, a name and a Bluetooth manufacturer id, with the tables it reads in `data/`. |
 | `internal/atlas` | Signal Atlas in Go, ported from Graphite's Python: filters, queries, the location model and its grid search, fit groups, area estimates, comparisons. |
 | `internal/drivedb` | Legacy archive support and readers for logs and databases. Compare and survey imports use its readers to take database files as the CSV logs they convert to. |
 | `internal/obs` | The column store that holds the survey's observations. |

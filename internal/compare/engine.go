@@ -26,9 +26,13 @@ type Engine struct {
 	macIdx                    map[string]uint32
 	macStr                    []string
 	macRand                   []uint8
+	macMfgr                   []int32 // each MAC's BLE manufacturer id, -1 for none (devices.go)
 	ssidIdx, authIdx, nodeIdx map[string]uint32
 	authNames, nodeNames      []string
 	lastUnits                 map[string]lastUnit
+	unitsGen                  int       // counts Analyse runs, so devices.go knows when its drives changed
+	dev                       *devState // the last devices answer's working, while the drives stay the same
+	devCls                    map[uint32]devClass
 	lat0, cos                 float64
 	// Say receives every message the worker would post to the page.
 	Say func(map[string]any)
@@ -56,15 +60,17 @@ type FileIn struct {
 	Data []byte `json:"-"`
 }
 
-// Message is the worker's onmessage: add, analyse, export, clear, remove.
+// Message is the worker's onmessage: add, analyse, export, clear, remove; and devices, which only
+// the app answers (the page's worker has no device tables).
 type Message struct {
-	Type  string   `json:"type"`
-	Files []FileIn `json:"files"`
-	Cfg   *Config  `json:"cfg"`
-	Solo  bool     `json:"solo"`
-	Key   string   `json:"key"`
-	ID    any      `json:"id"`
-	Name  string   `json:"name"`
+	Type   string        `json:"type"`
+	Files  []FileIn      `json:"files"`
+	Cfg    *Config       `json:"cfg"`
+	Solo   bool          `json:"solo"`
+	Key    string        `json:"key"`
+	ID     any           `json:"id"`
+	Name   string        `json:"name"`
+	Filter *DeviceFilter `json:"filter"`
 }
 
 // Handle runs one message; replies go to Say.
@@ -117,9 +123,15 @@ func (e *Engine) Handle(m *Message) {
 		e.say(map[string]any{"type": "result", "result": e.Analyse(m.Cfg)})
 	case "export":
 		err = e.export(m.Key, m.ID)
+	case "devices":
+		r := e.Devices(m.Cfg, m.Filter)
+		r["id"] = m.ID
+		e.say(r)
 	case "clear":
 		e.files = nil
 		e.macIdx, e.macStr, e.macRand, e.ssidIdx = map[string]uint32{}, nil, nil, map[string]uint32{}
+		e.macMfgr, e.dev, e.devCls = nil, nil, nil
+		e.lastUnits = map[string]lastUnit{}
 		e.say(map[string]any{"type": "result", "result": nil})
 	case "remove":
 		var keep []*File

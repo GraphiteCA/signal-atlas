@@ -267,7 +267,7 @@ func initialize(c *sqlite.Conn, path string) error {
 			return err
 		}
 	}
-	if err := db.Script(c, schemaSQL+preparationSchema+preservationSchema); err != nil {
+	if err := db.Script(c, schemaSQL+preparationSchema+preservationSchema+compareRunsSchema); err != nil {
 		return err
 	}
 	if err := initializePreparationStorage(c); err != nil {

@@ -29,6 +29,25 @@ location method and survey engine. The original Python implementation and explor
 
 The full dependency list is in `go.mod`; each module carries its own license.
 
+## Device identification data
+
+`internal/devices/data` holds the tables Compare's device identification reads:
+
+- `oui.tsv.gz`: MAC prefix to organization, from the IEEE's public MA-L, MA-M and MA-S registries
+  ([standards-oui.ieee.org](https://standards-oui.ieee.org)).
+- `ble_companies.tsv.gz`: Bluetooth company identifiers, from the Bluetooth SIG's public assigned
+  numbers ([bitbucket.org/bluetooth-SIG/public](https://bitbucket.org/bluetooth-SIG/public)).
+- `ble_categories.tsv`: company identifier to device category, from the company-category tables
+  in the reverse-engineering report of Warble 3.1.321 (Nov 9, 2026, @jbohack).
+- `notable_prefixes.tsv`: the hardcoded MAC prefixes of Warble 3.1.321's detection tables, as the
+  reverse-engineering report of Nov 9, 2026 (@jbohack) lists them.
+- `adult_toy_names.txt`: adult toys' Bluetooth names from the
+  [buttplug.io](https://github.com/buttplugio/buttplug) device configuration (BSD-3-Clause), as that
+  report lists them.
+
+The name rules and Bluetooth company rules in `internal/devices/devices.go` follow the same
+report; the everyday categories follow WarHog's Insights.
+
 ## Data
 
 Map tiles and the explorer's offline basemap excerpts come from

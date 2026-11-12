@@ -1,0 +1,331 @@
+# MAC prefix -> maker -> category code, from the Warble 3.1.321 detection report's appendix.
+# 24-bit OUIs and 28/36-bit IEEE MA-M/MA-S blocks, matched as prefixes of the lowercased address.
+# The report's 45 Milesight blocks are left out: it calls their pairing suspect.
+00:00:a5	Tattile	TRAFFIC
+00:00:c3	L3Harris	POLICE
+00:01:31	Bosch Security	CCTV
+00:02:68	Harris StingRay	FORENSIC
+00:02:d1	Vivotek	CCTV
+00:03:c5	Mobotix	CCTV
+00:04:4c	Jenoptik	TRAFFIC
+00:04:63	Bosch Security	CCTV
+00:04:7d	Motorola Solutions	POLICE
+00:06:ec	L3Harris	POLICE
+00:09:bc	Utility	BODYCAM
+00:0d:4f	JVC Kenwood	POLICE
+00:12:1c	Parrot	DRONE
+00:13:e2	GeoVision	CCTV
+00:16:00	Cellebrite	FORENSIC
+00:16:ed	Utility	BODYCAM
+00:17:3d	Neology	TRAFFIC
+00:17:f3	L3Harris	POLICE
+00:18:29	Gatso	TRAFFIC
+00:18:85	Motorola Solutions	POLICE
+00:1c:3c	Seon	BODYCAM
+00:1c:fa	Alarm.com	HOMECAM
+00:1d:4d	Adaptive Recognition	TRAFFIC
+00:1d:96	WatchGuard	BODYCAM
+00:1f:54	Lorex	HOMECAM
+00:1f:92	Motorola Solutions	POLICE
+00:20:31	Tattile	TRAFFIC
+00:20:b3	Tattile	TRAFFIC
+00:22:9f	Sensys Gatso	TRAFFIC
+00:22:af	Safety Vision	BODYCAM
+00:23:bd	Digital Ally	BODYCAM
+00:24:39	Digital Barrier	BODYCAM
+00:24:ae	Idemia	TRAFFIC
+00:25:df	Axon	BODYCAM
+00:26:7e	Parrot	DRONE
+00:30:44	Cradlepoint	FLEET
+00:30:7e	Redflex	TRAFFIC
+00:40:75	Tattile	TRAFFIC
+00:40:8c	Axis	CCTV
+00:40:8e	Tattile	TRAFFIC
+00:40:de	ELSAG	TRAFFIC
+00:50:c2:2a:5	Septier	FORENSIC
+00:50:c2:be:7	Selex ES	TRAFFIC
+00:60:4f	Tattile	TRAFFIC
+00:65:1e	Amcrest	HOMECAM
+00:80:46	Tattile	TRAFFIC
+00:80:e7	Leonardo	TRAFFIC
+00:90:43	Tattile	TRAFFIC
+00:90:8b	Tattile	TRAFFIC
+00:90:c7	Icom	POLICE
+00:a0:80	Tattile	TRAFFIC
+00:a0:d5	Sierra Wireless	FLEET
+00:b4:63	Ring	HOMECAM
+00:bc:99	Hikvision	CCTV
+00:bf:15	Genetec	TRAFFIC
+00:e0:1c	Cradlepoint	FLEET
+00:e0:6a	Kapsch	TRAFFIC
+04:03:12	Hikvision	CCTV
+04:41:69	GoPro	ACTIONCAM
+04:57:47	GoPro	ACTIONCAM
+04:a8:5a	DJI	DRONE
+04:c3:e6:9	Ekin	TRAFFIC
+04:ee:cd	Hikvision	CCTV
+04:ee:e8:5	RealWear	GLASSES
+08:3b:c1	Hikvision	CCTV
+08:3c:03:0	Federal Signal	LIGHTBAR
+08:54:11	Hikvision	CCTV
+08:a1:89	Hikvision	CCTV
+08:cc:81	Hikvision	CCTV
+08:ed:ed	Dahua	CCTV
+0c:75:d2	Hikvision	CCTV
+0c:9a:e6	DJI	DRONE
+0c:a6:4c	Ezviz	CCTV
+0c:bf:15	Genetec	TRAFFIC
+0c:fa:22	Flipper Zero	FLIPPER
+10:12:fb	Hikvision	CCTV
+10:74:6f	Motorola Solutions	POLICE
+14:a7:8b	Dahua	CCTV
+18:68:cb	Hikvision	CCTV
+18:7f:88	Ring	HOMECAM
+18:80:25	Hikvision	CCTV
+18:b4:30	Nest	HOMECAM
+18:d7:93	Autel	DRONE
+1c:82:59:d	Stalker	POLICERADAR
+20:1f:55	DJI	DRONE
+20:2c:05	Dahua	CCTV
+20:bb:bc	Ezviz	CCTV
+24:0f:9b	Hikvision	CCTV
+24:28:fd	Hikvision	CCTV
+24:2b:d6	Ring	HOMECAM
+24:32:ae	Hikvision	CCTV
+24:48:45	Hikvision	CCTV
+24:52:6a	Dahua	CCTV
+24:74:f7	GoPro	ACTIONCAM
+24:b1:05	Hikvision	CCTV
+24:d2:cc	SmartDrive	FLEET
+28:57:be	Hikvision	CCTV
+28:a3:31	Sierra Wireless	FLEET
+28:ea:5b	Samsara	FLEET
+28:fd:80:c	Airbus TETRA	POLICE
+2c:42:05	Lytx	FLEET
+2c:a5:9c	Hikvision	CCTV
+2c:aa:8e	Wyze	HOMECAM
+30:dd:aa	Dahua	CCTV
+34:09:62	Hikvision	CCTV
+34:3e:a4	Ring	HOMECAM
+34:46:63:2	Airbus TETRA	POLICE
+34:91:f0	DJI	DRONE
+34:c6:dd	Ezviz	CCTV
+34:d2:62	DJI	DRONE
+38:1d:14	Skydio	DRONE
+38:73:ea:0	L3 Mobile-Vision	BODYCAM
+38:af:29	Dahua	CCTV
+3c:1b:f8	Hikvision	CCTV
+3c:a0:70	Blink	HOMECAM
+3c:e3:6b	Dahua	CCTV
+3c:ef:8c	Dahua	CCTV
+40:7a:a4	Dahua	CCTV
+40:ac:bf	Hikvision	CCTV
+40:b5:70	Hikvision	CCTV
+40:bd:9e	Physio-Control	MEDICAL
+44:19:b6	Hikvision	CCTV
+44:47:cc	Hikvision	CCTV
+44:a6:42	Hikvision	CCTV
+44:b4:23	Hanwha	CCTV
+48:1c:b9	DJI	DRONE
+48:46:8d	Zepcam	BODYCAM
+48:62:64	Arlo	HOMECAM
+48:78:5b	Hikvision	CCTV
+48:e3:c3	Jenoptik	TRAFFIC
+48:ea:63	Uniview	CCTV
+4c:11:bf	Dahua	CCTV
+4c:1f:86	Hikvision	CCTV
+4c:43:f6	DJI	DRONE
+4c:62:df	Hikvision	CCTV
+4c:99:e8	Dahua	CCTV
+4c:bd:8f	Hikvision	CCTV
+4c:cc:34	Motorola Solutions	POLICE
+4c:f5:dc	Hikvision	CCTV
+50:13:9d	Sierra Wireless	FLEET
+50:40:74	Alarm.com	HOMECAM
+50:a0:30:3	RealWear	GLASSES
+50:df:95	Lytx	FLEET
+50:e4:67	Ring	HOMECAM
+50:e5:38	Hikvision	CCTV
+54:8c:81	Hikvision	CCTV
+54:c4:15	Hikvision	CCTV
+54:d6:0d	Ezviz	CCTV
+54:e0:19	Ring	HOMECAM
+58:03:fb	Hikvision	CCTV
+58:50:ed	Hikvision	CCTV
+58:8f:cf	Ezviz	CCTV
+58:a7:48	Lytx	FLEET
+58:b8:58	DJI	DRONE
+58:e8:76:c	Kustom Signals	POLICERADAR
+5c:2b:f5	Vivint	HOMECAM
+5c:34:5b	Hikvision	CCTV
+5c:47:5e	Ring	HOMECAM
+5c:f5:1a	Dahua	CCTV
+60:60:1f	DJI	DRONE
+60:99:d1	Vuzix	GLASSES
+64:16:66	Nest	HOMECAM
+64:24:4d	Ezviz	CCTV
+64:69:bc	Hytera	POLICE
+64:9a:63	Ring	HOMECAM
+64:ce:6e	Sierra Wireless	FLEET
+64:db:8b	Hikvision	CCTV
+64:f2:fb	Ezviz	CCTV
+64:fd:29	Dahua	CCTV
+68:6d:bc	Hikvision	CCTV
+6c:18:11	Decatur	POLICERADAR
+6c:1c:71	Dahua	CCTV
+6c:f1:7e	Uniview	CCTV
+70:1a:d5	Avigilon	TRAFFIC
+70:ad:43	Blink	HOMECAM
+70:b3:d5:1c:5	Selex ES	TRAFFIC
+70:b3:d5:52:1	Selex ES	TRAFFIC
+70:b3:d5:71:f	GrayKey	FORENSIC
+70:b3:d5:88:a	Perceptics	TRAFFIC
+70:b3:d5:f5:e	Selex ES	TRAFFIC
+70:e4:6e	Lytx	FLEET
+74:13:48	Blink	HOMECAM
+74:3f:c2	Hikvision	CCTV
+74:ab:93	Blink	HOMECAM
+74:c9:29	Dahua	CCTV
+78:a6:a0	Ezviz	CCTV
+78:c1:ae	Ezviz	CCTV
+7c:70:bc:5	Airbus TETRA	POLICE
+7c:78:b2	Wyze	HOMECAM
+80:48:2c	Wyze	HOMECAM
+80:48:9f	Hikvision	CCTV
+80:7c:62	Hikvision	CCTV
+80:be:af	Hikvision	CCTV
+80:e1:26	Flipper Zero	FLIPPER
+80:e1:27	Flipper Zero	FLIPPER
+80:f5:ae	Hikvision	CCTV
+84:94:59	Hikvision	CCTV
+84:9a:40	Hikvision	CCTV
+84:db:2f	Sierra Wireless	FLEET
+84:eb:3e	Vivint	HOMECAM
+84:eb:3f	Vivint	HOMECAM
+88:26:3f	Uniview	CCTV
+88:29:85	DJI	DRONE
+88:de:39	Hikvision	CCTV
+8c:1d:55	Hanwha	CCTV
+8c:1f:64:03:5	RealWear	GLASSES
+8c:1f:64:9c:1	RealWear	GLASSES
+8c:22:d2	Hikvision	CCTV
+8c:58:23	DJI	DRONE
+8c:e7:48	Hikvision	CCTV
+8c:e9:b4	Dahua	CCTV
+90:02:a9	Dahua	CCTV
+90:48:6c	Ring	HOMECAM
+94:7b:be	Ubicquia	TRAFFIC
+94:e1:ac	Hikvision	CCTV
+94:ec:13	Ezviz	CCTV
+98:8b:0a	Hikvision	CCTV
+98:9d:e5	Hikvision	CCTV
+98:da:92	Vuzix	GLASSES
+98:df:82	Hikvision	CCTV
+98:f1:12	Hikvision	CCTV
+98:f9:cc	Dahua	CCTV
+9c:06:6e	Hytera	POLICE
+9c:14:63	Dahua	CCTV
+9c:5a:8a	DJI	DRONE
+9c:76:13	Ring	HOMECAM
+9c:83:bf	PRO-VISION	BODYCAM
+9c:86:2b	Motorola Solutions	POLICE
+9c:8e:cd	Amcrest	HOMECAM
+a0:60:32	Amcrest	HOMECAM
+a0:bd:1d	Dahua	CCTV
+a0:fe:61	Vivint	HOMECAM
+a0:ff:0c	Hikvision	CCTV
+a4:11:62	Arlo	HOMECAM
+a4:14:37	Hikvision	CCTV
+a4:29:02	Hikvision	CCTV
+a4:4b:d9	Hikvision	CCTV
+a4:a4:59	Hikvision	CCTV
+a4:d5:c2	Hikvision	CCTV
+a4:da:22:2	Airbus TETRA	POLICE
+a8:ca:87	Dahua	CCTV
+ac:04:aa	GoPro	ACTIONCAM
+ac:1c:26	Ezviz	CCTV
+ac:9f:c3	Ring	HOMECAM
+ac:b9:2f	Hikvision	CCTV
+ac:cb:51	Hikvision	CCTV
+ac:cc:8e	Axis	CCTV
+b0:30:c8	Teal Drones	DRONE
+b0:ff:0d	Hikvision	CCTV
+b4:1e:52	Flock	SURVEILLANCE
+b4:4c:3b	Dahua	CCTV
+b4:a3:82	Hikvision	CCTV
+b8:3a:9d	Alarm.com	HOMECAM
+b8:a4:4f	Axis	CCTV
+b8:e2:8c	Motorola Solutions	POLICE
+bc:29:78	Hikvision	CCTV
+bc:32:5f	Dahua	CCTV
+bc:5e:33	Hikvision	CCTV
+bc:9b:5e	Hikvision	CCTV
+bc:ad:28	Hikvision	CCTV
+bc:ba:c2	Hikvision	CCTV
+c0:39:5a	Dahua	CCTV
+c0:51:7e	Hikvision	CCTV
+c0:56:e3	Hikvision	CCTV
+c0:6d:ed	Hikvision	CCTV
+c0:d3:91:e	Motive	FLEET
+c4:2f:90	Hikvision	CCTV
+c4:79:05	Uniview	CCTV
+c4:7c:8d:9	Airbus TETRA	POLICE
+c4:a5:59:1	Motive	FLEET
+c4:aa:c4	Dahua	CCTV
+c4:db:ad	Ring	HOMECAM
+c8:a7:02	Hikvision	CCTV
+cc:13:f3	Hikvision	CCTV
+cc:3b:fb	Ring	HOMECAM
+cc:93:4a	Sierra Wireless	FLEET
+cc:c2:61:3	Netradyne	FLEET
+d0:3f:27	Wyze	HOMECAM
+d4:11:d6	ShotSpotter	GUNSHOT
+d4:32:60	GoPro	ACTIONCAM
+d4:43:0e	Dahua	CCTV
+d4:d9:19	GoPro	ACTIONCAM
+d4:e8:53	Hikvision	CCTV
+d8:1f:65	Utility	BODYCAM
+d8:42:e2	Canary	HOMECAM
+d8:96:85	GoPro	ACTIONCAM
+dc:07:f8	Hikvision	CCTV
+dc:d2:6a	Hikvision	CCTV
+dc:ee:14	ADT	HOMECAM
+e0:2e:fe	Dahua	CCTV
+e0:50:8b	Dahua	CCTV
+e0:a7:00	Verkada	CCTV
+e0:b6:f5:8	Yuneec	DRONE
+e0:ba:ad	Hikvision	CCTV
+e0:ca:3c	Hikvision	CCTV
+e0:da:dc	JVC Kenwood	POLICE
+e0:df:13	Hikvision	CCTV
+e4:1e:0a:b	Federal Signal	LIGHTBAR
+e4:24:6c	Dahua	CCTV
+e4:30:22	Hanwha	CCTV
+e4:7a:2c	DJI	DRONE
+e4:d5:8b	Hikvision	CCTV
+e8:27:25	Axis	CCTV
+e8:a0:ed	Hikvision	CCTV
+e8:ff:1e:a	Geotab	FLEET
+ec:71:db	Reolink	HOMECAM
+ec:72:f7	DJI	DRONE
+ec:97:e0	Ezviz	CCTV
+ec:a9:71	Hikvision	CCTV
+ec:c8:9c	Hikvision	CCTV
+f0:55:82	Insta360	ACTIONCAM
+f0:74:c1	Blink	HOMECAM
+f0:c8:8b	Wyze	HOMECAM
+f4:69:d5:7	Rosco Vision	BODYCAM
+f4:70:18	Ezviz	CCTV
+f4:b1:c2	Dahua	CCTV
+f4:dd:9e	GoPro	ACTIONCAM
+f8:40:68	DJI	DRONE
+f8:4d:fc	Hikvision	CCTV
+f8:51:28	SimpliSafe	HOMECAM
+f8:ce:07	Dahua	CCTV
+fc:01:9e	VieVu	BODYCAM
+fc:24:22	Ezviz	CCTV
+fc:5f:49	Dahua	CCTV
+fc:9c:98	Arlo	HOMECAM
+fc:9f:fd	Hikvision	CCTV
+fc:b6:9d	Dahua	CCTV
+fc:db:21	Samsara	FLEET

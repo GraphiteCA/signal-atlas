@@ -8,6 +8,7 @@ import (
 	"os"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -110,6 +111,7 @@ type lineFields struct {
 	mac, ssid, auth, node string
 	ts, rssi, lat, lon    float64
 	fq, ch                float64
+	mfgr                  int32 // the BLE manufacturer id (MfgrId), -1 for none; device identification only
 	other, ble            bool
 	status                int // 0 kept, 1 corrupt, 2 other type, 3 no GPS, 4 bad signal
 }
@@ -182,6 +184,13 @@ func (h *header) parse(ln string) lineFields {
 	r.auth, _ = h.get(c, "AuthMode")
 	r.ssid, _ = h.get(c, "SSID")
 	r.ble = ty != "WIFI"
+	r.mfgr = -1
+	if mf, ok := h.get(c, "MfgrId"); ok && r.ble {
+		// decimal as WiGLE writes it; 0 is what loggers write for none
+		if v, err := strconv.ParseInt(strings.TrimSpace(mf), 0, 32); err == nil && v > 0 && v <= 0xFFFF {
+			r.mfgr = int32(v)
+		}
+	}
 	return r
 }
 
@@ -427,6 +436,10 @@ func (e *Engine) addRow(f *File, r *lineFields, last *float64) {
 			rnd = 1
 		}
 		e.macRand = append(e.macRand, rnd)
+		e.macMfgr = append(e.macMfgr, -1)
+	}
+	if r.mfgr >= 0 && e.macMfgr[id] < 0 {
+		e.macMfgr[id] = r.mfgr
 	}
 	C := &f.C
 	C.t = append(C.t, uint32(toUint(r.ts, 32)))
