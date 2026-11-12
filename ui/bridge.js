@@ -5,6 +5,7 @@
 //    pathOf(file)          where a dropped or picked file lives (a page is never told)
 //    compare.post(msg)     the compare page's worker messages, to its Go engine session
 //    compare.listen(fn)    and its answers back (long-polled)
+//    compare.survey()      the open survey's days and imports; compare.addSurvey(choice) adds them as drives
 //    saveFile(file, name)  move an export the engine wrote to where the user chooses
 //    pickFiles(opts)       the Windows file dialog
 //  It sends links to other sites to the user's browser, and points OpenStreetMap tiles at the engine.
@@ -95,6 +96,16 @@
       }).catch((e) => emit({ type: 'error', msg: e.message }));
     },
     listen(fn) { listeners.push(fn); },
+    // the open survey's days and imports, and adding a choice of them as drives (in turn with post)
+    survey() { return ready.then(() => fetch('/api/app/compare/survey', { cache: 'no-store' })).then(json); },
+    addSurvey(choice) {
+      const done = chain.then(async () => {
+        await ensureSession();
+        return post('/api/app/compare/' + session + '/survey', choice);
+      });
+      chain = done.catch(() => {});
+      return done;
+    },
   };
   addEventListener('pagehide', () => { if (session) navigator.sendBeacon('/api/app/compare/' + session + '/close'); });
 

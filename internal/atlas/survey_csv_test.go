@@ -95,6 +95,66 @@ func TestSurveyDeduplicationPreservesHistoryAndIDs(t *testing.T) {
 	}
 }
 
+func TestSurveyDrivesForCompare(t *testing.T) {
+	a := duplicateSurvey(t)
+	ctx := context.Background()
+	list, err := a.SurveyDrives(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	days, imports := list["days"].([]Row), list["imports"].([]Row)
+	if list["observations"] != int64(5) || list["undated"] != int64(1) || len(days) != 1 || days[0]["key"] != "2026-01-02" || days[0]["rows"] != int64(4) {
+		t.Fatalf("days: %v", list)
+	}
+	if len(imports) != 2 || imports[0]["name"] != "first.csv" || imports[0]["rows"] != int64(2) || imports[1]["rows"] != int64(2) || imports[1]["from"] != "2026-01-02" || imports[1]["to"] != "2026-01-02" {
+		t.Fatalf("imports: %v", imports)
+	}
+	dataRows := func(path string) int {
+		t.Helper()
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, body, _ := strings.Cut(string(b), "\n")
+		rows, err := csv.NewReader(strings.NewReader(body)).ReadAll()
+		if err != nil || len(rows) == 0 || rows[0][0] != "MAC" {
+			t.Fatalf("%s: %v %v", path, rows, err)
+		}
+		return len(rows) - 1
+	}
+	first, second := imports[0]["key"].(string), imports[1]["key"].(string)
+	// repeated and unknown keys add nothing; files come back in the order asked for
+	files, err := a.ExportSurveyDrives(ctx, t.TempDir(), "test", "import", []string{second, first, second, "no-such-import"}, nil)
+	if err != nil || len(files) != 2 || files[0].Key != second || files[1].Key != first {
+		t.Fatalf("by import: %+v %v", files, err)
+	}
+	for _, f := range files {
+		// the undated row of the second import is left out
+		if info, err := os.Stat(f.Path); err != nil || info.Size() != f.Size || dataRows(f.Path) != 2 {
+			t.Fatalf("import file: %+v %v", f, err)
+		}
+	}
+	files, err = a.ExportSurveyDrives(ctx, t.TempDir(), "test", "day", []string{"2026-01-02"}, nil)
+	if err != nil || len(files) != 1 || dataRows(files[0].Path) != 4 {
+		t.Fatalf("by day: %+v %v", files, err)
+	}
+	files, err = a.ExportSurveyDrives(ctx, t.TempDir(), "test", "day", []string{"2030-01-01"}, nil)
+	if err != nil || len(files) != 0 {
+		t.Fatalf("absent day: %+v %v", files, err)
+	}
+	if _, err = a.ExportSurveyDrives(ctx, t.TempDir(), "test", "week", []string{"2026-01-02"}, nil); err == nil {
+		t.Fatal("unknown grouping accepted")
+	}
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	if _, err = a.ExportSurveyDrives(cancelled, t.TempDir(), "test", "day", []string{"2026-01-02"}, nil); err == nil {
+		t.Fatal("export ignored cancellation")
+	}
+	if a.Obs.State().N != 5 {
+		t.Fatal("export changed survey")
+	}
+}
+
 func TestSurveyCSVExports(t *testing.T) {
 	a := duplicateSurvey(t)
 	ctx := context.Background()

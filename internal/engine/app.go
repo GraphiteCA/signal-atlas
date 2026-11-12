@@ -238,6 +238,8 @@ func (s *Server) appGet(w http.ResponseWriter, r *http.Request, p string, params
 	case p == "/api/app/drives/status":
 		sendJSON(w, s.drv.status(), 200)
 		return nil
+	case p == "/api/app/compare/survey":
+		return s.compareSurveyList(w, r)
 	case strings.HasPrefix(p, "/api/app/compare/") && strings.HasSuffix(p, "/next"):
 		cs := s.cmp.get(strings.TrimSuffix(strings.TrimPrefix(p, "/api/app/compare/"), "/next"))
 		if cs == nil {
@@ -299,6 +301,8 @@ func (s *Server) appPost(w http.ResponseWriter, r *http.Request, p string, param
 			cs.work <- &m
 			sendJSON(w, map[string]any{"ok": true}, 200)
 			return nil
+		case "survey":
+			return s.compareSurveyAdd(w, r, cs)
 		case "upload":
 			// a log with no file behind it (made in the page): kept with the session
 			name := filepath.Base(params.First("name", "log.csv"))

@@ -5,6 +5,9 @@ A desktop app for Windows, macOS and Linux, for wardriving data too big for the 
 - **Wardrive Compare**, by **[Champ](https://github.com/TheChampCodes)**. Drop WiGLE CSV logs from any logger and compare drives on the road they
   share: networks per second and per km, how long networks stay visible, speed bands, channels, a
   baseline drive with a bootstrap range and fairness checks, repeat passes, multi-node rigs.
+  **From the Atlas survey** takes drives straight from the open survey instead, one per day or one
+  per imported file; the survey is only read. It holds Wi-Fi sightings with a position and no exact
+  duplicates, so add the log files themselves when duplicate or Bluetooth figures matter.
 - **Survey map**, by **[Graphite](https://github.com/GraphiteCA)**. Import whole CSV surveys or open SQLite databases, filter by SSID, MAC, band,
   date and signal, and fit where each network's access point is. It supports one fit per radio or
   one shared location per SSID, background AP preparation, and pinned APs.
