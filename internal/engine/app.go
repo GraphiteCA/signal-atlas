@@ -240,6 +240,8 @@ func (s *Server) appGet(w http.ResponseWriter, r *http.Request, p string, params
 		return nil
 	case p == "/api/app/compare/survey":
 		return s.compareSurveyList(w, r)
+	case p == compareSavedPath || strings.HasPrefix(p, compareSavedPath+"/"):
+		return s.compareSavedGet(w, r, p)
 	case strings.HasPrefix(p, "/api/app/compare/") && strings.HasSuffix(p, "/next"):
 		cs := s.cmp.get(strings.TrimSuffix(strings.TrimPrefix(p, "/api/app/compare/"), "/next"))
 		if cs == nil {
@@ -274,6 +276,8 @@ func (s *Server) appPost(w http.ResponseWriter, r *http.Request, p string, param
 		return s.settingsPost(w, r, p)
 	case strings.HasPrefix(p, "/api/app/drives/"):
 		return s.drv.post(w, r, strings.TrimPrefix(p, "/api/app/drives/"))
+	case p == compareSavedPath || p == compareSavedPath+"/delete":
+		return s.compareSavedPost(w, r, p)
 	case strings.HasPrefix(p, "/api/app/compare/"):
 		rest := strings.TrimPrefix(p, "/api/app/compare/")
 		id, action, _ := strings.Cut(rest, "/")

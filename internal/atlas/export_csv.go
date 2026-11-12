@@ -14,20 +14,23 @@ import (
 	"time"
 
 	"signal-atlas/internal/drivedb"
-	"signal-atlas/internal/obs"
+	"zombiezen.com/go/sqlite"
 )
 
 // ExportSurveyCSV streams a committed observation state. dest is an owned
 // staging file or directory; the caller publishes it only after success.
 func (a *Atlas) ExportSurveyCSV(ctx context.Context, dest, version string, days bool, progress func(int64, int64)) (int64, []string, error) {
-	return a.exportSurveyCSV(ctx, dest, version, days, nil, progress)
+	return a.exportSurveyCSV(ctx, dest, version, days, nil, false, progress)
 }
 
 // exportSurveyCSV writes the survey as one CSV (dest is the file), one CSV a day (days; dest is a
 // folder), or the files pick names (dest is a folder): pick gets a row's import and its day ("" when
-// undated) and answers the file the row belongs in, or false to leave the row out.
-func (a *Atlas) exportSurveyCSV(ctx context.Context, dest, version string, days bool, pick func(importID int64, day string) (string, bool), progress func(int64, int64)) (int64, []string, error) {
+// undated) and answers the file the row belongs in, or false to leave the row out. With duplicates,
+// a picked export also writes the exact duplicates the survey set aside: one row for every source
+// row on record, in the file of the import that supplied it.
+func (a *Atlas) exportSurveyCSV(ctx context.Context, dest, version string, days bool, pick func(importID int64, day string) (string, bool), duplicates bool, progress func(int64, int64)) (int64, []string, error) {
 	split := days || pick != nil
+	duplicates = duplicates && pick != nil
 	a.WriteMu.Lock()
 	defer a.WriteMu.Unlock()
 	c, put, err := a.Conn(ctx)
@@ -35,6 +38,7 @@ func (a *Atlas) exportSurveyCSV(ctx context.Context, dest, version string, days 
 		return 0, nil, err
 	}
 	defer put()
+	st := a.Obs.State()
 	details, done, err := detailReader(c)
 	if err != nil {
 		return 0, nil, err
@@ -134,15 +138,37 @@ func (a *Atlas) exportSurveyCSV(ctx context.Context, dest, version string, days 
 		name string
 		keep bool
 	}
-	var picked map[uint32]choice
-	var pickedFor *obs.Segment
+	picked := map[[2]int64]choice{}
+	choose := func(importID int64, date uint32) choice {
+		key := [2]int64{importID, int64(date)}
+		ch, known := picked[key]
+		if !known {
+			ch.name, ch.keep = pick(importID, surveyDay(st.Str[date]))
+			picked[key] = ch
+		}
+		return ch
+	}
+	// with duplicates, a stored row is written once for every source row recorded for it
+	var sources func(id, importID, line int64) ([]sourceRows, error)
+	if duplicates {
+		read, done, err := provenanceReader(c)
+		if err != nil {
+			return 0, nil, err
+		}
+		defer done()
+		sources = read
+	}
+	type target struct {
+		name string
+		rows int64
+	}
+	var targets []target
 	num := func(v float64) string {
 		if math.IsNaN(v) || math.IsInf(v, 0) {
 			return ""
 		}
 		return strconv.FormatFloat(v, 'g', -1, 64)
 	}
-	st := a.Obs.State()
 	for _, s := range st.Segs {
 		for i := 0; i < s.N; i++ {
 			if seen%4096 == 0 {
@@ -155,32 +181,37 @@ func (a *Atlas) exportSurveyCSV(ctx context.Context, dest, version string, days 
 			}
 			seen++
 			first := st.Str[s.First[i]]
-			name := ""
-			if pick != nil {
-				if pickedFor != s {
-					picked, pickedFor = map[uint32]choice{}, s
+			targets = targets[:0]
+			switch {
+			case sources != nil:
+				from, err := sources(s.ID(i), s.ImportID, s.Line[i])
+				if err != nil {
+					return 0, nil, err
 				}
-				ch, known := picked[s.Date[i]]
-				if !known {
-					ch.name, ch.keep = pick(s.ImportID, surveyDay(st.Str[s.Date[i]]))
-					picked[s.Date[i]] = ch
+				for _, src := range from {
+					if pick == nil {
+						targets = append(targets, target{"", src.rows})
+					} else if ch := choose(src.importID, s.Date[i]); ch.keep {
+						targets = append(targets, target{ch.name, src.rows})
+					}
 				}
-				if !ch.keep {
-					continue
+			case pick != nil:
+				if ch := choose(s.ImportID, s.Date[i]); ch.keep {
+					targets = append(targets, target{ch.name, 1})
 				}
-				name = ch.name
-			} else if days {
+			case days:
 				day := "undated"
 				if len(first) >= 10 {
 					if _, err := time.Parse("2006-01-02", first[:10]); err == nil {
 						day = first[:10]
 					}
 				}
-				name = "wigle_" + day + ".csv"
+				targets = append(targets, target{"wigle_" + day + ".csv", 1})
+			default:
+				targets = append(targets, target{"", 1})
 			}
-			o, err := get(name)
-			if err != nil {
-				return 0, nil, err
+			if len(targets) == 0 {
+				continue
 			}
 			row := []string{st.Str[s.MAC[i]], st.Str[s.SSID[i]], "", first, st.Str[s.Channel[i]], num(s.Freq[i]), num(s.RSSI[i]), num(s.Lat[i]), num(s.Lon[i]), "", num(s.Acc[i]), "", "", "WIFI", ""}
 			row = append(row, st.Str[s.Band[i]])
@@ -202,10 +233,18 @@ func (a *Atlas) exportSurveyCSV(ctx context.Context, dest, version string, days 
 					row[k] = value
 				}
 			}
-			if err = o.w.Write(row); err != nil {
-				return 0, nil, err
+			for _, t := range targets {
+				o, err := get(t.name)
+				if err != nil {
+					return 0, nil, err
+				}
+				for k := int64(0); k < t.rows; k++ {
+					if err = o.w.Write(row); err != nil {
+						return 0, nil, err
+					}
+					n++
+				}
 			}
-			n++
 		}
 	}
 	if err := ctx.Err(); err != nil {
@@ -230,6 +269,59 @@ func (a *Atlas) exportSurveyCSV(ctx context.Context, dest, version string, days 
 	return n, files, nil
 }
 
+// sourceRows is how many source rows one import supplied for a stored observation.
+type sourceRows struct {
+	importID, rows int64
+}
+
+// provenanceReader streams, by ascending observation id, where each stored observation came from:
+// the source rows on record for it, counted by import. A duplicate dropped at import or removed by
+// duplicate cleanup is a recorded source row of the observation that stayed, so the counts give the
+// rows the logs really held. The stored row itself (its import and line) counts once even when no
+// record of it exists, as in surveys older than source preservation. The slice is reused.
+func provenanceReader(c *sqlite.Conn) (func(id, importID, line int64) ([]sourceRows, error), func(), error) {
+	s, _, err := c.PrepareTransient("SELECT observation_id,import_id,line FROM observation_provenance WHERE observation_id IS NOT NULL ORDER BY observation_id")
+	if err != nil {
+		return nil, nil, err
+	}
+	ok, err := s.Step()
+	if err != nil {
+		s.Finalize()
+		return nil, nil, err
+	}
+	var out []sourceRows
+	return func(id, importID, line int64) ([]sourceRows, error) {
+		out = out[:0]
+		add := func(imp int64) {
+			for k := range out {
+				if out[k].importID == imp {
+					out[k].rows++
+					return
+				}
+			}
+			out = append(out, sourceRows{imp, 1})
+		}
+		for ok && s.ColumnInt64(0) < id {
+			if ok, err = s.Step(); err != nil {
+				return nil, err
+			}
+		}
+		self := false
+		for ok && s.ColumnInt64(0) == id {
+			imp := s.ColumnInt64(1)
+			self = self || (imp == importID && s.ColumnInt64(2) == line)
+			add(imp)
+			if ok, err = s.Step(); err != nil {
+				return nil, err
+			}
+		}
+		if !self {
+			add(importID)
+		}
+		return out, nil
+	}, func() { s.Finalize() }, nil
+}
+
 // surveyDay is a stored date when it is a calendar day, "" otherwise.
 func surveyDay(date string) string {
 	if len(date) == 10 {
@@ -241,21 +333,23 @@ func surveyDay(date string) string {
 }
 
 // SurveyDrives lists what Wardrive Compare can take from the survey: its days and its imports,
-// each with the rows it holds now. Rows without a readable day are counted, not listed: Compare
-// has no use for a sighting it cannot place in time.
+// each with the rows it holds now, and for an import the exact duplicates set aside when it was
+// imported. Rows without a readable day are counted, not listed: Compare has no use for a
+// sighting it cannot place in time.
 func (a *Atlas) SurveyDrives(ctx context.Context) (map[string]any, error) {
 	c, put, err := a.Conn(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer put()
-	named, err := db.All(c, "SELECT id,filename FROM imports")
+	named, err := db.All(c, "SELECT id,filename,duplicate_rows FROM imports")
 	if err != nil {
 		return nil, err
 	}
-	filename := map[int64]string{}
+	filename, duplicates := map[int64]string{}, map[int64]int64{}
 	for _, r := range named {
 		filename[db.Int(r["id"])] = db.Str(r["filename"])
+		duplicates[db.Int(r["id"])] = db.Int(r["duplicate_rows"])
 	}
 	st := a.Obs.State()
 	type span struct {
@@ -297,6 +391,12 @@ func (a *Atlas) SurveyDrives(ctx context.Context) (map[string]any, error) {
 	for _, d := range days {
 		dayRows = append(dayRows, Row{"key": d, "name": d, "rows": byDay[d]})
 	}
+	// an import whose every row was already in the survey stored nothing, but is still a drive
+	for id, n := range duplicates {
+		if n > 0 && byImport[id] == nil {
+			byImport[id] = &span{}
+		}
+	}
 	ids := make([]int64, 0, len(byImport))
 	for id := range byImport {
 		ids = append(ids, id)
@@ -309,7 +409,7 @@ func (a *Atlas) SurveyDrives(ctx context.Context) (map[string]any, error) {
 		if name == "" {
 			name = "Import " + strconv.FormatInt(id, 10)
 		}
-		importRows = append(importRows, Row{"key": strconv.FormatInt(id, 10), "name": name, "rows": sp.rows, "from": sp.from, "to": sp.to})
+		importRows = append(importRows, Row{"key": strconv.FormatInt(id, 10), "name": name, "rows": sp.rows, "duplicates": duplicates[id], "from": sp.from, "to": sp.to})
 	}
 	return map[string]any{"observations": int64(st.N), "undated": undated, "days": dayRows, "imports": importRows}, nil
 }
@@ -322,8 +422,9 @@ type SurveyDriveFile struct {
 
 // ExportSurveyDrives writes the chosen days (by "day") or imports (by "import") of the survey as
 // one WiGLE CSV each in dir, an owned empty folder, in the order of keys. A key with no dated rows
-// writes no file.
-func (a *Atlas) ExportSurveyDrives(ctx context.Context, dir, version, by string, keys []string, progress func(int64, int64)) ([]SurveyDriveFile, error) {
+// writes no file. With duplicates, the exact duplicates the survey set aside are written back, so a
+// drive holds the rows its logs did; an import's drive then includes rows first stored by another.
+func (a *Atlas) ExportSurveyDrives(ctx context.Context, dir, version, by string, keys []string, duplicates bool, progress func(int64, int64)) ([]SurveyDriveFile, error) {
 	if by != "day" && by != "import" {
 		return nil, fmt.Errorf("Choose survey drives by day or by import")
 	}
@@ -344,7 +445,7 @@ func (a *Atlas) ExportSurveyDrives(ctx context.Context, dir, version, by string,
 		name, ok := file[key]
 		return name, ok
 	}
-	if _, _, err := a.exportSurveyCSV(ctx, dir, version, false, pick, progress); err != nil {
+	if _, _, err := a.exportSurveyCSV(ctx, dir, version, false, pick, duplicates, progress); err != nil {
 		return nil, err
 	}
 	var out []SurveyDriveFile

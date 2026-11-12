@@ -43,6 +43,8 @@ header.top{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:flex-end;justif
 .spick{display:flex;flex-direction:column;gap:10px;margin-top:-16px;border:1px solid var(--line);border-radius:6px;padding:12px 16px;background:var(--panel)}.spick[hidden]{display:none}
 .splist{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:4px 18px;max-height:260px;overflow:auto}
 .splist label{display:flex;gap:8px;align-items:baseline;font-size:.9rem;min-width:0}.splist label span:first-of-type{overflow-wrap:anywhere}.splist label span:last-of-type{white-space:nowrap}
+#svName{cursor:text;flex:1 1 260px;max-width:420px}#savedBanner .btn{margin-left:10px}
+body.savedview #settings label:not([for=kmin]):not([for=tz]),body.savedview #drives .btn,body.savedview #drives select,body.savedview #drives input[type=checkbox],body.savedview #resetLayout{pointer-events:none;opacity:.5}
 .progress{height:4px;background:var(--wash);border-radius:2px;overflow:hidden}.progress i{display:block;height:100%;background:var(--accent);width:0}
 .notice{border-left:3px solid var(--warn);padding:8px 12px;background:var(--panel);font-size:.9rem}
 .notice.err{border-left-color:var(--bad)}
@@ -106,14 +108,22 @@ footer.site a{color:var(--accent);text-decoration:none}
   <header class="top" data-standalone><div><h1>&#x1f4e1; Wardrive Compare</h1><p class="mut sm">Compare any number of WiGLE CSV logs on the road they share. By <a href="https://github.com/TheChampCodes">Champ</a>.</p></div><nav class="site" aria-label="Signal Atlas"><a href="/">&larr; Home</a><a href="/atlas/">Signal Atlas explorer</a></nav></header>
   <div class="drop" id="drop">
     <div><strong>Drop WiGLE CSV logs or database files here</strong><br><span class="mut sm">Add as many as you like. They're read where they are on disk and never uploaded. Drive names and notes are saved on this PC.</span></div>
-    <div class="btnrow"><label class="btn pri" for="file">Choose files</label><input id="file" type="file" accept=".csv,.txt,text/csv" multiple hidden><button class="btn" id="fromSurvey" type="button" hidden>From the Atlas survey</button><button class="btn" id="clear" type="button">Clear all</button></div>
+    <div class="btnrow"><label class="btn pri" for="file">Choose files</label><input id="file" type="file" accept=".csv,.txt,text/csv" multiple hidden><button class="btn" id="fromSurvey" type="button" hidden>From the Atlas survey</button><button class="btn" id="savedBtn" type="button" hidden>Saved comparisons</button><button class="btn" id="clear" type="button">Clear all</button></div>
   </div>
   <div class="spick" id="surveyPick" hidden>
     <div class="btnrow"><strong>Drives from the Atlas survey</strong><label class="sm" for="spBy">One drive per <select id="spBy"><option value="day" selected>day</option><option value="import">imported file</option></select></label><span class="mut sm" id="spNote"></span></div>
     <div class="splist" id="spList"></div>
-    <div class="btnrow"><button class="btn pri" id="spAdd" type="button">Add ticked</button><button class="btn" id="spAll" type="button">Tick all</button><button class="btn" id="spClose" type="button">Close</button></div>
-    <p class="mut sm">The survey keeps Wi-Fi sightings that have a position, with exact duplicates removed. Duplicate, Bluetooth and data-quality figures therefore read lower than from the original logs; add the log files themselves when those matter.</p>
+    <div class="btnrow"><button class="btn pri" id="spAdd" type="button">Add ticked</button><button class="btn" id="spAll" type="button">Tick all</button><button class="btn" id="spClose" type="button">Close</button><label class="sm" for="spDup"><input type="checkbox" id="spDup" checked> Put back the exact duplicates the survey set aside</label></div>
+    <p class="mut sm">The survey stores each sighting once and keeps a record of every exact duplicate it set aside, so they are put back here and the duplicate figures match the logs. It holds Wi-Fi sightings that have a position: Bluetooth and the data-quality counts still need the log files themselves. Imports made before the survey kept those records come without their duplicates.</p>
   </div>
+  <div class="spick" id="savedPick" hidden>
+    <div class="btnrow"><strong>Comparisons saved in the Atlas survey</strong><span class="mut sm" id="svNote"></span></div>
+    <div class="btnrow"><input class="btn" id="svName" type="text" maxlength="100" placeholder="Name, for example New antenna vs old" aria-label="Name for this comparison"><button class="btn pri" id="svSave" type="button">Save this comparison</button><span class="mut sm" id="svStat"></span></div>
+    <div class="tw" id="svList"></div>
+    <div class="btnrow"><button class="btn" id="svClose" type="button">Close</button></div>
+    <p class="mut sm">A saved comparison is a snapshot of the results on this page, with its settings, drive names and notes. It is kept in the survey's database (table <code>compare_runs</code>), so it travels with snapshots and can be read in the SQL browser. Opening one shows the stored results; to change settings, add the logs again.</p>
+  </div>
+  <div class="ex" id="savedBanner" hidden></div>
   <div id="prog" hidden><div class="sm mut" id="progText"></div><div class="progress"><i id="progBar"></i></div></div>
   <div id="impMsgs"></div>
   <div id="msgs"></div>
@@ -441,27 +451,62 @@ W.onmessage=(e)=>{const m=e.data;
   else if(m.type==='result'){$('prog').hidden=true;R=m.result;window.__result=R;if(R){baseline=R.baseline;kmin=Math.min(kmin,Math.max(2,R.n))}renderAll()}
 };
 if(window.SignalAtlasApp)SignalAtlasApp.compare.listen((m)=>W.onmessage({data:m}));
-function run(){W.postMessage({type:'analyse',cfg:cfg()})}
+// viewing is the saved comparison on show (in the app): its results are stored, so nothing re-runs.
+let viewing=null;
+function run(){if(viewing)return;W.postMessage({type:'analyse',cfg:cfg()})}
+const selIds=['mode','driveGap','legGap','radius','typ','tz'];
+function leaveSaved(rerun){if(!viewing)return;const p=viewing.prev;viewing=null;document.body.classList.remove('savedview');$('savedBanner').hidden=true;
+  mode=p.mode;cuts=p.cuts;joins=p.joins;excluded=p.excluded;baseline=p.baseline;names=p.names;notes=p.notes;kmin=p.kmin;isExample=p.isExample;hasReal=p.hasReal;selIds.forEach(id=>{$(id).value=p.sel[id]});setDis();$('exBanner').hidden=!isExample;
+  if(rerun)run()}
 async function saveCsv(m){const stat=$('saved-'+m.key);const base=nm(m.key).replace(/\.csv$/i,'').replace(/[^\w.\- ,]+/g,'_');const say_=t=>{if(stat)stat.textContent=t};say_(`${fi(m.rows)} rows ready`);try{if(m.file&&window.SignalAtlasApp){const r=await SignalAtlasApp.saveFile(m.file,base+'.csv');say_(r&&r.saved?`Saved ${fi(m.rows)} rows`:'Save cancelled');return}const u=URL.createObjectURL(m.blob),l=document.createElement('a');l.href=u;l.download=base+'.csv';document.body.appendChild(l);l.click();l.remove();setTimeout(()=>URL.revokeObjectURL(u),60000);say_(`Saved ${fi(m.rows)} rows`)}catch(e){say_("Couldn't save the file")}}
 function addFiles(list,opts={}){const fl=[...list].filter(f=>f.size>0);if(!fl.length)return;startReal('Reading files');W.postMessage({type:'add',files:fl,cfg:cfg(),solo:!!opts.solo})}
-function startReal(text){if(isExample){isExample=false;W.postMessage({type:'clear'});names={...names};Object.keys(names).forEach(k=>{if(k.startsWith('ex'))delete names[k]});Object.keys(notes).forEach(k=>{if(k.startsWith('ex'))delete notes[k]});$('exBanner').hidden=true;baseline=null;excluded=new Set()}hasReal=true;$('prog').hidden=false;$('progText').textContent=text}
+function startReal(text){leaveSaved(false);if(isExample){isExample=false;W.postMessage({type:'clear'});names={...names};Object.keys(names).forEach(k=>{if(k.startsWith('ex'))delete names[k]});Object.keys(notes).forEach(k=>{if(k.startsWith('ex'))delete notes[k]});$('exBanner').hidden=true;baseline=null;excluded=new Set()}hasReal=true;$('prog').hidden=false;$('progText').textContent=text}
 // In the app, drives can also come from the open Atlas survey: a day or an imported file each.
 if(window.SignalAtlasApp&&SignalAtlasApp.compare.survey){let sv=null;const sp=$('surveyPick'),boxes=()=>[...$('spList').querySelectorAll('input')];
   const draw=()=>{const by=$('spBy').value,l=by==='day'?sv.days:sv.imports;
     $('spNote').textContent=`${fi(sv.observations)} sightings in the open survey (${sv.survey})`+(sv.undated?`; ${fi(sv.undated)} with no date are left out`:'');
-    $('spList').innerHTML=l.length?l.map(d=>`<label><input type="checkbox" value="${esc(d.key)}"><span>${esc(d.name)}</span><span class="mut sm">${by==='import'?esc(d.from===d.to?d.from:d.from+' to '+d.to)+', ':''}${fi(d.rows)} rows</span></label>`).join(''):'<span class="mut sm">The survey has no dated sightings yet. Import scans in Admin first.</span>'};
+    $('spList').innerHTML=l.length?l.map(d=>`<label><input type="checkbox" value="${esc(d.key)}"><span>${esc(d.name)}</span><span class="mut sm">${by==='import'&&d.from?esc(d.from===d.to?d.from:d.from+' to '+d.to)+', ':''}${fi(d.rows)} rows${d.duplicates?` + ${fi(d.duplicates)} duplicates`:''}</span></label>`).join(''):'<span class="mut sm">The survey has no dated sightings yet. Import scans in Admin first.</span>'};
   const fail=(e)=>{$('prog').hidden=true;$('msgs').innerHTML=`<div class="notice err">Couldn't read the survey: ${esc(e.message)}</div>`};
   $('fromSurvey').hidden=false;
   $('fromSurvey').addEventListener('click',async()=>{if(!sp.hidden){sp.hidden=true;return}sp.hidden=false;sv=null;$('spNote').textContent='';$('spList').innerHTML='<span class="mut sm">Reading the survey…</span>';try{sv=await SignalAtlasApp.compare.survey();draw()}catch(e){sp.hidden=true;fail(e)}});
   $('spBy').addEventListener('change',()=>{if(sv)draw()});
   $('spAll').addEventListener('click',()=>{const b=boxes(),on=b.some(x=>!x.checked);b.forEach(x=>{x.checked=on})});
   $('spClose').addEventListener('click',()=>{sp.hidden=true});
-  $('spAdd').addEventListener('click',()=>{const keys=boxes().filter(x=>x.checked).map(x=>x.value);if(!keys.length)return;sp.hidden=true;startReal('Reading the survey');SignalAtlasApp.compare.addSurvey({by:$('spBy').value,keys,cfg:cfg()}).catch(fail)});
+  $('spAdd').addEventListener('click',()=>{const keys=boxes().filter(x=>x.checked).map(x=>x.value);if(!keys.length)return;sp.hidden=true;startReal('Reading the survey');SignalAtlasApp.compare.addSurvey({by:$('spBy').value,keys,duplicates:$('spDup').checked,cfg:cfg()}).catch(fail)});
+}
+// In the app, a comparison can be saved in the open survey and opened again later.
+if(window.SignalAtlasApp&&SignalAtlasApp.compare.saved){const api=SignalAtlasApp.compare.saved,pk=$('savedPick');let runs=[];
+  const when=s=>{const d=new Date(s);return isNaN(d)?String(s):d.toLocaleString('en-CA',{dateStyle:'medium',timeStyle:'short'})};
+  const drawRuns=()=>{$('svNote').textContent=runs.length?`${runs.length} saved`:'';
+    $('svList').innerHTML=runs.length?tbl([['Name'],['Saved'],['Drives',1],['Compared'],['']],runs.map(r=>[esc(r.name),esc(when(r.created_utc)),fi(r.drives),esc((r.sources||[]).map(x=>x.name).join(', ')),`<button class="btn sm" data-open="${esc(r.id)}" type="button">Open</button> <button class="btn sm" data-del="${esc(r.id)}" type="button">Delete</button>`])):'<span class="mut sm">Nothing is saved in this survey yet.</span>';
+    const can=!!(R&&R.n)&&!isExample&&!viewing;$('svSave').disabled=!can;$('svName').disabled=!can;
+    if(!can)$('svStat').textContent=viewing?'This one is already saved.':'Add logs or survey drives first; the example is not saved.'};
+  const load=async()=>{$('svStat').textContent='';try{runs=(await api.list()).runs||[];drawRuns()}catch(e){$('svList').innerHTML=`<div class="notice err">${esc(e.message)}</div>`}};
+  const openSaved=(run)=>{const st=run.state||{},c=st.cfg||{};
+    const prev=viewing?viewing.prev:{mode,cuts,joins,excluded,baseline,names,notes,kmin,isExample,hasReal,sel:Object.fromEntries(selIds.map(id=>[id,$(id).value]))};
+    viewing={id:run.id,name:run.name,prev};document.body.classList.add('savedview');isExample=false;hasReal=true;$('exBanner').hidden=true;$('prog').hidden=true;$('msgs').innerHTML='';
+    mode=c.mode||'drive';cuts=new Set(c.cuts||[]);joins=new Set(c.joins||[]);excluded=new Set(c.excluded||[]);names={...names,...(st.names||{})};notes={...notes,...(st.notes||{})};
+    [['mode',mode],['driveGap',c.driveGapH],['legGap',c.legGapMin],['radius',c.radius],['typ',c.typ],['tz',st.tz]].forEach(([id,v])=>{if(v!==undefined&&v!==null)$(id).value=String(v)});setDis();
+    R=run.result;window.__result=R;baseline=R.baseline;kmin=Math.min(st.kmin||2,Math.max(2,R.n));
+    $('savedBanner').innerHTML=`Saved comparison <b>${esc(run.name)}</b> (saved ${esc(when(run.created_utc))}). These are the stored results: settings, splits and CSV export need the logs, so add them again to change anything.<button class="btn" id="svLeave" type="button">Close saved comparison</button>`;
+    $('savedBanner').hidden=false;$('svLeave').addEventListener('click',()=>leaveSaved(true));renderAll()};
+  $('savedBtn').hidden=false;
+  $('savedBtn').addEventListener('click',()=>{pk.hidden=!pk.hidden;if(!pk.hidden){$('svList').innerHTML='<span class="mut sm">Reading the survey…</span>';load()}});
+  $('svClose').addEventListener('click',()=>{pk.hidden=true});
+  $('svSave').addEventListener('click',async()=>{const name=$('svName').value.trim();if(!name){$('svStat').textContent='Give it a name first.';$('svName').focus();return}
+    const ns={},nt={};R.allDrives.forEach(d=>{if(names[d.key])ns[d.key]=names[d.key];if(notes[d.key])nt[d.key]=notes[d.key]});
+    $('svStat').textContent='Saving…';
+    try{runs=(await api.save({name,drives:R.n,sources:R.drives.map(d=>({key:d.key,name:nm(d.key),files:d.files,start:d.start,end:d.end,rows:d.rows,km:d.km})),state:{cfg:cfg(),tz:$('tz').value,kmin,names:ns,notes:nt},result:R})).runs||[];$('svName').value='';drawRuns();$('svStat').textContent=`Saved as ${name}.`}
+    catch(e){$('svStat').textContent="Couldn't save: "+e.message}});
+  $('svList').addEventListener('click',async e=>{const o=e.target.closest('[data-open]'),d=e.target.closest('[data-del]');
+    try{if(d){if(!d.dataset.sure){d.dataset.sure='1';d.textContent='Delete for good?';return}runs=(await api.remove(d.dataset.del)).runs||[];drawRuns()}
+      else if(o){openSaved(await api.open(o.dataset.open));pk.hidden=true}}
+    catch(er){$('svStat').textContent="That didn't work: "+er.message}});
 }
 $('file').addEventListener('change',e=>{addFiles(e.target.files);e.target.value=''});
 const dz=$('drop');['dragenter','dragover'].forEach(t=>dz.addEventListener(t,e=>{e.preventDefault();dz.classList.add('over')}));['dragleave','drop'].forEach(t=>dz.addEventListener(t,e=>{e.preventDefault();dz.classList.remove('over')}));dz.addEventListener('drop',e=>addFiles(e.dataTransfer.files));
 document.addEventListener('dragover',e=>e.preventDefault());document.addEventListener('drop',e=>{e.preventDefault();if(!dz.contains(e.target))addFiles(e.dataTransfer.files)});
-$('clear').addEventListener('click',()=>{W.postMessage({type:'clear'});isExample=false;hasReal=false;excluded=new Set();baseline=null;$('exBanner').hidden=true;$('msgs').innerHTML=''});
+$('clear').addEventListener('click',()=>{leaveSaved(false);W.postMessage({type:'clear'});isExample=false;hasReal=false;excluded=new Set();baseline=null;$('exBanner').hidden=true;$('msgs').innerHTML=''});
 ['radius','typ','driveGap','legGap'].forEach(id=>$(id).addEventListener('change',run));
 $('tz').addEventListener('change',()=>{if(R)renderAll()});
 $('mode').addEventListener('change',e=>{mode=e.target.value;setDis();saveLayout();baseline=null;run()});

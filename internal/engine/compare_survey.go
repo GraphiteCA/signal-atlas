@@ -76,6 +76,8 @@ func (s *Server) compareSurveyAdd(w http.ResponseWriter, r *http.Request, cs *co
 		By   string          `json:"by"`
 		Keys []string        `json:"keys"`
 		Cfg  *compare.Config `json:"cfg"`
+		// Duplicates writes back the exact duplicates the survey set aside (the default).
+		Duplicates *bool `json:"duplicates"`
 	}
 	if err := json.Unmarshal(raw, &body); err != nil {
 		return err
@@ -115,7 +117,8 @@ func (s *Server) compareSurveyAdd(w http.ResponseWriter, r *http.Request, cs *co
 	}
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
-	files, err := a.ExportSurveyDrives(ctx, dir, s.o.Version, body.By, body.Keys, func(done, total int64) {
+	duplicates := body.Duplicates == nil || *body.Duplicates
+	files, err := a.ExportSurveyDrives(ctx, dir, s.o.Version, body.By, body.Keys, duplicates, func(done, total int64) {
 		if cs.ended() {
 			cancel()
 			return

@@ -6,8 +6,11 @@ A desktop app for Windows, macOS and Linux, for wardriving data too big for the 
   share: networks per second and per km, how long networks stay visible, speed bands, channels, a
   baseline drive with a bootstrap range and fairness checks, repeat passes, multi-node rigs.
   **From the Atlas survey** takes drives straight from the open survey instead, one per day or one
-  per imported file; the survey is only read. It holds Wi-Fi sightings with a position and no exact
-  duplicates, so add the log files themselves when duplicate or Bluetooth figures matter.
+  per imported file; the survey is only read. The exact duplicates the survey set aside are put
+  back from its records, so duplicate figures match the logs. The survey holds Wi-Fi sightings with
+  a position, so add the log files themselves when Bluetooth or data-quality counts matter.
+  **Saved comparisons** keeps a result, with its settings, names and notes, in the survey's
+  database (table `compare_runs`) to open again later or read in the SQL browser.
 - **Survey map**, by **[Graphite](https://github.com/GraphiteCA)**. Import whole CSV surveys or open SQLite databases, filter by SSID, MAC, band,
   date and signal, and fit where each network's access point is. It supports one fit per radio or
   one shared location per SSID, background AP preparation, and pinned APs.

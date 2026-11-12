@@ -219,7 +219,8 @@ func (a *Atlas) OpenDatabase(path string, progress func(done int64) error, say f
 			}
 		}
 		// Stream preservation tables, especially source chunks, with bounded memory.
-		for _, t := range preservationTables {
+		// Saved Compare runs hold whole results, so they are streamed the same way.
+		for _, t := range append(append([]string{}, preservationTables...), "compare_runs") {
 			if _, err := db.Exec(c, "DELETE FROM "+t); err != nil {
 				return err
 			}

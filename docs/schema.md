@@ -48,6 +48,11 @@ in the column store). Missing text is generally the empty string.
 | `observation_details` | `observation_id INTEGER PRIMARY KEY`, `fields_json TEXT`; JSON object of additional field names to nonempty exact text values |
 | `observation_provenance` | `(import_id,line)` primary key, `record_id TEXT`, nullable `observation_id INTEGER`, `source_table TEXT`, `source_record_source TEXT`; every accepted source row, including duplicates |
 
+Wardrive Compare reads `observation_provenance` to put exact duplicates back when it takes
+drives from the survey: an observation is written once for each source row recorded for it,
+in the drive of the import that supplied that row. A stored row with no record of its own
+(surveys older than schema 6) still counts once.
+
 Observation references are logical references to the column store, not foreign
 keys to the empty metadata observation table. Cleanup clears a provenance link
 when its observation is removed; duplicate cleanup remaps it to the survivor.
@@ -68,6 +73,12 @@ very large individual field values still requires memory for those values.
 - `estimates`: fitted-result JSON keyed by radio/group and scope; calculated data,
   not original measurements.
 - `comparisons`: saved ID, name, creation time and comparison JSON payload.
+- `compare_runs`: Wardrive Compare results saved from the Compare page: `id`, `name`,
+  `created_utc`, `drives` (count), `sources_json` (the drives compared), `state_json` (page
+  settings, drive names and notes) and `result_json` (the analysis as computed). A run is a
+  snapshot and is never recomputed. The table is additive and optional, so it does not change
+  the schema version: older applications open the survey and leave the table alone, but a
+  snapshot they convert will not carry it.
 - `band_assignments`: manual band by SSID/MAC, with update time.
 - `map_assets`: stored basemap and survey preferences. `map_revision` and
   `map_changes` support incremental map refresh.

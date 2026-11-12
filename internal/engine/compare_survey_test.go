@@ -110,3 +110,58 @@ func TestCompareTakesDrivesFromSurvey(t *testing.T) {
 		t.Fatal("compare changed the survey")
 	}
 }
+
+func TestCompareResultsAreSavedInSurvey(t *testing.T) {
+	s := adminServer(t)
+	type listing struct {
+		Runs []struct {
+			ID      string `json:"id"`
+			Name    string `json:"name"`
+			Drives  int    `json:"drives"`
+			Sources []struct {
+				Name string `json:"name"`
+			} `json:"sources"`
+		} `json:"runs"`
+	}
+	read := func(method, path string, body any, id string) (int, listing, string) {
+		t.Helper()
+		w := adminRequest(t, s, method, path, body, id)
+		var l listing
+		json.Unmarshal(w.Body.Bytes(), &l)
+		return w.Code, l, w.Body.String()
+	}
+	if code, l, raw := read("GET", "/api/app/compare/saved", nil, ""); code != 200 || len(l.Runs) != 0 {
+		t.Fatal(code, raw)
+	}
+	run := map[string]any{"name": "Antenna test", "drives": 2,
+		"sources": []any{map[string]any{"key": "d1", "name": "Old"}, map[string]any{"key": "d2", "name": "New"}},
+		"state":   map[string]any{"cfg": map[string]any{"mode": "drive", "radius": 25}, "tz": "utc"},
+		"result":  map[string]any{"n": 2, "baseline": "d1", "roadKm": map[string]any{"2": 12.25}, "big": 9007199254740993}}
+	if code, _, raw := read("POST", "/api/app/compare/saved", run, "stale-survey"); code != 409 {
+		t.Fatal("a stale survey was accepted", code, raw)
+	}
+	if code, _, raw := read("POST", "/api/app/compare/saved", map[string]any{"name": "", "drives": 2, "sources": []any{}, "state": map[string]any{}, "result": map[string]any{}}, ""); code == 200 {
+		t.Fatal("an unnamed comparison was saved", raw)
+	}
+	code, l, raw := read("POST", "/api/app/compare/saved", run, s.surveyID)
+	if code != 200 || len(l.Runs) != 1 || l.Runs[0].Name != "Antenna test" || l.Runs[0].Drives != 2 || len(l.Runs[0].Sources) != 2 || l.Runs[0].Sources[1].Name != "New" {
+		t.Fatal(code, raw)
+	}
+	id := l.Runs[0].ID
+	w := adminRequest(t, s, "GET", "/api/app/compare/saved/"+id, nil, "")
+	// the result comes back as it was stored, digit for digit
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"roadKm":{"2":12.25}`) || !strings.Contains(w.Body.String(), `"big":9007199254740993`) || !strings.Contains(w.Body.String(), `"tz":"utc"`) {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if w = adminRequest(t, s, "GET", "/api/app/compare/saved/nope", nil, ""); w.Code != 404 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	// the SQL browser reads the saved runs like any survey table
+	w = adminRequest(t, s, "POST", "/api/app/sql/query", map[string]any{"sql": "SELECT name,drives,json_extract(result_json,'$.baseline') AS baseline FROM compare_runs"}, "")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "Antenna test") || !strings.Contains(w.Body.String(), "d1") {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if code, l, raw = read("POST", "/api/app/compare/saved/delete", map[string]any{"id": id}, ""); code != 200 || len(l.Runs) != 0 {
+		t.Fatal(code, raw)
+	}
+}
